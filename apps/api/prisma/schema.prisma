@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum ServiceName {
+  SCCP
+  DSX
+  IPX
+}
+
+enum DiscrepancyType {
+  MISSING_IN_REACHLIST
+  MISSING_IN_IR21
+  PROVIDER_MISMATCH
+}
+
+enum UploadStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(VIEWER)
+  createdAt    DateTime @default(now())
+}
+
+model MnoMaster {
+  id          Int      @id @default(autoincrement())
+  operatorName String
+  country     String
+  mcc         String
+  mnc         String
+  countryCode String
+  tadigCode   String   @unique
+  status      String   @default("ACTIVE")
+  createdDate DateTime @default(now())
+
+  ir21Entries      Ir21Connectivity[]
+  reachlistEntries ProviderReachlist[]
+  discrepancies    DataDiscrepancy[]
+
+  @@index([operatorName])
+  @@index([country])
+}
+
+model ProviderMaster {
+  id            Int     @id @default(autoincrement())
+  providerName  String  @unique
+  providerType  String?
+  headquarters  String?
+  website       String?
+
+  ir21Entries      Ir21Connectivity[]
+  reachlistEntries ProviderReachlist[]
+  discrepancies    DataDiscrepancy[]
+}
+
+model Service {
+  id          Int         @id @default(autoincrement())
+  serviceName ServiceName @unique
+
+  ir21Entries      Ir21Connectivity[]
+  reachlistEntries ProviderReachlist[]
+}
+
+// One "current" IR.21-declared provider per (MNO, service) — mirrors the
+// GSMA IR.21 document being the MNO's single published truth per service.
+model Ir21Connectivity {
+  id            Int      @id @default(autoincrement())
+  mnoId         Int
+  providerId    Int
+  serviceId     Int
+  sourceFile    String
+  uploadDate    DateTime @default(now())
+  effectiveDate DateTime
+  remarks       String?
+
+  mno      MnoMaster      @relation(fields: [mnoId], references: [id])
+  provider ProviderMaster @relation(fields: [providerId], references: [id])
+  service  Service        @relation(fields: [serviceId], references: [id])
+
+  @@unique([mnoId, serviceId])
+}
+
+// Multiple providers may each independently claim the same (MNO, service)
+// in their own reach list, so this is unique per (MNO, provider, service).
+model ProviderReachlist {
+  id            Int      @id @default(autoincrement())
+  mnoId         Int
+  providerId    Int
+  serviceId     Int
+  sourceFile    String
+  uploadDate    DateTime @default(now())
+  effectiveDate DateTime
+
+  mno      MnoMaster      @relation(fields: [mnoId], references: [id])
+  provider ProviderMaster @relation(fields: [providerId], references: [id])
+  service  Service        @relation(fields: [serviceId], references: [id])
+
+  @@unique([mnoId, providerId, serviceId])
+}
+
+model DataDiscrepancy {
+  id              Int              @id @default(autoincrement())
+  mnoId           Int
+  providerId      Int?
+  service         ServiceName
+  ir21Status      String
+  reachlistStatus String
+  discrepancyType DiscrepancyType
+  computedAt      DateTime         @default(now())
+
+  mno      MnoMaster       @relation(fields: [mnoId], references: [id])
+  provider ProviderMaster? @relation(fields: [providerId], references: [id])
+
+  @@index([discrepancyType])
+  @@index([service])
+}
+
+model UploadHistory {
+  id            Int          @id @default(autoincrement())
+  filename      String
+  uploadTime    DateTime     @default(now())
+  uploadedBy    String
+  recordsLoaded Int
+  status        UploadStatus
+  errorLog      String?
+}

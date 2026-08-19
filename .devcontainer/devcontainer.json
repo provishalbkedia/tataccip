@@ -1,0 +1,27 @@
+{
+  "name": "CCIP — Connectivity Coverage Intelligence Platform",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000, 4000, 5432],
+  "portsAttributes": {
+    "3000": { "label": "Web (Next.js)", "onAutoForward": "openPreview" },
+    "4000": { "label": "API (NestJS + Swagger)", "onAutoForward": "notify" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" }
+  },
+  "containerEnv": {
+    "DATABASE_URL": "postgresql://ccip:ccip_dev_password@postgres:5432/ccip?schema=public",
+    "JWT_SECRET": "codespaces-dev-secret-change-me",
+    "JWT_EXPIRES_IN": "8h",
+    "API_PORT": "4000",
+    "SEED_ADMIN_EMAIL": "admin@ccip.local",
+    "SEED_ADMIN_PASSWORD": "Admin@12345"
+  },
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "Prisma.prisma"]
+    }
+  }
+}

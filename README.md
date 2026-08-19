@@ -19,7 +19,7 @@ Open the forwarded port 3000 from the **Ports** tab. Port 4000 (the API) must st
 
 **1. Database — Supabase**
 1. Create a project at [supabase.com](https://supabase.com).
-2. Project Settings → Database → **Connection string** → copy the **direct connection** (port `5432`, not the `6543` pooled one — Render runs a persistent process, so the pooler isn't needed and Prisma is simpler without it).
+2. Project Settings → Database → **Connection string** → copy the **Session pooler** string (not "Direct connection" — Supabase's direct host is IPv6-only unless you pay for their IPv4 add-on, and most PaaS hosts including Render only have IPv4 egress, so the direct connection times out from there. The session pooler is IPv4-compatible and, unlike the transaction pooler on `:6543`, has no prepared-statement caveats for Prisma migrate).
 
 **2. API — Render**
 1. New → **Blueprint**, point it at this repo — it will read `render.yaml` at the repo root and create the `ccip-api` web service.

@@ -24,9 +24,8 @@ Open the forwarded port 3000 from the **Ports** tab. Port 4000 (the API) must st
 **2. API — Render**
 1. New → **Blueprint**, point it at this repo — it will read `render.yaml` at the repo root and create the `ccip-api` web service.
 2. Set the env vars Render marks `sync: false`: `DATABASE_URL` (the Supabase string from step 1), `SEED_ADMIN_PASSWORD`, and — once you know it — `WEB_ORIGIN` (your Vercel URL). Leaving `WEB_ORIGIN` unset is fine initially; CORS reflects any origin until it's set.
-3. Deploy. `render.yaml`'s `startCommand` runs `prisma migrate deploy` before starting the server, so the schema is applied automatically on every deploy.
-4. Seed once (Render dashboard → Shell, on the `ccip-api` service): `npm run prisma:seed --workspace=apps/api`. The seed script is idempotent (upserts), so re-running it later is harmless.
-5. Render's free tier spins the service down after 15 minutes of inactivity; the first request after that takes ~30-50s to cold-start.
+3. Deploy. `render.yaml`'s `startCommand` runs `prisma migrate deploy` then `prisma db seed` before starting the server, on every start — not just once. That's deliberate: Render's free tier has no Shell access to run it manually, and the seed script only upserts (never deletes), so repeating it on every restart is harmless and never touches real data added later.
+4. Render's free tier spins the service down after 15 minutes of inactivity; the first request after that takes ~30-50s to cold-start (and re-runs migrate+seed as part of that cold start, adding a few more seconds).
 
 **3. Web — Vercel**
 1. In the Vercel project (should already exist, pointed at this repo with Root Directory `apps/web`), set `NEXT_PUBLIC_API_BASE_URL` to `https://<your-render-service>.onrender.com/api`.

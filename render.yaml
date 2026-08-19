@@ -5,7 +5,10 @@ services:
     plan: free
     region: oregon
     buildCommand: npm install && npm run build --workspace=apps/api
-    startCommand: npm run prisma:deploy --workspace=apps/api && npm run start:prod --workspace=apps/api
+    # Seeding runs on every start too (not just once) because Render's free
+    # tier has no Shell access to run it manually — seed.ts only upserts, so
+    # this is safe to repeat and never touches real data added later.
+    startCommand: npm run prisma:deploy --workspace=apps/api && npm run prisma:seed --workspace=apps/api && npm run start:prod --workspace=apps/api
     healthCheckPath: /api/docs
     envVars:
       - key: NODE_VERSION

@@ -243,32 +243,26 @@ async function main() {
   console.log("Seeding users...");
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@ccip.local";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin@12345";
+  // update (not `{}`) so re-running always converges the password/role to
+  // whatever's currently configured, instead of silently keeping whatever
+  // was set on a prior (possibly broken) deploy's first-ever seed run.
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
   await prisma.user.upsert({
     where: { email: adminEmail },
-    update: {},
-    create: {
-      email: adminEmail,
-      passwordHash: await bcrypt.hash(adminPassword, 10),
-      role: Role.ADMIN,
-    },
+    update: { passwordHash: adminPasswordHash, role: Role.ADMIN },
+    create: { email: adminEmail, passwordHash: adminPasswordHash, role: Role.ADMIN },
   });
+  const analystPasswordHash = await bcrypt.hash("Analyst@12345", 10);
   await prisma.user.upsert({
     where: { email: "analyst@ccip.local" },
-    update: {},
-    create: {
-      email: "analyst@ccip.local",
-      passwordHash: await bcrypt.hash("Analyst@12345", 10),
-      role: Role.ANALYST,
-    },
+    update: { passwordHash: analystPasswordHash, role: Role.ANALYST },
+    create: { email: "analyst@ccip.local", passwordHash: analystPasswordHash, role: Role.ANALYST },
   });
+  const viewerPasswordHash = await bcrypt.hash("Viewer@12345", 10);
   await prisma.user.upsert({
     where: { email: "viewer@ccip.local" },
-    update: {},
-    create: {
-      email: "viewer@ccip.local",
-      passwordHash: await bcrypt.hash("Viewer@12345", 10),
-      role: Role.VIEWER,
-    },
+    update: { passwordHash: viewerPasswordHash, role: Role.VIEWER },
+    create: { email: "viewer@ccip.local", passwordHash: viewerPasswordHash, role: Role.VIEWER },
   });
 
   console.log("Seed complete.");

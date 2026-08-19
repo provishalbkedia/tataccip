@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: ccip-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build --workspace=apps/api
+    startCommand: npm run prisma:deploy --workspace=apps/api && npm run start:prod --workspace=apps/api
+    healthCheckPath: /api/docs
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      # Set this to your Supabase "Connection string" (direct connection,
+      # port 5432 — not the pooled 6543 one; Render runs a persistent
+      # process, so no pgbouncer transaction-pooling caveats apply here).
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      # Your Vercel web app URL, e.g. https://tataccip.vercel.app — leave
+      # unset during initial setup and CORS will reflect any origin; lock it
+      # down once the web app's URL is known.
+      - key: WEB_ORIGIN
+        sync: false
+      - key: SEED_ADMIN_EMAIL
+        value: admin@ccip.local
+      - key: SEED_ADMIN_PASSWORD
+        sync: false

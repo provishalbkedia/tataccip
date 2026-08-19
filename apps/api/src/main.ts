@@ -36,10 +36,13 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup("api/docs", app, document);
 
-  const port = process.env.API_PORT ?? 4000;
-  await app.listen(port);
-  console.log(`CCIP API listening on http://localhost:${port}/api`);
-  console.log(`Swagger docs at http://localhost:${port}/api/docs`);
+  // PORT is the convention most Node hosts (Render, Railway, Heroku) inject;
+  // API_PORT is our own local-dev override. Bind to 0.0.0.0 so the process is
+  // reachable from outside its container, not just localhost.
+  const port = process.env.PORT ?? process.env.API_PORT ?? 4000;
+  await app.listen(port, "0.0.0.0");
+  console.log(`CCIP API listening on port ${port}`);
+  console.log(`Swagger docs at /api/docs`);
 }
 
 bootstrap();

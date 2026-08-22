@@ -32,13 +32,18 @@ export interface MnoSummary {
   mcc: string;
   mnc: string;
   status: string;
-  // Populated once this MNO has had an IR.21 XML ingested; null for MNOs
-  // known only via seed data or a reach-list mention.
+  // Populated once this MNO has had an IR.21 XML ingested; empty/null for
+  // MNOs known only via seed data or a reach-list mention.
   networkType: string | null;
-  primarySccpCarrier: string | null;
-  backupSccpCarriers: string[];
-  grxIpxProviders: string[];
-  lteIpxProviders: string[];
+  // Consolidated per the platform's 3 core services: sccpProviders merges
+  // primary + backup SCCP carriers (deduplicated); ipxProviders is the
+  // GRXIPXRoutingForDataRoamingSection data-roaming carrier list; dsxProviders
+  // is the LTEInfoSection LTE/Diameter carrier list — the XML parser doesn't
+  // extract a distinct "DSX" section, so this is that data reinterpreted
+  // under the DSX label for this consolidated view.
+  sccpProviders: string[];
+  dsxProviders: string[];
+  ipxProviders: string[];
   lastEffectiveDate: string | null;
 }
 

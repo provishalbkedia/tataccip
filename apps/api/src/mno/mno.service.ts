@@ -5,6 +5,18 @@ import { ConnectivityMatrixRow, MnoDetail, MnoSummary } from "@ccip/shared-types
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
+/** Merges primary + backup SCCP carriers into one deduplicated list — the
+ * search grid's consolidated "SCCP Provider(s)" column doesn't distinguish
+ * primary/backup role (the detail page's Roaming Signaling section still
+ * does, via connectivitySnapshot). */
+function mergeSccpProviders(connectivity: { primarySccpCarrier: string | null; backupSccpCarriers: string[] } | null): string[] {
+  if (!connectivity) return [];
+  const all = [connectivity.primarySccpCarrier, ...connectivity.backupSccpCarriers].filter(
+    (v): v is string => v !== null,
+  );
+  return Array.from(new Set(all));
+}
+
 @Injectable()
 export class MnoService {
   constructor(private prisma: PrismaService) {}
@@ -19,8 +31,9 @@ export class MnoService {
    * XML-sourced networkType, primarySccpCarrier, backupSccpCarriers, and
    * the GRX/IPX/LTE provider name arrays (via a raw substring-on-array-
    * element query — Prisma's array filters only support exact-element
-   * matches), so a carrier appearing as either a primary or backup route
-   * surfaces the same way in results. */
+   * matches), so a carrier appearing anywhere in the consolidated SCCP/
+   * DSX/IPX provider columns surfaces the same way in results, regardless
+   * of primary/backup role. */
   async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string }): Promise<MnoSummary[]> {
     const { q, tadig, country, mcc, mnc } = params;
 
@@ -71,10 +84,9 @@ export class MnoService {
       mnc: r.mnc,
       status: r.status,
       networkType: r.connectivity?.networkType ?? null,
-      primarySccpCarrier: r.connectivity?.primarySccpCarrier ?? null,
-      backupSccpCarriers: r.connectivity?.backupSccpCarriers ?? [],
-      grxIpxProviders: r.connectivity?.grxIpxProviders ?? [],
-      lteIpxProviders: r.connectivity?.lteIpxProviders ?? [],
+      sccpProviders: mergeSccpProviders(r.connectivity),
+      dsxProviders: r.connectivity?.lteIpxProviders ?? [],
+      ipxProviders: r.connectivity?.grxIpxProviders ?? [],
       lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
     }));
   }
@@ -109,10 +121,9 @@ export class MnoService {
       mnc: mno.mnc,
       status: mno.status,
       networkType: mno.connectivity?.networkType ?? null,
-      primarySccpCarrier: mno.connectivity?.primarySccpCarrier ?? null,
-      backupSccpCarriers: mno.connectivity?.backupSccpCarriers ?? [],
-      grxIpxProviders: mno.connectivity?.grxIpxProviders ?? [],
-      lteIpxProviders: mno.connectivity?.lteIpxProviders ?? [],
+      sccpProviders: mergeSccpProviders(mno.connectivity),
+      dsxProviders: mno.connectivity?.lteIpxProviders ?? [],
+      ipxProviders: mno.connectivity?.grxIpxProviders ?? [],
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
       connectivityMatrix: matrix,
       connectivitySnapshot: mno.connectivity

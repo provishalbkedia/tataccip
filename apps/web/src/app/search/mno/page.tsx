@@ -84,6 +84,12 @@ export default function MnoSearchPage() {
             { field: "tadigCode", headerName: "TADIG" },
             { field: "networkType", headerName: "Network Type" },
             { field: "primarySccpCarrier", headerName: "Primary SCCP Carrier", flex: 1.2 },
+            {
+              field: "backupSccpCarriers",
+              headerName: "Backup SCCP Provider(s)",
+              flex: 1.4,
+              valueFormatter: (p) => (p.value && p.value.length > 0 ? p.value.join(", ") : "-"),
+            },
             { field: "grxIpxProvider", headerName: "GRX/IPX Provider", flex: 1.2 },
             { field: "lteIpxProvider", headerName: "LTE IPX Provider", flex: 1.2 },
             {

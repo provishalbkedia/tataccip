@@ -16,9 +16,11 @@ export class MnoService {
    * null, rather than disappearing from search until someone uploads their
    * XML — the connectivity table is an enrichment layer, not the operator
    * registry. `q` free-text matches across TADIG/operator/country plus the
-   * XML-sourced networkType, primarySccpCarrier, and the GRX/IPX/LTE
-   * provider name arrays (via a raw substring-on-array-element query —
-   * Prisma's array filters only support exact-element matches). */
+   * XML-sourced networkType, primarySccpCarrier, backupSccpCarriers, and
+   * the GRX/IPX/LTE provider name arrays (via a raw substring-on-array-
+   * element query — Prisma's array filters only support exact-element
+   * matches), so a carrier appearing as either a primary or backup route
+   * surfaces the same way in results. */
   async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string }): Promise<MnoSummary[]> {
     const { q, tadig, country, mcc, mnc } = params;
 
@@ -29,6 +31,7 @@ export class MnoService {
         WHERE EXISTS (SELECT 1 FROM unnest("mccMncList") x WHERE x ILIKE ${"%" + q + "%"})
            OR EXISTS (SELECT 1 FROM unnest("grxIpxProviders") x WHERE x ILIKE ${"%" + q + "%"})
            OR EXISTS (SELECT 1 FROM unnest("lteIpxProviders") x WHERE x ILIKE ${"%" + q + "%"})
+           OR EXISTS (SELECT 1 FROM unnest("backupSccpCarriers") x WHERE x ILIKE ${"%" + q + "%"})
       `;
       arrayMatchMnoIds = rows.map((r) => r.mnoId);
     }
@@ -69,6 +72,7 @@ export class MnoService {
       status: r.status,
       networkType: r.connectivity?.networkType ?? null,
       primarySccpCarrier: r.connectivity?.primarySccpCarrier ?? null,
+      backupSccpCarriers: r.connectivity?.backupSccpCarriers ?? [],
       grxIpxProvider: r.connectivity?.grxIpxProviders[0] ?? null,
       lteIpxProvider: r.connectivity?.lteIpxProviders[0] ?? null,
       lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
@@ -106,6 +110,7 @@ export class MnoService {
       status: mno.status,
       networkType: mno.connectivity?.networkType ?? null,
       primarySccpCarrier: mno.connectivity?.primarySccpCarrier ?? null,
+      backupSccpCarriers: mno.connectivity?.backupSccpCarriers ?? [],
       grxIpxProvider: mno.connectivity?.grxIpxProviders[0] ?? null,
       lteIpxProvider: mno.connectivity?.lteIpxProviders[0] ?? null,
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,

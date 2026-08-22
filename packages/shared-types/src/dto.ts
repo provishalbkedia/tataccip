@@ -36,6 +36,7 @@ export interface MnoSummary {
   // known only via seed data or a reach-list mention.
   networkType: string | null;
   primarySccpCarrier: string | null;
+  backupSccpCarriers: string[];
   grxIpxProvider: string | null;
   lteIpxProvider: string | null;
   lastEffectiveDate: string | null;

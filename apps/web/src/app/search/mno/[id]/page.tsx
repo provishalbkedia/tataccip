@@ -21,6 +21,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
 import { api } from "@/lib/api";
 import { MnoDetail } from "@ccip/shared-types";
 
@@ -58,6 +59,7 @@ export default function MnoDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [mno, setMno] = React.useState<MnoDetail | null>(null);
+  const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
 
   React.useEffect(() => {
     api.get<MnoDetail>(`/mno/${params.id}`).then(setMno);
@@ -192,7 +194,29 @@ export default function MnoDetailPage() {
                       <TableCell>
                         <Chip label={row.service} size="small" />
                       </TableCell>
-                      <TableCell>{row.ir21Provider ?? <em>Not declared</em>}</TableCell>
+                      <TableCell>
+                        {row.ir21Provider ? (
+                          <Chip
+                            label={row.ir21Provider}
+                            size="small"
+                            variant="outlined"
+                            clickable={!!row.ir21ProviderResolution}
+                            onClick={
+                              row.ir21ProviderResolution
+                                ? () =>
+                                    setInspector({
+                                      providerId: row.ir21ProviderResolution!.canonicalProviderId,
+                                      providerName: row.ir21ProviderResolution!.canonicalProviderName,
+                                      rawStrings: row.ir21ProviderResolution!.rawDeclaredStrings,
+                                      resolvedViaAlias: row.ir21ProviderResolution!.resolvedViaAlias,
+                                    })
+                                : undefined
+                            }
+                          />
+                        ) : (
+                          <em>Not declared</em>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {row.reachlistProviders.length > 0 ? (
                           <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
@@ -217,6 +241,7 @@ export default function MnoDetailPage() {
             </TableContainer>
           </>
         )}
+        <ProviderInspectorDrawer data={inspector} onClose={() => setInspector(null)} />
       </AppShell>
     </RequireAuth>
   );

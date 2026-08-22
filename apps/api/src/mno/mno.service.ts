@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { ConnectivityMatrixRow, MnoDetail, MnoSummary } from "@ccip/shared-types";
+import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
+import { ConnectivityMatrixRow, MnoDetail, MnoSummary, ProviderResolutionInfo } from "@ccip/shared-types";
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
@@ -102,15 +103,19 @@ export class MnoService {
     });
     if (!mno) throw new NotFoundException("MNO not found");
 
-    const matrix: ConnectivityMatrixRow[] = SERVICE_ORDER.map((service) => {
-      const ir21 = mno.ir21Entries.find((e) => e.service.serviceName === service);
-      const reach = mno.reachlistEntries.filter((e) => e.service.serviceName === service);
-      return {
-        service,
-        ir21Provider: ir21?.provider.providerName ?? null,
-        reachlistProviders: reach.map((r) => r.provider.providerName),
-      };
-    });
+    const matrix: ConnectivityMatrixRow[] = await Promise.all(
+      SERVICE_ORDER.map(async (service) => {
+        const ir21 = mno.ir21Entries.find((e) => e.service.serviceName === service);
+        const reach = mno.reachlistEntries.filter((e) => e.service.serviceName === service);
+        const candidates = this.rawCandidatesFor(service, mno.connectivity);
+        return {
+          service,
+          ir21Provider: ir21?.provider.providerName ?? null,
+          reachlistProviders: reach.map((r) => r.provider.providerName),
+          ir21ProviderResolution: ir21 ? await this.resolveProvenance(ir21.providerId, candidates) : null,
+        };
+      }),
+    );
 
     return {
       id: mno.id,
@@ -147,6 +152,56 @@ export class MnoService {
             lastParsedAt: mno.connectivity.lastParsedAt.toISOString(),
           }
         : null,
+    };
+  }
+
+  /** The raw (unresolved) declared strings that could have fed a given
+   * service's Ir21Connectivity row, per the SCCP/DSX/IPX consolidation
+   * convention (dsxProviders <- lteIpxProviders, ipxProviders <-
+   * grxIpxProviders) — see MnoSummary. */
+  private rawCandidatesFor(
+    service: ServiceName,
+    connectivity: { primarySccpCarrier: string | null; backupSccpCarriers: string[]; grxIpxProviders: string[]; lteIpxProviders: string[] } | null,
+  ): string[] {
+    if (!connectivity) return [];
+    if (service === "SCCP") return [connectivity.primarySccpCarrier, ...connectivity.backupSccpCarriers].filter((v): v is string => !!v);
+    if (service === "DSX") return connectivity.lteIpxProviders;
+    if (service === "IPX") return connectivity.grxIpxProviders;
+    return [];
+  }
+
+  /** Given the provider a service resolved to and the candidate raw strings
+   * that could have produced it, finds which of those raw strings actually
+   * match (via the same normalize+substring logic ingestion uses) and
+   * whether an alias — as opposed to the provider's own literal name — did
+   * the matching. Powers the "why does this show BICS" audit view. */
+  private async resolveProvenance(providerId: number, candidateRawStrings: string[]): Promise<ProviderResolutionInfo | null> {
+    const provider = await this.prisma.providerMaster.findUnique({ where: { id: providerId } });
+    if (!provider) return null;
+
+    const ownPattern = normalizeCarrierName(provider.providerName);
+    const aliases = await this.prisma.providerAlias.findMany({ where: { providerId } });
+
+    const rawDeclaredStrings: string[] = [];
+    let resolvedViaAlias: string | null = null;
+    for (const raw of candidateRawStrings) {
+      const normalized = normalizeCarrierName(raw);
+      if (isConfidentSubstringMatch(normalized, ownPattern)) {
+        rawDeclaredStrings.push(raw);
+        continue;
+      }
+      const alias = aliases.find((a) => isConfidentSubstringMatch(normalized, a.aliasPattern));
+      if (alias) {
+        rawDeclaredStrings.push(raw);
+        resolvedViaAlias ??= alias.aliasPattern;
+      }
+    }
+
+    return {
+      canonicalProviderId: provider.id,
+      canonicalProviderName: provider.providerName,
+      rawDeclaredStrings: Array.from(new Set(rawDeclaredStrings)),
+      resolvedViaAlias,
     };
   }
 }

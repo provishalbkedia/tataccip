@@ -6,6 +6,7 @@ import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { ProviderAliasService } from "./provider-alias.service";
 import { ResolveProviderAliasDto } from "./dto/resolve-provider-alias.dto";
+import { RemapProviderDto } from "./dto/remap-provider.dto";
 
 @ApiTags("provider-aliases")
 @ApiBearerAuth()
@@ -24,5 +25,11 @@ export class ProviderAliasController {
   @Roles(Role.ADMIN)
   resolve(@Body() dto: ResolveProviderAliasDto) {
     return this.providerAliasService.resolve(dto);
+  }
+
+  @Post("remap")
+  @Roles(Role.ADMIN)
+  remap(@Body() dto: RemapProviderDto) {
+    return this.providerAliasService.remap(dto);
   }
 }

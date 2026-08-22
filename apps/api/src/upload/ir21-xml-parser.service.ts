@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { XMLParser } from "fast-xml-parser";
+import { splitCompositeProviderNames } from "./provider-normalize";
 
 /** One IR.21 XML file's worth of extracted data, keyed by the exporting
  * MNO's own TADIG (GSMA IR.21 files are self-published: each file is one
@@ -88,6 +89,15 @@ function firstText(root: unknown, patterns: RegExp[]): string | null {
   return all.length > 0 ? all[0] : null;
 }
 
+/** Like collectTexts, but for fields known to hold carrier/provider names —
+ * splits any composite value (e.g. one <ProviderName> element containing
+ * "BICS, Orange") into individual candidate names before returning, so a
+ * single messy source string never becomes one bogus multi-name provider. */
+function collectProviderNames(root: unknown, patterns: RegExp[]): string[] {
+  const out = collectTexts(root, patterns).flatMap(splitCompositeProviderNames);
+  return Array.from(new Set(out));
+}
+
 /** First matching section/list subtree, or `undefined` if absent (e.g. a
  * "SectionNA" placeholder section, or a schema version that omits it) — lets
  * callers degrade to empty results instead of falling back to the whole
@@ -146,8 +156,8 @@ export class Ir21XmlParserService {
       primarySccpCarrier: sccp.primary,
       backupSccpCarriers: sccp.backups,
       sccpPointCodes: sccp.pointCodes,
-      grxIpxProviders: collectTexts(grxScope, [/^providername$/i]),
-      lteIpxProviders: collectTexts(lteScope, [/^ipxprovidername$/i]),
+      grxIpxProviders: collectProviderNames(grxScope, [/^providername$/i]),
+      lteIpxProviders: collectProviderNames(lteScope, [/^ipxprovidername$/i]),
       interPmnIpRanges: collectTexts(grxScope, [/^ipaddressrange$/i]),
       diameterEdgeAgentFqdn:
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),
@@ -180,8 +190,9 @@ export class Ir21XmlParserService {
 
   /** Each SCCPCarrierItem carries its own SCCPConnectivityInformation
    * ("Primary" / "Backup" / "Load Sharing" etc.) — classifies by that
-   * sibling rather than assuming document order, and collects DPCs from
-   * every carrier's DPCList regardless of primary/backup status. */
+   * sibling rather than assuming document order, splits any composite
+   * carrier-name string before classifying, and collects DPCs from every
+   * carrier's DPCList regardless of primary/backup status. */
   private extractSccpCarriers(sccpScope: unknown): {
     primary: string | null;
     backups: string[];
@@ -195,15 +206,21 @@ export class Ir21XmlParserService {
     const pointCodes: string[] = [];
 
     for (const item of carrierItems) {
-      const name = firstText(item, [/^sccpcarriername$/i]);
+      const rawName = firstText(item, [/^sccpcarriername$/i]);
       const role = firstText(item, [/^sccpconnectivityinformation$/i]);
       pointCodes.push(...collectTexts(item, [/^dpc$/i]));
-      if (!name) continue;
-      if (role && /primary/i.test(role)) {
-        if (!primary) primary = name;
-        else backups.push(name);
+      if (!rawName) continue;
+      // A single carrier item can itself contain a composite string (e.g.
+      // "Arelion, CMI, BBIS") — split before classifying; if marked
+      // Primary, only the first split token takes the primary slot, the
+      // rest fall through to backups same as any other carrier item would.
+      const tokens = splitCompositeProviderNames(rawName);
+      if (tokens.length === 0) continue;
+      if (role && /primary/i.test(role) && !primary) {
+        primary = tokens[0];
+        backups.push(...tokens.slice(1));
       } else {
-        backups.push(name);
+        backups.push(...tokens);
       }
     }
 

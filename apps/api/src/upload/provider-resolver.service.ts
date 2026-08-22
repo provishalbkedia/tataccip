@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { normalizeCarrierName } from "./provider-normalize";
+import { isConfidentSubstringMatch, normalizeCarrierName } from "./provider-normalize";
 
 export type ResolveResult = { status: "resolved"; providerId: number } | { status: "unmapped"; normalizedPattern: string };
 
@@ -50,7 +50,7 @@ export class ProviderResolverService implements OnModuleInit {
     }
 
     for (const [pattern, providerId] of this.cache) {
-      if (normalized.includes(pattern) || pattern.includes(normalized)) {
+      if (isConfidentSubstringMatch(normalized, pattern)) {
         return { status: "resolved", providerId };
       }
     }

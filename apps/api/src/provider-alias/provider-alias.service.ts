@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProviderResolverService } from "../upload/provider-resolver.service";
-import { ResolveProviderAliasRequest, UnmappedProviderVariantRow } from "@ccip/shared-types";
+import { normalizeCarrierName, splitCompositeProviderNames } from "../upload/provider-normalize";
+import { RemapProviderRequest, RemapProviderResult, ResolveProviderAliasRequest, UnmappedProviderVariantRow } from "@ccip/shared-types";
 
 @Injectable()
 export class ProviderAliasService {
@@ -32,18 +34,23 @@ export class ProviderAliasService {
     }
 
     let providerId: number;
-    let providerName: string;
     if (req.providerId) {
       const provider = await this.prisma.providerMaster.findUnique({ where: { id: req.providerId } });
       if (!provider) throw new NotFoundException("Target provider not found");
       providerId = provider.id;
-      providerName = provider.providerName;
     } else {
+      const newName = req.newProviderName!.trim();
+      const splitTokens = splitCompositeProviderNames(newName);
+      if (splitTokens.length > 1) {
+        throw new BadRequestException(
+          `"${newName}" looks like more than one provider (${splitTokens.join(", ")}). Resolve this variant to one canonical provider at a time.`,
+        );
+      }
+
       const created = await this.prisma.providerMaster.create({
-        data: { providerName: req.newProviderName!.trim(), providerType: "IPX Provider" },
+        data: { providerName: newName, providerType: "IPX Provider" },
       });
       providerId = created.id;
-      providerName = created.providerName;
     }
 
     await this.providerResolver.addAlias(providerId, variant.normalizedPattern);
@@ -54,17 +61,22 @@ export class ProviderAliasService {
     });
 
     for (const tadig of variant.affectedTadigs) {
-      await this.backfillOccurrence(variant, tadig, providerId, providerName);
+      await this.backfillOccurrence(variant, tadig, providerId);
     }
 
     return this.toRow(updated);
   }
 
+  /** Repoints Ir21Connectivity for one already-known (tadig, service) pair
+   * to the resolved provider. Deliberately does NOT touch
+   * MnoMasterConnectivity's raw carrier-name fields — those stay exactly as
+   * declared in the source document forever, so the audit trail (which raw
+   * string resolved to which canonical provider) stays intact instead of
+   * being overwritten by the resolution itself. */
   private async backfillOccurrence(
-    variant: { detectedService: string; normalizedPattern: string },
+    variant: { detectedService: string },
     tadig: string,
     providerId: number,
-    providerName: string,
   ): Promise<void> {
     const mno = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: tadig } });
     if (!mno) return;
@@ -85,24 +97,76 @@ export class ProviderAliasService {
         effectiveDate: new Date(),
       },
     });
+  }
 
-    const snapshot = await this.prisma.mnoMasterConnectivity.findUnique({ where: { mnoId: mno.id } });
-    if (!snapshot) return;
+  /** Like resolve(), but for a raw string that's already resolved to
+   * *some* provider (via ProviderAlias or an exact ProviderMaster name
+   * match) and an admin wants to correct where it points — e.g. "BICS-
+   * INDIA" got auto-merged into "BICS" but should be its own entity, or a
+   * new regional affiliate needs its own canonical row. Scans every MNO's
+   * XML-declared raw carrier fields for an exact normalized match (not
+   * substring — this targets one specific spelling, not a fuzzy family of
+   * similar names) and repoints Ir21Connectivity for each. Reach List data
+   * isn't touched: raw provider text from Excel uploads was never
+   * persisted anywhere, so there's no way to know which ProviderReachlist
+   * rows trace back to this exact raw string. */
+  async remap(req: RemapProviderRequest): Promise<RemapProviderResult> {
+    const normalizedPattern = normalizeCarrierName(req.rawString);
+    if (!normalizedPattern) {
+      throw new BadRequestException(`"${req.rawString}" has no resolvable name after normalization`);
+    }
+    if (!req.targetProviderId && !req.newProviderName) {
+      throw new BadRequestException("Provide either targetProviderId or newProviderName");
+    }
 
-    const replaceIfMatches = (raw: string | null) =>
-      raw && this.providerResolver.normalize(raw) === variant.normalizedPattern ? providerName : raw;
-    const replaceListIfMatches = (raws: string[]) =>
-      raws.map((r) => (this.providerResolver.normalize(r) === variant.normalizedPattern ? providerName : r));
+    let targetId: number;
+    let targetName: string;
+    if (req.targetProviderId) {
+      const provider = await this.prisma.providerMaster.findUnique({ where: { id: req.targetProviderId } });
+      if (!provider) throw new NotFoundException("Target provider not found");
+      targetId = provider.id;
+      targetName = provider.providerName;
+    } else {
+      const newName = req.newProviderName!.trim();
+      const splitTokens = splitCompositeProviderNames(newName);
+      if (splitTokens.length > 1) {
+        throw new BadRequestException(
+          `"${newName}" looks like more than one provider (${splitTokens.join(", ")}). Remap to one canonical provider at a time.`,
+        );
+      }
+      const created = await this.prisma.providerMaster.create({
+        data: { providerName: newName, providerType: "IPX Provider" },
+      });
+      targetId = created.id;
+      targetName = created.providerName;
+    }
 
-    await this.prisma.mnoMasterConnectivity.update({
-      where: { mnoId: mno.id },
-      data: {
-        primarySccpCarrier: replaceIfMatches(snapshot.primarySccpCarrier),
-        backupSccpCarriers: replaceListIfMatches(snapshot.backupSccpCarriers),
-        grxIpxProviders: replaceListIfMatches(snapshot.grxIpxProviders),
-        lteIpxProviders: replaceListIfMatches(snapshot.lteIpxProviders),
-      },
-    });
+    await this.providerResolver.addAlias(targetId, normalizedPattern);
+
+    const allConnectivity = await this.prisma.mnoMasterConnectivity.findMany();
+    const affectedTadigs: string[] = [];
+    for (const c of allConnectivity) {
+      const services: ServiceName[] = [];
+      if ([c.primarySccpCarrier, ...c.backupSccpCarriers].some((r) => r && normalizeCarrierName(r) === normalizedPattern)) {
+        services.push("SCCP");
+      }
+      if (c.lteIpxProviders.some((r) => normalizeCarrierName(r) === normalizedPattern)) services.push("DSX");
+      if (c.grxIpxProviders.some((r) => normalizeCarrierName(r) === normalizedPattern)) services.push("IPX");
+      if (services.length === 0) continue;
+
+      for (const serviceName of services) {
+        const service = await this.prisma.service.findUnique({ where: { serviceName } });
+        if (!service) continue;
+        await this.prisma.ir21Connectivity.upsert({
+          where: { mnoId_serviceId: { mnoId: c.mnoId, serviceId: service.id } },
+          update: { providerId: targetId },
+          create: { mnoId: c.mnoId, providerId: targetId, serviceId: service.id, sourceFile: "manual-remap", effectiveDate: new Date() },
+        });
+      }
+      affectedTadigs.push(c.tadigCode);
+    }
+
+    return { normalizedPattern, targetProviderId: targetId, targetProviderName: targetName, affectedTadigs };
   }
 
   private toRow = (v: {

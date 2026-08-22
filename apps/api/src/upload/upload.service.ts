@@ -4,6 +4,7 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeProviderName } from "./provider-alias";
+import { splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
@@ -84,34 +85,46 @@ export class UploadService {
         },
       });
 
-      const providerId = await this.resolveProvider(providerRaw, providerCache);
+      // A single "Provider" cell can list more than one carrier (e.g.
+      // "Arelion, CMI, BBIS") — split before resolving so each becomes its
+      // own ProviderReachlist row against its own canonical provider,
+      // rather than one row against a bogus composite ProviderMaster.
+      const providerTokens = splitCompositeProviderNames(providerRaw);
+      if (providerTokens.length === 0) {
+        errors.push(`Row ${rowNum}: Provider "${providerRaw}" had no resolvable name after cleanup, skipped.`);
+        continue;
+      }
 
-      for (const serviceName of validServiceTokens) {
-        const dedupeKey = `${tadig}|${providerId}|${serviceName}`;
-        if (seenKeys.has(dedupeKey)) {
-          errors.push(`Row ${rowNum}: duplicate (TADIG, Provider, Service) "${dedupeKey}" in file, skipped.`);
-          continue;
-        }
-        seenKeys.add(dedupeKey);
+      for (const providerToken of providerTokens) {
+        const providerId = await this.resolveProvider(providerToken, providerCache);
 
-        await this.prisma.providerReachlist.upsert({
-          where: {
-            mnoId_providerId_serviceId: {
+        for (const serviceName of validServiceTokens) {
+          const dedupeKey = `${tadig}|${providerId}|${serviceName}`;
+          if (seenKeys.has(dedupeKey)) {
+            errors.push(`Row ${rowNum}: duplicate (TADIG, Provider, Service) "${dedupeKey}" in file, skipped.`);
+            continue;
+          }
+          seenKeys.add(dedupeKey);
+
+          await this.prisma.providerReachlist.upsert({
+            where: {
+              mnoId_providerId_serviceId: {
+                mnoId: mno.id,
+                providerId,
+                serviceId: services.get(serviceName)!,
+              },
+            },
+            update: { sourceFile: filename, effectiveDate: new Date() },
+            create: {
               mnoId: mno.id,
               providerId,
               serviceId: services.get(serviceName)!,
+              sourceFile: filename,
+              effectiveDate: new Date(),
             },
-          },
-          update: { sourceFile: filename, effectiveDate: new Date() },
-          create: {
-            mnoId: mno.id,
-            providerId,
-            serviceId: services.get(serviceName)!,
-            sourceFile: filename,
-            effectiveDate: new Date(),
-          },
-        });
-        recordsLoaded++;
+          });
+          recordsLoaded++;
+        }
       }
     }
 

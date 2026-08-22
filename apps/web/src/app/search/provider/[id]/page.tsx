@@ -2,11 +2,13 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Button, Card, CardContent, Chip, Grid, Typography } from "@mui/material";
+import { Box, Button, Card, CardContent, Chip, Grid, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import FindInPageIcon from "@mui/icons-material/FindInPage";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
 import { api } from "@/lib/api";
 import { OnNetMnoRow, ProviderDetail } from "@ccip/shared-types";
 
@@ -31,6 +33,7 @@ export default function ProviderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [provider, setProvider] = React.useState<ProviderDetail | null>(null);
+  const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
 
   React.useEffect(() => {
     api.get<ProviderDetail>(`/provider/${params.id}`).then(setProvider);
@@ -44,9 +47,26 @@ export default function ProviderDetailPage() {
         </Button>
         {provider && (
           <>
-            <Typography variant="h5" fontWeight={700}>
-              {provider.providerName}
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+              <Typography variant="h5" fontWeight={700}>
+                {provider.providerName}
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<FindInPageIcon />}
+                onClick={() =>
+                  setInspector({
+                    providerId: provider.id,
+                    providerName: provider.providerName,
+                    rawStrings: provider.observedRawStrings,
+                    allAliases: provider.aliases,
+                  })
+                }
+              >
+                Alias &amp; Raw String Details
+              </Button>
+            </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               {provider.providerType} · {provider.headquarters}
             </Typography>
@@ -88,6 +108,7 @@ export default function ProviderDetailPage() {
             />
           </>
         )}
+        <ProviderInspectorDrawer data={inspector} onClose={() => setInspector(null)} />
       </AppShell>
     </RequireAuth>
   );

@@ -47,10 +47,22 @@ export interface MnoSummary {
   lastEffectiveDate: string | null;
 }
 
+// Provenance for one resolved provider: which canonical row it landed on,
+// the raw declared text(s) that fed that resolution, and (if it wasn't a
+// direct name match) which ProviderAlias pattern made the connection. Lets
+// the UI show "why" instead of just trusting the resolved name blindly.
+export interface ProviderResolutionInfo {
+  canonicalProviderId: number;
+  canonicalProviderName: string;
+  rawDeclaredStrings: string[];
+  resolvedViaAlias: string | null;
+}
+
 export interface ConnectivityMatrixRow {
   service: ServiceName;
   ir21Provider: string | null;
   reachlistProviders: string[];
+  ir21ProviderResolution: ProviderResolutionInfo | null;
 }
 
 export interface MnoConnectivitySnapshot {
@@ -78,20 +90,24 @@ export interface MnoDetail extends MnoSummary {
   connectivitySnapshot: MnoConnectivitySnapshot | null;
 }
 
-export interface ProviderSummary {
-  id: number;
-  providerName: string;
-  providerType: string | null;
-  headquarters: string | null;
-  website: string | null;
-}
-
 export interface ProviderCoverageStats {
   totalCountries: number;
   totalMnos: number;
   sccpCount: number;
   dsxCount: number;
   ipxCount: number;
+}
+
+export interface ProviderSummary {
+  id: number;
+  providerName: string;
+  providerType: string | null;
+  headquarters: string | null;
+  website: string | null;
+  // Aggregated across Ir21Connectivity + ProviderReachlist, same as the
+  // detail view's stats — surfaced on the list too so search doesn't
+  // require opening each provider to gauge its footprint.
+  stats: ProviderCoverageStats;
 }
 
 export interface OnNetMnoRow {
@@ -104,8 +120,12 @@ export interface OnNetMnoRow {
 }
 
 export interface ProviderDetail extends ProviderSummary {
-  stats: ProviderCoverageStats;
   onNetMnos: OnNetMnoRow[];
+  // All known alias patterns pointing at this canonical provider, and every
+  // distinct raw carrier string across all MNOs' XML data observed to
+  // resolve here — the audit trail behind "why does this MNO show BICS".
+  aliases: string[];
+  observedRawStrings: string[];
 }
 
 export interface DiscrepancyRow {
@@ -180,4 +200,26 @@ export interface ProviderAliasRow {
   providerName: string;
   aliasPattern: string;
   createdAt: string;
+}
+
+// Admin override: detach a specific raw declared string from wherever it
+// currently resolves and point it at a different (or brand-new) canonical
+// provider. Unlike ResolveProviderAliasRequest, this doesn't require a
+// pending UnmappedProviderVariant — it targets any already-resolved raw
+// string an admin has decided was mapped wrong.
+export interface RemapProviderRequest {
+  rawString: string;
+  targetProviderId?: number;
+  newProviderName?: string;
+}
+
+export interface RemapProviderResult {
+  normalizedPattern: string;
+  targetProviderId: number;
+  targetProviderName: string;
+  // TADIGs whose Ir21Connectivity was repointed. Reach List data is never
+  // touched here — raw provider text from Excel uploads isn't persisted
+  // anywhere, so there's no way to trace which reach-list rows came from
+  // this exact raw string.
+  affectedTadigs: string[];
 }

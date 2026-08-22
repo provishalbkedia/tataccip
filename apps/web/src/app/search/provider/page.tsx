@@ -63,6 +63,11 @@ export default function ProviderSearchPage() {
             { field: "providerType", headerName: "Type" },
             { field: "headquarters", headerName: "Headquarters" },
             { field: "website", headerName: "Website", flex: 1.2 },
+            { field: "stats.totalMnos", headerName: "Total MNOs" },
+            { field: "stats.totalCountries", headerName: "Countries" },
+            { field: "stats.sccpCount", headerName: "SCCP" },
+            { field: "stats.dsxCount", headerName: "DSX" },
+            { field: "stats.ipxCount", headerName: "IPX" },
           ]}
           onRowClicked={(row) => router.push(`/search/provider/${row.id}`)}
         />

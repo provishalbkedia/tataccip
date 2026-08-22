@@ -21,7 +21,11 @@ import { isConfidentSubstringMatch, normalizeCarrierName, splitCompositeProvider
 // placeholders, blank-value artifacts, or free-text notes that ended up
 // stored as a "provider" — never valid resolution targets, and reported as
 // unresolved instead of silently absorbing tokens into them.
-const KNOWN_JUNK_NAMES = new Set(["na", "n a", "sccp carrier", "unknown", "tbd", "not applicable"]);
+// Post-normalization forms — normalizeCarrierName already strips generic
+// words like "carrier"/"carriers", so "SCCP Carrier" normalizes to "sccp",
+// not "sccp carrier". Using the pre-strip form here would silently never
+// match anything.
+const KNOWN_JUNK_NAMES = new Set(["na", "n a", "sccp", "ipx", "grx", "dsx", "unknown", "tbd", "not applicable"]);
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
 const APPLY = process.argv.includes("--apply");

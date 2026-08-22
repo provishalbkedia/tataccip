@@ -7,30 +7,86 @@ const prisma = new PrismaClient();
 
 const SERVICES: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
+// The ~30 canonical Tier-1/Tier-2 international wholesale roaming carriers
+// this platform recognizes. Provider Search shows only these (plus any
+// genuinely distinct smaller/regional carrier an admin has separately
+// approved via the Unmapped Providers queue) — everything else observed in
+// source data is either an alias of one of these (see PROVIDER_ALIAS_SEED)
+// or a composite string that gets split at ingestion time before it ever
+// reaches ProviderMaster. Renaming an entry here changes what
+// cleanup-canonical-allowlist.ts treats as a merge target on its next run —
+// keep names in sync with that script's expectations.
 const PROVIDERS = [
   { providerName: "Tata Comm", providerType: "IPX Provider", headquarters: "Mumbai, India", website: "https://www.tatacommunications.com" },
-  { providerName: "Syniverse", providerType: "IPX Provider", headquarters: "Tampa, USA", website: "https://www.syniverse.com" },
   { providerName: "BICS", providerType: "IPX Provider", headquarters: "Brussels, Belgium", website: "https://www.bics.com" },
+  { providerName: "Syniverse", providerType: "IPX Provider", headquarters: "Tampa, USA", website: "https://www.syniverse.com" },
+  { providerName: "Orange", providerType: "IPX Provider", headquarters: "Paris, France", website: "https://www.orange-ic.com" },
+  { providerName: "Vodafone", providerType: "IPX Provider", headquarters: "Newbury, UK", website: "https://www.vodafone.com" },
   { providerName: "Comfone", providerType: "IPX Provider", headquarters: "Bern, Switzerland", website: "https://www.comfone.com" },
-  { providerName: "Orange International Carriers", providerType: "IPX Provider", headquarters: "Paris, France", website: "https://www.orange-ic.com" },
-  { providerName: "Telefonica Global Solutions", providerType: "IPX Provider", headquarters: "Madrid, Spain", website: "https://www.telefonica.com" },
-  { providerName: "Arelion", providerType: "IPX Provider", headquarters: "Stockholm, Sweden", website: "https://www.arelion.com" },
-  { providerName: "iBasis", providerType: "IPX Provider", headquarters: "Massachusetts, USA", website: "https://www.ibasis.com" },
   { providerName: "Telstra", providerType: "IPX Provider", headquarters: "Melbourne, Australia", website: "https://www.telstra.com" },
+  { providerName: "Arelion", providerType: "IPX Provider", headquarters: "Stockholm, Sweden", website: "https://www.arelion.com" },
+  { providerName: "China Mobile", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://cmi.chinamobile.com" },
+  { providerName: "China Telecom", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.chinatelecomglobal.com" },
+  { providerName: "China Unicom", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.chinaunicomglobal.com" },
+  { providerName: "Telefonica Global Solutions", providerType: "IPX Provider", headquarters: "Madrid, Spain", website: "https://www.telefonica.com" },
+  { providerName: "iBasis", providerType: "IPX Provider", headquarters: "Massachusetts, USA", website: "https://www.ibasis.com" },
+  { providerName: "Sparkle", providerType: "IPX Provider", headquarters: "Rome, Italy", website: "https://www.tisparkle.com" },
+  { providerName: "Deutsche Telekom", providerType: "IPX Provider", headquarters: "Bonn, Germany", website: "https://www.telekom.com" },
+  { providerName: "Singtel", providerType: "IPX Provider", headquarters: "Singapore", website: "https://www.singtel.com" },
+  { providerName: "NTT Communications", providerType: "IPX Provider", headquarters: "Tokyo, Japan", website: "https://www.ntt.com" },
+  { providerName: "Bayobab", providerType: "IPX Provider", headquarters: "Johannesburg, South Africa", website: "https://www.bayobab.com" },
+  { providerName: "Airtel", providerType: "IPX Provider", headquarters: "New Delhi, India", website: "https://www.airtel.in" },
+  { providerName: "Etisalat", providerType: "IPX Provider", headquarters: "Abu Dhabi, UAE", website: "https://www.eand.com" },
+  { providerName: "Ooredoo", providerType: "IPX Provider", headquarters: "Doha, Qatar", website: "https://www.ooredoo.com" },
+  { providerName: "STC", providerType: "IPX Provider", headquarters: "Riyadh, Saudi Arabia", website: "https://www.stc.com.sa" },
+  { providerName: "PCCW Global", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.pccwglobal.com" },
+  { providerName: "AT&T", providerType: "IPX Provider", headquarters: "Dallas, USA", website: "https://www.att.com" },
+  { providerName: "Verizon", providerType: "IPX Provider", headquarters: "New Jersey, USA", website: "https://www.verizon.com" },
+  { providerName: "Telenor Global Services", providerType: "IPX Provider", headquarters: "Oslo, Norway", website: "https://www.telenor.com" },
+  { providerName: "A1 Telekom Austria", providerType: "IPX Provider", headquarters: "Vienna, Austria", website: "https://www.a1.group" },
+  { providerName: "HGC", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.hgc.com.hk" },
+  { providerName: "Cable & Wireless", providerType: "IPX Provider", headquarters: "London, UK", website: "https://www.cwc.com" },
+  { providerName: "CITIC Telecom CPC", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.citictel-cpc.com" },
 ];
 
-// Baseline Tier-1 carrier aliases for the IR.21 XML provider-resolution
-// engine — raw name variants seen in vendor exports, mapped to the
-// canonical ProviderMaster row they should resolve to. Stored normalized
-// (via normalizeCarrierName, the same function ingestion uses) so lookups
-// at resolve-time always agree with what's seeded here.
+// Baseline Tier-1/Tier-2 carrier aliases for the IR.21 XML provider-
+// resolution engine — raw name variants actually seen in production source
+// data, mapped to the canonical ProviderMaster row they should resolve to.
+// Stored normalized (via normalizeCarrierName, the same function ingestion
+// uses) so lookups at resolve-time always agree with what's seeded here.
+// Deliberately excludes short, ambiguous abbreviations shared by more than
+// one real company (e.g. bare "TGS" collides between Telefonica Global
+// Solutions and Telenor Global Services) — those stay unresolved rather
+// than guessed.
 const PROVIDER_ALIAS_SEED: { providerName: string; variants: string[] }[] = [
-  { providerName: "BICS", variants: ["BICS", "Belgacom", "Belgacom BICS", "Belgacom International Carrier Services"] },
-  { providerName: "Tata Comm", variants: ["Tata", "TataComm", "Tata Communications", "Tata Communications Ltd", "Tata Canada", "Tata India"] },
-  { providerName: "Syniverse", variants: ["Syniverse", "Syniverse ANSI", "Syniverse Technologies Inc"] },
-  { providerName: "Orange International Carriers", variants: ["Orange", "Orange IC", "Orange Wholesale International", "FT"] },
-  { providerName: "Comfone", variants: ["Comfone", "Comfone AG"] },
-  { providerName: "Telstra", variants: ["Telstra", "Telstra Global", "Telstra International", "TG"] },
+  { providerName: "BICS", variants: ["BICS", "Belgacom", "Belgacom BICS", "Belgacom International Carrier Services", "Belgacon International Carrier Services"] },
+  { providerName: "Tata Comm", variants: ["Tata", "TataComm", "Tata Communications", "Tata Communications Ltd", "Tata Canada", "Tata India", "TCL", "Teleglobe"] },
+  { providerName: "Syniverse", variants: ["Syniverse", "Syniverse ANSI", "Syniverse Technologies Inc", "Aicent"] },
+  { providerName: "Orange", variants: ["Orange International Carriers", "Orange IC", "Orange Wholesale International", "FT", "France Telecom", "Orange INIS", "Orange International Networks Infrastructures and Services"] },
+  { providerName: "Vodafone", variants: ["Vodafone IPX", "Vodafone Roaming Services", "Vodafone Carrier Services", "VRS", "Vodafone Roaming Services S.a r.l"] },
+  { providerName: "Comfone", variants: ["Comfone AG", "Comfone Switzerland"] },
+  { providerName: "Telstra", variants: ["Telstra Global", "Telstra International", "Telstra International (Reach)", "Telstra Corporation Ltd"] },
+  { providerName: "Arelion", variants: ["Telia", "TeliaSonera", "Telia Sonera", "Telia Carrier", "Arelion Ltd", "Arelion Carrier"] },
+  { providerName: "China Mobile", variants: ["China Mobile International", "China Mobile International Limited", "CMI", "China Mobile IPX"] },
+  { providerName: "China Telecom", variants: ["China Telecom Global", "CTG", "China Telecom Macau"] },
+  { providerName: "China Unicom", variants: ["China Unicom Global"] },
+  { providerName: "Telefonica Global Solutions", variants: ["Telefonica", "Telefónica", "Telefonica Global Solutions SLU", "Telefonica Business Solutions", "Telefonica Moviles Espana"] },
+  { providerName: "iBasis", variants: ["iBasis GRX", "iBASIS TOFANE", "KPN iBasis"] },
+  { providerName: "Sparkle", variants: ["Telecom Italia Sparkle", "TIS", "TI Sparkle", "Telecom Italy Sparkle"] },
+  { providerName: "Deutsche Telekom", variants: ["Deutsche Telekom AG", "Deutsche Telekom Global Carrier", "T-Systems", "DT", "T-COM"] },
+  { providerName: "NTT Communications", variants: ["NTT Com", "NTT"] },
+  { providerName: "Bayobab", variants: ["Bayobab Africa", "MTN GlobalConnect"] },
+  { providerName: "Airtel", variants: ["Bharti Airtel", "Airtel India", "Bharti Airtel International"] },
+  { providerName: "Etisalat", variants: ["e&", "e and", "Emirates Telecommunications Corporation", "Etisalat IPX"] },
+  { providerName: "STC", variants: ["Saudi Telecom", "Saudi Telecom Company", "stc KSA"] },
+  { providerName: "PCCW Global", variants: ["PCCW", "PCCW Global HK Ltd", "Console Connect"] },
+  { providerName: "AT&T", variants: ["AT and T", "AT&T Mobility"] },
+  { providerName: "Verizon", variants: ["Verizon Partner Solutions"] },
+  { providerName: "Telenor Global Services", variants: ["Telenor", "Telenor Linx", "Telenor Global Wholesale", "Telenor Global Service"] },
+  { providerName: "A1 Telekom Austria", variants: ["A1 Telecom Austria", "A1 Telekom Austria AG", "A1 Group", "A1", "Telekom Austria"] },
+  { providerName: "HGC", variants: ["Hutchison Global Communication", "HGC Global Communications Limited", "Hong Kong Telecommunications", "HKT"] },
+  { providerName: "Cable & Wireless", variants: ["C&W", "C and W", "Liberty Latin America"] },
+  { providerName: "CITIC Telecom CPC", variants: ["CITIC", "CITIC Telecom", "CITIC Telecom International Ltd"] },
 ];
 
 // Sample/synthetic reference data — not sourced from any real GSMA IR.21 filing.
@@ -78,7 +134,7 @@ const IR21_ROWS: Ir21Row[] = [
 
   { tadig: "GBRVF", service: "SCCP", provider: "Comfone" },
   { tadig: "GBRVF", service: "DSX", provider: "Comfone" },
-  { tadig: "GBRVF", service: "IPX", provider: "Orange International Carriers" },
+  { tadig: "GBRVF", service: "IPX", provider: "Orange" },
 
   { tadig: "GBRO2", service: "SCCP", provider: "Tata Comm" },
   { tadig: "GBRO2", service: "DSX", provider: "Telefonica Global Solutions" },
@@ -92,9 +148,9 @@ const IR21_ROWS: Ir21Row[] = [
   { tadig: "DEUVD", service: "DSX", provider: "Syniverse" },
   { tadig: "DEUVD", service: "IPX", provider: "Syniverse" },
 
-  { tadig: "FRAOR", service: "SCCP", provider: "Orange International Carriers" },
-  { tadig: "FRAOR", service: "DSX", provider: "Orange International Carriers" },
-  { tadig: "FRAOR", service: "IPX", provider: "Orange International Carriers" },
+  { tadig: "FRAOR", service: "SCCP", provider: "Orange" },
+  { tadig: "FRAOR", service: "DSX", provider: "Orange" },
+  { tadig: "FRAOR", service: "IPX", provider: "Orange" },
 
   { tadig: "FRASF", service: "SCCP", provider: "Comfone" },
   { tadig: "FRASF", service: "DSX", provider: "Tata Comm" },
@@ -138,7 +194,7 @@ const REACHLIST_ROWS: ReachRow[] = [
 
   { tadig: "GBRVF", service: "SCCP", provider: "Comfone" },
   // Comfone reachlist omits GBRVF/DSX -> MISSING_IN_REACHLIST
-  { tadig: "GBRVF", service: "IPX", provider: "Orange International Carriers" },
+  { tadig: "GBRVF", service: "IPX", provider: "Orange" },
 
   { tadig: "GBRO2", service: "SCCP", provider: "Tata Comm" },
   { tadig: "GBRO2", service: "IPX", provider: "Tata Comm" },
@@ -154,9 +210,9 @@ const REACHLIST_ROWS: ReachRow[] = [
   // BICS independently claims DEUVD/IPX while IR21 says Syniverse -> PROVIDER_MISMATCH
   // Syniverse reachlist omits DEUVD/DSX -> MISSING_IN_REACHLIST
 
-  { tadig: "FRAOR", service: "SCCP", provider: "Orange International Carriers" },
-  { tadig: "FRAOR", service: "DSX", provider: "Orange International Carriers" },
-  { tadig: "FRAOR", service: "IPX", provider: "Orange International Carriers" },
+  { tadig: "FRAOR", service: "SCCP", provider: "Orange" },
+  { tadig: "FRAOR", service: "DSX", provider: "Orange" },
+  { tadig: "FRAOR", service: "IPX", provider: "Orange" },
 
   { tadig: "FRASF", service: "SCCP", provider: "Comfone" },
   { tadig: "FRASF", service: "IPX", provider: "BICS" },

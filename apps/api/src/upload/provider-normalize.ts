@@ -11,12 +11,20 @@ const LEGAL_SUFFIXES = new Set([
 
 /** Lowercase, strip punctuation, drop legal-entity/filler words, collapse
  * whitespace — e.g. "Belgacom International Carrier Services SA" -> "belgacom".
- * Shared by ProviderResolverService (ingestion-time lookups) and the seed
- * script (baseline alias data), so both always agree on the same patterns. */
+ * Diacritics are stripped to their base letter *before* the punctuation
+ * strip (Unicode NFD decomposition splits "ó" into "o" + a combining accent
+ * mark, which the punctuation regex below then discards). Without this,
+ * "Telefónica" mangles into "telef nica" (the accent treated as punctuation
+ * and replaced with a space) instead of matching "telefonica", silently
+ * missing real duplicates. Shared by ProviderResolverService (ingestion-time
+ * lookups) and the seed script (baseline alias data), so both always agree
+ * on the same patterns. */
 export function normalizeCarrierName(raw: string): string {
   const cleaned = raw
     .trim()
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((word) => word && !LEGAL_SUFFIXES.has(word));
@@ -29,11 +37,18 @@ export function normalizeCarrierName(raw: string): string {
 // of being split out as if they were a second provider.
 const PAREN_ANNOTATION_WORDS = new Set([
   "for", "only", "selected", "operators", "new", "old", "former", "current",
-  "ansi", "etsi", "itu", "sccp", "ipx", "grx", "asn",
+  "ansi", "etsi", "itu", "sccp", "ipx", "grx", "asn", "effective", "main",
+  "first", "second", "primary", "backup", "secondary",
 ]);
 
+// A parenthetical containing a comma is almost always a descriptive note
+// ("Effective from 22 March, 2021"), not "name, name" — a real second
+// carrier name in parens virtually never has an internal comma. Splitting
+// it further would fragment the note into garbage ("2021", "22 March").
 function isAnnotationParen(content: string): boolean {
-  const words = content.toLowerCase().split(/\s+/).filter(Boolean);
+  if (content.includes(",")) return true;
+  if (/\b\d{4}\b/.test(content)) return true; // years read as annotation, not a name
+  const words = content.toLowerCase().split(/[\s/]+/).filter(Boolean);
   return words.some((w) => PAREN_ANNOTATION_WORDS.has(w));
 }
 
@@ -44,6 +59,7 @@ function isAnnotationParen(content: string): boolean {
 const BARE_SUFFIX_WORDS = new Set([
   "inc", "incorporated", "ltd", "limited", "llc", "plc", "gmbh", "corp",
   "corporation", "co", "sa", "ag", "srl", "sarl", "bv", "nv", "pty", "pte",
+  "slu", "s.l.u", "sl",
 ]);
 
 /** Some source data (both IR.21 XML free-text fields and reach-list Excel
@@ -65,10 +81,12 @@ const BARE_SUFFIX_WORDS = new Set([
  * human look before trusting the automated split. */
 export function splitCompositeProviderNames(raw: string): string[] {
   const cleaned = raw
+    .replace(/\bn\s*\/\s*a\b/gi, " ") // "N/A" would otherwise slash-split into bogus "N" and "A" tokens
+    .replace(/\/?\s*for\s+(ansi|itu)\s+conversion\b/gi, "") // recurring GSMA-format-conversion annotation, not a carrier name
     .replace(/[[(]([^\])]*)[\])]/g, (_match, content: string) => (isAnnotationParen(content) ? " " : `, ${content},`))
     .replace(/\*/g, "")
-    .replace(/[-–—]\s*(primary|backup|secondary|load\s*sharing)\s*(provider|carrier)?/gi, "")
-    .replace(/\b(primary|backup|secondary)\s+(provider|carrier)\b/gi, "")
+    .replace(/[-–—]\s*(primary|backup|secondary|main|first|second|load\s*sharing)\s*(provider|carrier)?/gi, "")
+    .replace(/\b(primary|backup|secondary|main|first|second)\s+(provider|carrier)\b/gi, "")
     .replace(/\s+&\s+/g, ",")
     .replace(/\s+and\s+/gi, ",");
 
@@ -89,16 +107,29 @@ export function splitCompositeProviderNames(raw: string): string[] {
   return tokens;
 }
 
-/** Guards ProviderResolverService/cleanup-provider-master's substring
- * matching against short, low-signal patterns (e.g. a junk row literally
- * named "NA") swallowing unrelated names that merely contain the same
- * letters — "personal" contains "na", "china" contains "na", etc. Both
- * sides must be reasonably long relative to each other for a substring
- * match to count as a real alias relationship. */
+/** Guards ProviderResolverService/cleanup scripts' fuzzy matching against
+ * both false positives and false negatives. Matches on whole *words*, not
+ * raw characters — "na" (as its own word) matching inside "telecom
+ * personal" would be a raw-character false positive ("persoNAl" contains
+ * "na") but never happens here since "na" isn't one of "personal"'s words.
+ * Conversely "china mobile" correctly matches inside "china mobile
+ * international limited" as a contiguous word sequence, which a
+ * length-ratio check would reject even though it's a legitimate short-
+ * brand-name-vs-long-official-name match. Exact matches always pass
+ * regardless of length (deliberate, curated aliases can be short); fuzzy
+ * word-sequence matches require the shorter side to be at least 4
+ * characters, so stray short tokens don't match too eagerly. */
 export function isConfidentSubstringMatch(a: string, b: string): boolean {
   if (a === b) return true;
   const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
   if (shorter.length < 4) return false;
-  if (!longer.includes(shorter)) return false;
-  return shorter.length / longer.length >= 0.4;
+
+  const shortWords = shorter.split(" ").filter(Boolean);
+  const longWords = longer.split(" ").filter(Boolean);
+  if (shortWords.length === 0 || shortWords.length > longWords.length) return false;
+
+  for (let i = 0; i + shortWords.length <= longWords.length; i++) {
+    if (longWords.slice(i, i + shortWords.length).join(" ") === shorter) return true;
+  }
+  return false;
 }

@@ -121,6 +121,175 @@ export default function MnoDetailPage() {
                 </TableBody>
               </Table>
             </TableContainer>
+
+            {mno.connectivitySnapshot && (
+              <>
+                <Typography variant="h6" fontWeight={700} sx={{ mt: 4, mb: 2 }}>
+                  IR.21 XML Connectivity Detail
+                </Typography>
+                <Card>
+                  <CardContent>
+                    <Grid container spacing={3}>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Network Type
+                        </Typography>
+                        <Typography variant="body2">
+                          {mno.connectivitySnapshot.networkType ?? <em>Not declared</em>}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          MCC / MNC
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.mccMncList.length > 0 ? (
+                            mno.connectivitySnapshot.mccMncList.map((m) => <Chip key={m} label={m} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None parsed</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Primary SCCP Carrier
+                        </Typography>
+                        <Typography variant="body2">
+                          {mno.connectivitySnapshot.primarySccpCarrier ?? <em>Not declared</em>}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Backup SCCP Carriers
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.backupSccpCarriers.length > 0 ? (
+                            mno.connectivitySnapshot.backupSccpCarriers.map((c) => (
+                              <Chip key={c} label={c} size="small" variant="outlined" />
+                            ))
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          SCCP Point Codes (DPCs)
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.sccpPointCodes.length > 0 ? (
+                            mno.connectivitySnapshot.sccpPointCodes.map((c) => <Chip key={c} label={c} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          GRX/IPX Providers
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.grxIpxProviders.length > 0 ? (
+                            mno.connectivitySnapshot.grxIpxProviders.map((p) => <Chip key={p} label={p} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          LTE IPX Providers
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.lteIpxProviders.length > 0 ? (
+                            mno.connectivitySnapshot.lteIpxProviders.map((p) => <Chip key={p} label={p} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Inter-PMN Backbone IP Ranges
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.interPmnIpRanges.length > 0 ? (
+                            mno.connectivitySnapshot.interPmnIpRanges.map((ip) => <Chip key={ip} label={ip} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Diameter Edge Agent FQDN
+                        </Typography>
+                        <Typography variant="body2">
+                          {mno.connectivitySnapshot.diameterEdgeAgentFqdn ?? <em>Not declared</em>}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Authoritative DNS IPs
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.authoritativeDnsIps.length > 0 ? (
+                            mno.connectivitySnapshot.authoritativeDnsIps.map((ip) => <Chip key={ip} label={ip} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          EPC Realms
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                          {mno.connectivitySnapshot.epcRealms.length > 0 ? (
+                            mno.connectivitySnapshot.epcRealms.map((r) => <Chip key={r} label={r} size="small" />)
+                          ) : (
+                            <Typography variant="body2">
+                              <em>None</em>
+                            </Typography>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Roaming Contact Email
+                        </Typography>
+                        <Typography variant="body2">
+                          {mno.connectivitySnapshot.roamingContactEmail ?? <em>Not declared</em>}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={4}>
+                        <Typography variant="overline" color="text.secondary">
+                          Source File Version / Parsed
+                        </Typography>
+                        <Typography variant="body2">
+                          {mno.connectivitySnapshot.xmlFileVersion ?? "—"} · last parsed{" "}
+                          {new Date(mno.connectivitySnapshot.lastParsedAt).toLocaleString()}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </>
         )}
       </AppShell>

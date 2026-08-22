@@ -21,6 +21,7 @@ import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import RuleIcon from "@mui/icons-material/Rule";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
 
@@ -32,6 +33,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
   { href: "/comparison", label: "Comparison", icon: <CompareArrowsIcon /> },
   { href: "/admin/upload", label: "Admin Upload", icon: <UploadFileIcon />, roles: [Role.ADMIN] },
+  { href: "/admin/provider-aliases", label: "Unmapped Providers", icon: <RuleIcon />, roles: [Role.ADMIN] },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

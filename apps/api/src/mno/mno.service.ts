@@ -50,6 +50,7 @@ export class MnoService {
       include: {
         ir21Entries: { include: { service: true, provider: true } },
         reachlistEntries: { include: { service: true, provider: true } },
+        connectivity: true,
       },
     });
     if (!mno) throw new NotFoundException("MNO not found");
@@ -73,6 +74,25 @@ export class MnoService {
       mnc: mno.mnc,
       status: mno.status,
       connectivityMatrix: matrix,
+      connectivitySnapshot: mno.connectivity
+        ? {
+            networkType: mno.connectivity.networkType,
+            mccMncList: mno.connectivity.mccMncList,
+            primarySccpCarrier: mno.connectivity.primarySccpCarrier,
+            backupSccpCarriers: mno.connectivity.backupSccpCarriers,
+            sccpPointCodes: mno.connectivity.sccpPointCodes,
+            grxIpxProviders: mno.connectivity.grxIpxProviders,
+            lteIpxProviders: mno.connectivity.lteIpxProviders,
+            interPmnIpRanges: mno.connectivity.interPmnIpRanges,
+            diameterEdgeAgentFqdn: mno.connectivity.diameterEdgeAgentFqdn,
+            authoritativeDnsIps: mno.connectivity.authoritativeDnsIps,
+            epcRealms: mno.connectivity.epcRealms,
+            roamingContactEmail: mno.connectivity.roamingContactEmail,
+            xmlFileVersion: mno.connectivity.xmlFileVersion,
+            lastEffectiveDate: mno.connectivity.lastEffectiveDate?.toISOString() ?? null,
+            lastParsedAt: mno.connectivity.lastParsedAt.toISOString(),
+          }
+        : null,
     };
   }
 }

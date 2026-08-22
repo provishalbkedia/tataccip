@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient, ServiceName, Role } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { normalizeCarrierName } from "../src/upload/provider-normalize";
 
 const prisma = new PrismaClient();
 
@@ -15,6 +16,21 @@ const PROVIDERS = [
   { providerName: "Telefonica Global Solutions", providerType: "IPX Provider", headquarters: "Madrid, Spain", website: "https://www.telefonica.com" },
   { providerName: "Arelion", providerType: "IPX Provider", headquarters: "Stockholm, Sweden", website: "https://www.arelion.com" },
   { providerName: "iBasis", providerType: "IPX Provider", headquarters: "Massachusetts, USA", website: "https://www.ibasis.com" },
+  { providerName: "Telstra", providerType: "IPX Provider", headquarters: "Melbourne, Australia", website: "https://www.telstra.com" },
+];
+
+// Baseline Tier-1 carrier aliases for the IR.21 XML provider-resolution
+// engine — raw name variants seen in vendor exports, mapped to the
+// canonical ProviderMaster row they should resolve to. Stored normalized
+// (via normalizeCarrierName, the same function ingestion uses) so lookups
+// at resolve-time always agree with what's seeded here.
+const PROVIDER_ALIAS_SEED: { providerName: string; variants: string[] }[] = [
+  { providerName: "BICS", variants: ["BICS", "Belgacom", "Belgacom BICS", "Belgacom International Carrier Services"] },
+  { providerName: "Tata Comm", variants: ["Tata", "TataComm", "Tata Communications", "Tata Communications Ltd", "Tata Canada", "Tata India"] },
+  { providerName: "Syniverse", variants: ["Syniverse", "Syniverse ANSI", "Syniverse Technologies Inc"] },
+  { providerName: "Orange International Carriers", variants: ["Orange", "Orange IC", "Orange Wholesale International", "FT"] },
+  { providerName: "Comfone", variants: ["Comfone", "Comfone AG"] },
+  { providerName: "Telstra", variants: ["Telstra", "Telstra Global", "Telstra International", "TG"] },
 ];
 
 // Sample/synthetic reference data — not sourced from any real GSMA IR.21 filing.
@@ -185,6 +201,21 @@ async function main() {
       create: p,
     });
     providerRecords.set(p.providerName, rec);
+  }
+
+  console.log("Seeding provider aliases...");
+  for (const { providerName, variants } of PROVIDER_ALIAS_SEED) {
+    const provider = providerRecords.get(providerName);
+    if (!provider) continue;
+    for (const variant of variants) {
+      const aliasPattern = normalizeCarrierName(variant);
+      if (!aliasPattern) continue;
+      await prisma.providerAlias.upsert({
+        where: { aliasPattern },
+        update: { providerId: provider.id },
+        create: { providerId: provider.id, aliasPattern },
+      });
+    }
   }
 
   console.log("Seeding MNOs...");

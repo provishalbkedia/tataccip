@@ -9,6 +9,7 @@ import {
   CardContent,
   Chip,
   Grid,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
@@ -16,11 +17,12 @@ import {
   Typography,
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import FolderZipIcon from "@mui/icons-material/FolderZip";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
-import { Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
+import { BulkXmlUploadResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
 
 function UploadCard({
   title,
@@ -116,6 +118,107 @@ function UploadCard({
   );
 }
 
+function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
+  const [result, setResult] = React.useState<BulkXmlUploadResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function handleFiles(files: FileList) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    setProgress(0);
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((f) => formData.append("files", f));
+      const res = await api.postFormWithProgress<BulkXmlUploadResult>(
+        "/upload/ir21-xml",
+        formData,
+        setProgress,
+      );
+      setResult(res);
+      onUploaded();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <Card sx={{ height: "100%" }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight={700}>
+          IR.21 XML / ZIP Upload (Bulk)
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Native GSMA RAEX IR.21 XML ingestion — select up to ~1,000 .xml files, or a single .zip
+          archive containing them.
+        </Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+          Extracts SCCP/GRX-IPX/LTE connectivity, DNS, and contact info per MNO. Unrecognized
+          provider names are queued under Unmapped Providers instead of guessed.
+        </Typography>
+        <Button
+          variant="contained"
+          component="label"
+          startIcon={<FolderZipIcon />}
+          disabled={busy}
+        >
+          {busy ? "Uploading..." : "Choose .xml files or .zip"}
+          <input
+            ref={inputRef}
+            type="file"
+            hidden
+            multiple
+            accept=".xml,.zip"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files);
+            }}
+          />
+        </Button>
+
+        {busy && (
+          <Box sx={{ mt: 2 }}>
+            <LinearProgress variant={progress > 0 ? "determinate" : "indeterminate"} value={progress * 100} />
+            <Typography variant="caption" color="text.secondary">
+              {progress > 0 ? `Uploading — ${Math.round(progress * 100)}%` : "Uploading..."}
+            </Typography>
+          </Box>
+        )}
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {result && (
+          <Box sx={{ mt: 2 }}>
+            <Alert severity={result.filesFailed === 0 ? "success" : "warning"}>
+              {result.uploadHistory.status} — files processed: {result.filesProcessed}, MNOs updated:{" "}
+              {result.mnosUpdated}, unmapped variants found: {result.unmappedVariantsFound}
+              {result.filesFailed > 0 && `, files failed: ${result.filesFailed}`}
+            </Alert>
+            {result.errors.length > 0 && (
+              <List dense sx={{ maxHeight: 200, overflow: "auto", bgcolor: "background.default", mt: 1, borderRadius: 1 }}>
+                {result.errors.map((e, i) => (
+                  <ListItem key={i}>
+                    <ListItemText primary={e} primaryTypographyProps={{ variant: "caption" }} />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function UploadPage() {
   const [history, setHistory] = React.useState<UploadHistoryRow[]>([]);
 
@@ -151,6 +254,9 @@ export default function UploadPage() {
               columnsHint="Provider, Country, MNO, TADIG, Services"
               onUploaded={loadHistory}
             />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <XmlBatchUploadCard onUploaded={loadHistory} />
           </Grid>
         </Grid>
 

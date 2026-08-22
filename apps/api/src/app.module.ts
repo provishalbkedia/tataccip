@@ -7,6 +7,7 @@ import { ComparisonModule } from "./comparison/comparison.module";
 import { MnoModule } from "./mno/mno.module";
 import { ProviderModule } from "./provider/provider.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
+import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
     MnoModule,
     ProviderModule,
     DashboardModule,
+    ProviderAliasModule,
   ],
 })
 export class AppModule {}

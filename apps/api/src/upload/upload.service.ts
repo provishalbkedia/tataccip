@@ -1,16 +1,25 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ServiceName, UploadStatus } from "@prisma/client";
+import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeProviderName } from "./provider-alias";
-import { UploadResult } from "@ccip/shared-types";
+import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
+import { ProviderResolverService } from "./provider-resolver.service";
+import { BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
 
 @Injectable()
 export class UploadService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(UploadService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private xmlParser: Ir21XmlParserService,
+    private providerResolver: ProviderResolverService,
+  ) {}
 
   async getHistory() {
     return this.prisma.uploadHistory.findMany({ orderBy: { uploadTime: "desc" }, take: 100 });
@@ -212,6 +221,188 @@ export class UploadService {
     });
 
     return { uploadHistory: this.toHistoryRow(uploadHistory), errors };
+  }
+
+  /** Ingests a batch of GSMA IR.21 XML files (each may itself be a .zip of
+   * up to ~1,000 XMLs, expanded here). Unlike the Excel path, unresolved
+   * provider names are queued in UnmappedProviderVariant rather than
+   * auto-created, so bulk XML ingestion can't flood ProviderMaster with
+   * unverified names — see ProviderResolverService. */
+  async uploadIr21XmlBatch(
+    files: { buffer: Buffer; originalname: string }[],
+    uploadedBy: string,
+  ): Promise<BulkXmlUploadResult> {
+    const xmlFiles = this.expandZips(files);
+    const services = await this.serviceMap();
+    const errors: string[] = [];
+    let filesProcessed = 0;
+    let filesFailed = 0;
+    let mnosUpdated = 0;
+    let unmappedVariantsFound = 0;
+
+    for (const file of xmlFiles) {
+      let parsed: ParsedIr21Document;
+      try {
+        parsed = this.xmlParser.parse(file.buffer, file.originalname);
+      } catch (e) {
+        filesFailed++;
+        errors.push(`${file.originalname}: ${e instanceof Error ? e.message : "failed to parse"}`);
+        continue;
+      }
+
+      try {
+        unmappedVariantsFound += await this.applyParsedIr21(parsed, file.originalname, services);
+        filesProcessed++;
+        mnosUpdated++;
+      } catch (e) {
+        filesFailed++;
+        errors.push(`${file.originalname}: ${e instanceof Error ? e.message : "failed to apply"}`);
+        this.logger.error(`Failed applying ${file.originalname}`, e instanceof Error ? e.stack : undefined);
+      }
+    }
+
+    const status = this.deriveStatus(filesProcessed, filesFailed);
+    const uploadHistory = await this.prisma.uploadHistory.create({
+      data: {
+        filename: `IR.21 XML batch (${xmlFiles.length} file${xmlFiles.length === 1 ? "" : "s"})`,
+        uploadedBy,
+        recordsLoaded: filesProcessed,
+        status,
+        errorLog: errors.length ? errors.join("\n") : null,
+      },
+    });
+
+    return {
+      uploadHistory: this.toHistoryRow(uploadHistory),
+      filesProcessed,
+      filesFailed,
+      mnosUpdated,
+      unmappedVariantsFound,
+      errors,
+    };
+  }
+
+  /** Expands any .zip entries into their contained .xml files; passes .xml
+   * files through unchanged. */
+  private expandZips(
+    files: { buffer: Buffer; originalname: string }[],
+  ): { buffer: Buffer; originalname: string }[] {
+    const out: { buffer: Buffer; originalname: string }[] = [];
+    for (const file of files) {
+      if (file.originalname.toLowerCase().endsWith(".zip")) {
+        const zip = new AdmZip(file.buffer);
+        for (const entry of zip.getEntries()) {
+          if (!entry.isDirectory && entry.entryName.toLowerCase().endsWith(".xml")) {
+            out.push({ buffer: entry.getData(), originalname: entry.entryName });
+          }
+        }
+      } else if (file.originalname.toLowerCase().endsWith(".xml")) {
+        out.push(file);
+      }
+    }
+    return out;
+  }
+
+  /** Applies one parsed IR.21 XML document: upserts MnoMaster, resolves
+   * SCCP/IPX providers and upserts Ir21Connectivity for them (DSX isn't
+   * covered by the XML sections this parser extracts), and refreshes the
+   * MnoMasterConnectivity wide snapshot. Returns how many providers in this
+   * file were unmapped. */
+  private async applyParsedIr21(
+    parsed: ParsedIr21Document,
+    filename: string,
+    services: Map<ServiceName, number>,
+  ): Promise<number> {
+    let unmapped = 0;
+    const [mccStr, mncStr] = (parsed.mccMncPairs[0] ?? "").split("-");
+    const country = parsed.countryInitials || "UNKNOWN";
+
+    const mno = await this.prisma.mnoMaster.upsert({
+      where: { tadigCode: parsed.senderTadig },
+      update: {
+        operatorName: parsed.organisationName || undefined,
+        country: parsed.countryInitials || undefined,
+      },
+      create: {
+        operatorName: parsed.organisationName || parsed.senderTadig,
+        country,
+        mcc: mccStr || "000",
+        mnc: mncStr || "00",
+        countryCode: country.slice(0, 2).toUpperCase(),
+        tadigCode: parsed.senderTadig,
+      },
+    });
+
+    const effectiveDate = parsed.fileCreationTimestamp && !isNaN(Date.parse(parsed.fileCreationTimestamp))
+      ? new Date(parsed.fileCreationTimestamp)
+      : new Date();
+
+    if (parsed.primarySccpCarrier) {
+      const resolved = await this.providerResolver.resolve(parsed.primarySccpCarrier, "SCCP", parsed.senderTadig);
+      if (resolved.status === "resolved") {
+        await this.prisma.ir21Connectivity.upsert({
+          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("SCCP")! } },
+          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
+          create: {
+            mnoId: mno.id,
+            providerId: resolved.providerId,
+            serviceId: services.get("SCCP")!,
+            sourceFile: filename,
+            effectiveDate,
+          },
+        });
+      } else {
+        unmapped++;
+      }
+    }
+
+    const ipxCandidate = parsed.grxIpxProviders[0] ?? parsed.lteIpxProviders[0] ?? null;
+    if (ipxCandidate) {
+      const resolved = await this.providerResolver.resolve(ipxCandidate, "IPX", parsed.senderTadig);
+      if (resolved.status === "resolved") {
+        await this.prisma.ir21Connectivity.upsert({
+          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("IPX")! } },
+          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
+          create: {
+            mnoId: mno.id,
+            providerId: resolved.providerId,
+            serviceId: services.get("IPX")!,
+            sourceFile: filename,
+            effectiveDate,
+          },
+        });
+      } else {
+        unmapped++;
+      }
+    }
+
+    const snapshotFields = {
+      tadigCode: mno.tadigCode,
+      operatorName: mno.operatorName,
+      country: mno.country,
+      networkType: parsed.networkType,
+      mccMncList: parsed.mccMncPairs,
+      primarySccpCarrier: parsed.primarySccpCarrier,
+      backupSccpCarriers: parsed.backupSccpCarriers,
+      sccpPointCodes: parsed.sccpPointCodes,
+      grxIpxProviders: parsed.grxIpxProviders,
+      lteIpxProviders: parsed.lteIpxProviders,
+      interPmnIpRanges: parsed.interPmnIpRanges,
+      diameterEdgeAgentFqdn: parsed.diameterEdgeAgentFqdn,
+      authoritativeDnsIps: parsed.authoritativeDnsIps,
+      epcRealms: parsed.epcRealms,
+      roamingContactEmail: parsed.roamingContactEmail,
+      xmlFileVersion: parsed.schemaVersion,
+      lastEffectiveDate: effectiveDate,
+    };
+
+    await this.prisma.mnoMasterConnectivity.upsert({
+      where: { mnoId: mno.id },
+      update: { ...snapshotFields, lastParsedAt: new Date() },
+      create: { mnoId: mno.id, ...snapshotFields },
+    });
+
+    return unmapped;
   }
 
   private deriveStatus(recordsLoaded: number, errorCount: number): UploadStatus {

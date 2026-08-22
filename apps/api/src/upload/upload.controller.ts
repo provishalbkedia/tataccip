@@ -4,10 +4,11 @@ import {
   Get,
   Post,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { memoryStorage } from "multer";
 import { Role } from "@prisma/client";
@@ -19,6 +20,19 @@ import { UploadService } from "./upload.service";
 
 const fileUploadBody = {
   schema: { type: "object", properties: { file: { type: "string", format: "binary" } } },
+};
+
+// GSMA IR.21 XML batches: up to ~1,000 files (or one .zip containing that
+// many) per request. Files run a few KB-100KB each, so a generous per-file
+// cap still keeps a full batch well within a reasonable request size.
+const MAX_XML_BATCH_FILES = 1100;
+const MAX_XML_FILE_BYTES = 25 * 1024 * 1024;
+
+const xmlBatchUploadBody = {
+  schema: {
+    type: "object",
+    properties: { files: { type: "array", items: { type: "string", format: "binary" } } },
+  },
 };
 
 @ApiTags("upload")
@@ -52,6 +66,32 @@ export class UploadController {
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
     return this.uploadService.uploadReachlist(file.buffer, file.originalname, user.email);
+  }
+
+  @Post("ir21-xml")
+  @Roles(Role.ADMIN)
+  @ApiConsumes("multipart/form-data")
+  @ApiBody(xmlBatchUploadBody)
+  @UseInterceptors(
+    FilesInterceptor("files", MAX_XML_BATCH_FILES, {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_XML_FILE_BYTES },
+    }),
+  )
+  async uploadIr21XmlBatch(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: { email: string },
+  ) {
+    if (!files || files.length === 0) throw new BadRequestException("No files uploaded");
+    const invalid = files.find(
+      (f) => !f.originalname.toLowerCase().endsWith(".xml") && !f.originalname.toLowerCase().endsWith(".zip"),
+    );
+    if (invalid) throw new BadRequestException(`"${invalid.originalname}" is not a .xml or .zip file`);
+
+    return this.uploadService.uploadIr21XmlBatch(
+      files.map((f) => ({ buffer: f.buffer, originalname: f.originalname })),
+      user.email,
+    );
   }
 
   @Get("history")

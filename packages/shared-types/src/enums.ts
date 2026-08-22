@@ -35,3 +35,10 @@ export const UploadSourceType = {
   REACHLIST: "REACHLIST",
 } as const;
 export type UploadSourceType = (typeof UploadSourceType)[keyof typeof UploadSourceType];
+
+export const VariantStatus = {
+  PENDING: "PENDING",
+  RESOLVED: "RESOLVED",
+  IGNORED: "IGNORED",
+} as const;
+export type VariantStatus = (typeof VariantStatus)[keyof typeof VariantStatus];

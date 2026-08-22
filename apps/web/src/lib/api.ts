@@ -39,9 +39,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Same as api.postForm but reports upload progress (0-1) via XHR — plain
+ * fetch() doesn't expose upload progress events, which matters for a
+ * multi-hundred-file batch upload. */
+function postFormWithProgress<T>(path: string, formData: FormData, onProgress?: (ratio: number) => void): Promise<T> {
+  const token = getToken();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE_URL}${path}`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as T);
+      } else {
+        const message = (body as { message?: string | string[] })?.message ?? xhr.statusText;
+        reject(new ApiError(Array.isArray(message) ? message.join(", ") : message, xhr.status));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError("Network error", 0));
+    xhr.send(formData);
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
+  postFormWithProgress,
 };

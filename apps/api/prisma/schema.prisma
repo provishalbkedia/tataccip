@@ -31,6 +31,12 @@ enum UploadStatus {
   FAILED
 }
 
+enum VariantStatus {
+  PENDING
+  RESOLVED
+  IGNORED
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
@@ -40,34 +46,104 @@ model User {
 }
 
 model MnoMaster {
-  id          Int      @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   operatorName String
-  country     String
-  mcc         String
-  mnc         String
-  countryCode String
-  tadigCode   String   @unique
-  status      String   @default("ACTIVE")
-  createdDate DateTime @default(now())
+  country      String
+  mcc          String
+  mnc          String
+  countryCode  String
+  tadigCode    String   @unique
+  status       String   @default("ACTIVE")
+  createdDate  DateTime @default(now())
 
   ir21Entries      Ir21Connectivity[]
   reachlistEntries ProviderReachlist[]
   discrepancies    DataDiscrepancy[]
+  connectivity     MnoMasterConnectivity?
 
   @@index([operatorName])
   @@index([country])
 }
 
+// Wide denormalized per-MNO snapshot of the last-parsed IR.21 XML file,
+// beyond what the narrow (MNO, service) -> provider model captures — kept
+// alongside, not instead of, Ir21Connectivity (which the comparison engine
+// still reads). Refreshed on every XML re-ingestion of that MNO's TADIG.
+model MnoMasterConnectivity {
+  id                    String    @id @default(uuid())
+  mnoId                 Int       @unique
+  tadigCode             String    @unique
+  operatorName          String
+  country               String
+  networkType           String?
+  mccMncList            String[]
+  primarySccpCarrier    String?
+  backupSccpCarriers    String[]
+  sccpPointCodes        String[]
+  grxIpxProviders       String[]
+  lteIpxProviders       String[]
+  interPmnIpRanges      String[]
+  diameterEdgeAgentFqdn String?
+  authoritativeDnsIps   String[]
+  epcRealms             String[]
+  roamingContactEmail   String?
+  xmlFileVersion        String?
+  lastEffectiveDate     DateTime?
+  lastParsedAt          DateTime  @default(now())
+
+  mno MnoMaster @relation(fields: [mnoId], references: [id])
+}
+
 model ProviderMaster {
-  id            Int     @id @default(autoincrement())
-  providerName  String  @unique
-  providerType  String?
-  headquarters  String?
-  website       String?
+  id           Int     @id @default(autoincrement())
+  providerName String  @unique
+  providerType String?
+  headquarters String?
+  website      String?
 
   ir21Entries      Ir21Connectivity[]
   reachlistEntries ProviderReachlist[]
   discrepancies    DataDiscrepancy[]
+  aliases          ProviderAlias[]
+  unmappedVariants UnmappedProviderVariant[]
+}
+
+// A known raw-string spelling of a provider name (from an IR.21 XML export,
+// vendor tooling, etc.) mapped to its canonical ProviderMaster row. Looked up
+// via ProviderResolverService's in-memory cache during XML ingestion.
+model ProviderAlias {
+  id           String   @id @default(uuid())
+  providerId   Int
+  aliasPattern String   @unique
+  createdAt    DateTime @default(now())
+
+  provider ProviderMaster @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
+}
+
+// A raw carrier-name string encountered during XML ingestion that didn't
+// match any known ProviderAlias. Queued for an admin to map to a
+// ProviderMaster (or an existing one) via POST /provider-aliases/resolve,
+// rather than auto-creating a ProviderMaster from unverified XML text.
+model UnmappedProviderVariant {
+  id                 String        @id @default(uuid())
+  rawCarrierName     String
+  normalizedPattern  String        @unique
+  detectedService    ServiceName
+  // Every distinct TADIG whose file contained this raw carrier-name string,
+  // across the whole batch — not just the most recent one — so resolving
+  // the variant can retroactively backfill all of them, not just one.
+  affectedTadigs     String[]
+  occurrenceCount    Int           @default(1)
+  status             VariantStatus @default(PENDING)
+  resolvedProviderId Int?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  resolvedProvider ProviderMaster? @relation(fields: [resolvedProviderId], references: [id])
+
+  @@index([status])
 }
 
 model Service {
@@ -116,14 +192,14 @@ model ProviderReachlist {
 }
 
 model DataDiscrepancy {
-  id              Int              @id @default(autoincrement())
+  id              Int             @id @default(autoincrement())
   mnoId           Int
   providerId      Int?
   service         ServiceName
   ir21Status      String
   reachlistStatus String
   discrepancyType DiscrepancyType
-  computedAt      DateTime         @default(now())
+  computedAt      DateTime        @default(now())
 
   mno      MnoMaster       @relation(fields: [mnoId], references: [id])
   provider ProviderMaster? @relation(fields: [providerId], references: [id])

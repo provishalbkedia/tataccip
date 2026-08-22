@@ -1,4 +1,4 @@
-import { DiscrepancyType, Role, ServiceName, UploadStatus } from "./enums";
+import { DiscrepancyType, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
 
 export interface LoginRequest {
   email: string;
@@ -40,8 +40,27 @@ export interface ConnectivityMatrixRow {
   reachlistProviders: string[];
 }
 
+export interface MnoConnectivitySnapshot {
+  networkType: string | null;
+  mccMncList: string[];
+  primarySccpCarrier: string | null;
+  backupSccpCarriers: string[];
+  sccpPointCodes: string[];
+  grxIpxProviders: string[];
+  lteIpxProviders: string[];
+  interPmnIpRanges: string[];
+  diameterEdgeAgentFqdn: string | null;
+  authoritativeDnsIps: string[];
+  epcRealms: string[];
+  roamingContactEmail: string | null;
+  xmlFileVersion: string | null;
+  lastEffectiveDate: string | null;
+  lastParsedAt: string;
+}
+
 export interface MnoDetail extends MnoSummary {
   connectivityMatrix: ConnectivityMatrixRow[];
+  connectivitySnapshot: MnoConnectivitySnapshot | null;
 }
 
 export interface ProviderSummary {
@@ -110,4 +129,40 @@ export interface UploadHistoryRow {
 export interface UploadResult {
   uploadHistory: UploadHistoryRow;
   errors: string[];
+}
+
+export interface BulkXmlUploadResult {
+  uploadHistory: UploadHistoryRow;
+  filesProcessed: number;
+  filesFailed: number;
+  mnosUpdated: number;
+  unmappedVariantsFound: number;
+  errors: string[];
+}
+
+export interface UnmappedProviderVariantRow {
+  id: string;
+  rawCarrierName: string;
+  normalizedPattern: string;
+  detectedService: ServiceName;
+  affectedTadigs: string[];
+  occurrenceCount: number;
+  status: VariantStatus;
+  resolvedProviderId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolveProviderAliasRequest {
+  variantId: string;
+  providerId?: number;
+  newProviderName?: string;
+}
+
+export interface ProviderAliasRow {
+  id: string;
+  providerId: number;
+  providerName: string;
+  aliasPattern: string;
+  createdAt: string;
 }

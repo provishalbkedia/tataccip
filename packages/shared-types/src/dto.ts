@@ -32,6 +32,13 @@ export interface MnoSummary {
   mcc: string;
   mnc: string;
   status: string;
+  // Populated once this MNO has had an IR.21 XML ingested; null for MNOs
+  // known only via seed data or a reach-list mention.
+  networkType: string | null;
+  primarySccpCarrier: string | null;
+  grxIpxProvider: string | null;
+  lteIpxProvider: string | null;
+  lastEffectiveDate: string | null;
 }
 
 export interface ConnectivityMatrixRow {
@@ -52,7 +59,9 @@ export interface MnoConnectivitySnapshot {
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];
   epcRealms: string[];
-  roamingContactEmail: string | null;
+  roamingCoordinatorEmail: string | null;
+  ts24x7Email: string | null;
+  distributionEmail: string | null;
   xmlFileVersion: string | null;
   lastEffectiveDate: string | null;
   lastParsedAt: string;

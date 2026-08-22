@@ -21,7 +21,9 @@ export interface ParsedIr21Document {
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];
   epcRealms: string[];
-  roamingContactEmail: string | null;
+  roamingCoordinatorEmail: string | null;
+  ts24x7Email: string | null;
+  distributionEmail: string | null;
 }
 
 function isLeaf(v: unknown): v is string | number {
@@ -151,7 +153,7 @@ export class Ir21XmlParserService {
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),
       authoritativeDnsIps: collectTexts(dnsScope, [/^ipaddress$/i]),
       epcRealms: collectTexts(lteScope, [/^epcrealmsforroaming$/i]),
-      roamingContactEmail: this.extractContactEmail(contactScope, doc),
+      ...this.extractContactEmails(contactScope, doc),
     };
   }
 
@@ -208,21 +210,24 @@ export class Ir21XmlParserService {
     return { primary, backups: Array.from(new Set(backups)), pointCodes: Array.from(new Set(pointCodes)) };
   }
 
-  /** Priority: 24x7 contact email > main contact email > roaming
-   * coordinator email > any email in the contact section > distribution
-   * list email as a last resort. */
-  private extractContactEmail(contactScope: unknown, doc: unknown): string | null {
+  /** The three operational contact channels IR.21 tracks separately:
+   * the named roaming coordinator (RoamingCoordinator/*Person), the 24x7
+   * support team (TS24x7Contact, falling back to MainContact — some files
+   * only staff one team for both), and the distribution-list address every
+   * IR.21 update is broadcast to. */
+  private extractContactEmails(
+    contactScope: unknown,
+    doc: unknown,
+  ): { roamingCoordinatorEmail: string | null; ts24x7Email: string | null; distributionEmail: string | null } {
+    const coordinator = scopeTo(contactScope, [/^roamingcoordinator$/i]);
     const ts247 = scopeTo(contactScope, [/^ts24x7contact$/i]);
     const main = scopeTo(contactScope, [/^maincontact$/i]);
-    const coordinator = scopeTo(contactScope, [/^roamingcoordinator$/i]);
 
-    return (
-      firstText(ts247, [/^email$/i]) ??
-      firstText(main, [/^email$/i]) ??
-      firstText(coordinator, [/^email$/i]) ??
-      firstText(contactScope, [/^email$/i]) ??
-      firstText(doc, [/^ir21distributionemailaddress$/i])
-    );
+    return {
+      roamingCoordinatorEmail: firstText(coordinator, [/^email$/i]),
+      ts24x7Email: firstText(ts247, [/^email$/i]) ?? firstText(main, [/^email$/i]),
+      distributionEmail: firstText(doc, [/^ir21distributionemailaddress$/i]),
+    };
   }
 
   /** Fallback when a file has no SenderTADIG/TADIGCode element at all:

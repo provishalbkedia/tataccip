@@ -15,7 +15,11 @@ export class ComparisonService {
 
   /** Rebuilds DataDiscrepancy from scratch by diffing IR21Connectivity
    * against ProviderReachlist per (MNO, service). See plan doc for the
-   * three discrepancy types this produces. */
+   * three discrepancy types this produces. IR21Connectivity is now written
+   * exclusively by IR.21 XML ingestion (UploadService.applyParsedIr21) —
+   * the legacy Excel IR.21 upload that used to also write here has been
+   * removed — so this diff already reflects the XML-sourced provider
+   * relationships without needing changes here. */
   async run(): Promise<{ discrepancyCount: number }> {
     const [ir21Rows, reachRows] = await Promise.all([
       this.prisma.ir21Connectivity.findMany({ include: { provider: true } }),

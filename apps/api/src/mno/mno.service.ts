@@ -9,8 +9,30 @@ const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 export class MnoService {
   constructor(private prisma: PrismaService) {}
 
+  /** Searches MnoMaster (the canonical operator identity table — every MNO
+   * the platform knows about, from any ingestion path) enriched with
+   * MnoMasterConnectivity where an IR.21 XML has been ingested for it. MNOs
+   * without a connectivity snapshot yet still appear, with those columns
+   * null, rather than disappearing from search until someone uploads their
+   * XML — the connectivity table is an enrichment layer, not the operator
+   * registry. `q` free-text matches across TADIG/operator/country plus the
+   * XML-sourced networkType, primarySccpCarrier, and the GRX/IPX/LTE
+   * provider name arrays (via a raw substring-on-array-element query —
+   * Prisma's array filters only support exact-element matches). */
   async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string }): Promise<MnoSummary[]> {
     const { q, tadig, country, mcc, mnc } = params;
+
+    let arrayMatchMnoIds: number[] = [];
+    if (q) {
+      const rows = await this.prisma.$queryRaw<{ mnoId: number }[]>`
+        SELECT "mnoId" FROM "MnoMasterConnectivity"
+        WHERE EXISTS (SELECT 1 FROM unnest("mccMncList") x WHERE x ILIKE ${"%" + q + "%"})
+           OR EXISTS (SELECT 1 FROM unnest("grxIpxProviders") x WHERE x ILIKE ${"%" + q + "%"})
+           OR EXISTS (SELECT 1 FROM unnest("lteIpxProviders") x WHERE x ILIKE ${"%" + q + "%"})
+      `;
+      arrayMatchMnoIds = rows.map((r) => r.mnoId);
+    }
+
     const rows = await this.prisma.mnoMaster.findMany({
       where: {
         AND: [
@@ -20,6 +42,9 @@ export class MnoService {
                   { operatorName: { contains: q, mode: "insensitive" } },
                   { tadigCode: { contains: q, mode: "insensitive" } },
                   { country: { contains: q, mode: "insensitive" } },
+                  { connectivity: { networkType: { contains: q, mode: "insensitive" } } },
+                  { connectivity: { primarySccpCarrier: { contains: q, mode: "insensitive" } } },
+                  ...(arrayMatchMnoIds.length > 0 ? [{ id: { in: arrayMatchMnoIds } }] : []),
                 ],
               }
             : {},
@@ -29,6 +54,7 @@ export class MnoService {
           mnc ? { mnc } : {},
         ],
       },
+      include: { connectivity: true },
       orderBy: { operatorName: "asc" },
       take: 200,
     });
@@ -41,6 +67,11 @@ export class MnoService {
       mcc: r.mcc,
       mnc: r.mnc,
       status: r.status,
+      networkType: r.connectivity?.networkType ?? null,
+      primarySccpCarrier: r.connectivity?.primarySccpCarrier ?? null,
+      grxIpxProvider: r.connectivity?.grxIpxProviders[0] ?? null,
+      lteIpxProvider: r.connectivity?.lteIpxProviders[0] ?? null,
+      lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
     }));
   }
 
@@ -73,6 +104,11 @@ export class MnoService {
       mcc: mno.mcc,
       mnc: mno.mnc,
       status: mno.status,
+      networkType: mno.connectivity?.networkType ?? null,
+      primarySccpCarrier: mno.connectivity?.primarySccpCarrier ?? null,
+      grxIpxProvider: mno.connectivity?.grxIpxProviders[0] ?? null,
+      lteIpxProvider: mno.connectivity?.lteIpxProviders[0] ?? null,
+      lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
       connectivityMatrix: matrix,
       connectivitySnapshot: mno.connectivity
         ? {
@@ -87,7 +123,9 @@ export class MnoService {
             diameterEdgeAgentFqdn: mno.connectivity.diameterEdgeAgentFqdn,
             authoritativeDnsIps: mno.connectivity.authoritativeDnsIps,
             epcRealms: mno.connectivity.epcRealms,
-            roamingContactEmail: mno.connectivity.roamingContactEmail,
+            roamingCoordinatorEmail: mno.connectivity.roamingCoordinatorEmail,
+            ts24x7Email: mno.connectivity.ts24x7Email,
+            distributionEmail: mno.connectivity.distributionEmail,
             xmlFileVersion: mno.connectivity.xmlFileVersion,
             lastEffectiveDate: mno.connectivity.lastEffectiveDate?.toISOString() ?? null,
             lastParsedAt: mno.connectivity.lastParsedAt.toISOString(),

@@ -38,14 +38,14 @@ export default function MnoSearchPage() {
     <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-          MNO Search
+          Operator Search
         </Typography>
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Operator, TADIG, or Country"
+                label="Search by Operator, TADIG, Country, MCC/MNC, or Carrier..."
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -82,8 +82,15 @@ export default function MnoSearchPage() {
             { field: "operatorName", headerName: "Operator Name", flex: 1.5 },
             { field: "country", headerName: "Country" },
             { field: "tadigCode", headerName: "TADIG" },
-            { field: "mcc", headerName: "MCC" },
-            { field: "mnc", headerName: "MNC" },
+            { field: "networkType", headerName: "Network Type" },
+            { field: "primarySccpCarrier", headerName: "Primary SCCP Carrier", flex: 1.2 },
+            { field: "grxIpxProvider", headerName: "GRX/IPX Provider", flex: 1.2 },
+            { field: "lteIpxProvider", headerName: "LTE IPX Provider", flex: 1.2 },
+            {
+              field: "lastEffectiveDate",
+              headerName: "Last Effective Date",
+              valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : ""),
+            },
             { field: "status", headerName: "Status" },
           ]}
           onRowClicked={(row) => router.push(`/search/mno/${row.id}`)}

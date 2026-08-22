@@ -238,13 +238,7 @@ export default function UploadPage() {
         </Typography>
         <Grid container spacing={2} sx={{ mb: 4 }}>
           <Grid item xs={12} md={6}>
-            <UploadCard
-              title="IR.21 Upload"
-              description="Upload the GSMA IR.21-derived connectivity spreadsheet."
-              endpoint="/upload/ir21"
-              columnsHint="Country, Operator, TADIG, SCCP Provider, DSX Provider, IPX Provider"
-              onUploaded={loadHistory}
-            />
+            <XmlBatchUploadCard onUploaded={loadHistory} />
           </Grid>
           <Grid item xs={12} md={6}>
             <UploadCard
@@ -254,9 +248,6 @@ export default function UploadPage() {
               columnsHint="Provider, Country, MNO, TADIG, Services"
               onUploaded={loadHistory}
             />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <XmlBatchUploadCard onUploaded={loadHistory} />
           </Grid>
         </Grid>
 

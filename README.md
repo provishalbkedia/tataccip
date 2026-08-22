@@ -33,7 +33,7 @@ Open the forwarded port 3000 from the **Ports** tab. Port 4000 (the API) must st
 
 ## What's here
 
-- **apps/api** — NestJS + Prisma + PostgreSQL. JWT auth (RBAC: ADMIN/ANALYST/VIEWER), Excel upload for IR.21 and Reach List data, the comparison engine, MNO/Provider search, dashboard metrics. Swagger at `/api/docs`.
+- **apps/api** — NestJS + Prisma + PostgreSQL. JWT auth (RBAC: ADMIN/ANALYST/VIEWER), native GSMA IR.21 XML/ZIP bulk ingestion, Excel upload for Reach List data (Excel IR.21 upload has been retired in favor of native XML parsing), the comparison engine, Operator/Provider search, dashboard metrics. Swagger at `/api/docs`.
 - **apps/web** — Next.js (App Router) + MUI + Tailwind + AG Grid. Login, dashboard, admin upload, MNO search, provider search, comparison results.
 - **packages/shared-types** — DTOs/enums shared between both apps.
 - **sample-data/** — generator script + sample `.xlsx` fixtures for manually testing the upload flow.
@@ -73,7 +73,7 @@ npm run dev:web   # http://localhost:3000
 
 After seeding, log in and open **Comparison** → **Run Comparison** (admin only) to populate `DataDiscrepancy` from the seeded IR21/reachlist rows — it's intentionally left empty until first run so the comparison engine's behavior is visible rather than baked into the seed.
 
-To test the upload flow, use the generated fixtures in `sample-data/` (`sample-ir21.xlsx`, `sample-reachlist.xlsx`) on the Admin Upload page — they include a few intentionally invalid/duplicate rows to demonstrate the validation reporting.
+To test the Reach List upload flow, use the generated fixture in `sample-data/` (`sample-reachlist.xlsx`) on the Admin Upload page — it includes a few intentionally invalid/duplicate rows to demonstrate the validation reporting. IR.21 ingestion is tested by uploading real GSMA IR.21 XML files (or a .zip of them) via the same page's XML/ZIP upload card.
 
 ## Regenerating sample Excel fixtures
 

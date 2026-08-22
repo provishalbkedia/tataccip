@@ -42,19 +42,6 @@ const xmlBatchUploadBody = {
 export class UploadController {
   constructor(private uploadService: UploadService) {}
 
-  @Post("ir21")
-  @Roles(Role.ADMIN)
-  @ApiConsumes("multipart/form-data")
-  @ApiBody(fileUploadBody)
-  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage() }))
-  async uploadIr21(
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: { email: string },
-  ) {
-    if (!file) throw new BadRequestException("No file uploaded");
-    return this.uploadService.uploadIr21(file.buffer, file.originalname, user.email);
-  }
-
   @Post("reachlist")
   @Roles(Role.ADMIN)
   @ApiConsumes("multipart/form-data")

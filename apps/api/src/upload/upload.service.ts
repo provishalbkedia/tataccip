@@ -25,100 +25,6 @@ export class UploadService {
     return this.prisma.uploadHistory.findMany({ orderBy: { uploadTime: "desc" }, take: 100 });
   }
 
-  async uploadIr21(buffer: Buffer, filename: string, uploadedBy: string): Promise<UploadResult> {
-    const rows = await readFirstSheetAsRows(buffer);
-    const services = await this.serviceMap();
-    const providerCache = await this.providerCache();
-    const errors: string[] = [];
-    const seenTadigs = new Set<string>();
-    let recordsLoaded = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowNum = i + 2;
-      const row = rows[i];
-      const country = col(row, "country");
-      const operator = col(row, "operator", "operator name");
-      const tadigRaw = col(row, "tadig", "tadig code");
-      const sccpProvider = col(row, "sccp provider", "sccp");
-      const dsxProvider = col(row, "dsx provider", "dsx");
-      const ipxProvider = col(row, "ipx provider", "ipx");
-
-      const tadig = tadigRaw.trim().toUpperCase();
-      if (!operator || !tadig) {
-        errors.push(`Row ${rowNum}: missing Operator or TADIG, skipped.`);
-        continue;
-      }
-      if (!TADIG_REGEX.test(tadig)) {
-        errors.push(`Row ${rowNum}: invalid TADIG "${tadig}", skipped.`);
-        continue;
-      }
-      if (seenTadigs.has(tadig)) {
-        errors.push(`Row ${rowNum}: duplicate TADIG "${tadig}" in file, skipped.`);
-        continue;
-      }
-      seenTadigs.add(tadig);
-
-      const existingMno = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: tadig } });
-      if (existingMno && country && existingMno.country !== country) {
-        errors.push(
-          `Row ${rowNum}: country mismatch for TADIG "${tadig}" (existing="${existingMno.country}", upload="${country}") — updated to uploaded value.`,
-        );
-      }
-
-      const mno = await this.prisma.mnoMaster.upsert({
-        where: { tadigCode: tadig },
-        update: {
-          operatorName: operator,
-          country: country || existingMno?.country || "UNKNOWN",
-        },
-        create: {
-          operatorName: operator,
-          country: country || "UNKNOWN",
-          mcc: col(row, "mcc") || "000",
-          mnc: col(row, "mnc") || "00",
-          countryCode: col(row, "country code") || country.slice(0, 2).toUpperCase() || "XX",
-          tadigCode: tadig,
-        },
-      });
-
-      const serviceProviders: [ServiceName, string][] = [
-        ["SCCP", sccpProvider],
-        ["DSX", dsxProvider],
-        ["IPX", ipxProvider],
-      ];
-
-      for (const [serviceName, providerRaw] of serviceProviders) {
-        if (!providerRaw) continue;
-        const providerId = await this.resolveProvider(providerRaw, providerCache);
-        await this.prisma.ir21Connectivity.upsert({
-          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get(serviceName)! } },
-          update: { providerId, sourceFile: filename, effectiveDate: new Date() },
-          create: {
-            mnoId: mno.id,
-            providerId,
-            serviceId: services.get(serviceName)!,
-            sourceFile: filename,
-            effectiveDate: new Date(),
-          },
-        });
-        recordsLoaded++;
-      }
-    }
-
-    const status = this.deriveStatus(recordsLoaded, errors.length);
-    const uploadHistory = await this.prisma.uploadHistory.create({
-      data: {
-        filename,
-        uploadedBy,
-        recordsLoaded,
-        status,
-        errorLog: errors.length ? errors.join("\n") : null,
-      },
-    });
-
-    return { uploadHistory: this.toHistoryRow(uploadHistory), errors };
-  }
-
   async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string): Promise<UploadResult> {
     const rows = await readFirstSheetAsRows(buffer);
     const services = await this.serviceMap();
@@ -391,7 +297,9 @@ export class UploadService {
       diameterEdgeAgentFqdn: parsed.diameterEdgeAgentFqdn,
       authoritativeDnsIps: parsed.authoritativeDnsIps,
       epcRealms: parsed.epcRealms,
-      roamingContactEmail: parsed.roamingContactEmail,
+      roamingCoordinatorEmail: parsed.roamingCoordinatorEmail,
+      ts24x7Email: parsed.ts24x7Email,
+      distributionEmail: parsed.distributionEmail,
       xmlFileVersion: parsed.schemaVersion,
       lastEffectiveDate: effectiveDate,
     };

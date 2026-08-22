@@ -182,7 +182,7 @@ export default function MnoDetailPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Service</TableCell>
-                    <TableCell>XML-Declared Provider</TableCell>
+                    <TableCell>As per IR.21 Database</TableCell>
                     <TableCell>Reach List Claimed Provider(s)</TableCell>
                   </TableRow>
                 </TableHead>

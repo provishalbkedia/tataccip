@@ -37,8 +37,8 @@ export interface MnoSummary {
   networkType: string | null;
   primarySccpCarrier: string | null;
   backupSccpCarriers: string[];
-  grxIpxProvider: string | null;
-  lteIpxProvider: string | null;
+  grxIpxProviders: string[];
+  lteIpxProviders: string[];
   lastEffectiveDate: string | null;
 }
 

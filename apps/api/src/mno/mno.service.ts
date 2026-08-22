@@ -73,8 +73,8 @@ export class MnoService {
       networkType: r.connectivity?.networkType ?? null,
       primarySccpCarrier: r.connectivity?.primarySccpCarrier ?? null,
       backupSccpCarriers: r.connectivity?.backupSccpCarriers ?? [],
-      grxIpxProvider: r.connectivity?.grxIpxProviders[0] ?? null,
-      lteIpxProvider: r.connectivity?.lteIpxProviders[0] ?? null,
+      grxIpxProviders: r.connectivity?.grxIpxProviders ?? [],
+      lteIpxProviders: r.connectivity?.lteIpxProviders ?? [],
       lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
     }));
   }
@@ -111,8 +111,8 @@ export class MnoService {
       networkType: mno.connectivity?.networkType ?? null,
       primarySccpCarrier: mno.connectivity?.primarySccpCarrier ?? null,
       backupSccpCarriers: mno.connectivity?.backupSccpCarriers ?? [],
-      grxIpxProvider: mno.connectivity?.grxIpxProviders[0] ?? null,
-      lteIpxProvider: mno.connectivity?.lteIpxProviders[0] ?? null,
+      grxIpxProviders: mno.connectivity?.grxIpxProviders ?? [],
+      lteIpxProviders: mno.connectivity?.lteIpxProviders ?? [],
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
       connectivityMatrix: matrix,
       connectivitySnapshot: mno.connectivity

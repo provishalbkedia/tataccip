@@ -10,6 +10,16 @@ import DataGrid from "@/components/DataGrid";
 import { api } from "@/lib/api";
 import { MnoSummary } from "@ccip/shared-types";
 
+/** Renders a string-array cell as a comma-joined list, "-" when empty/absent.
+ * Defensive about the shape since it's an ag-grid valueFormatter, not a
+ * type-checked call site. */
+function joinOrDash(params: { value: unknown }): string {
+  const v = params.value;
+  if (!v) return "-";
+  if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "-";
+  return String(v);
+}
+
 export default function MnoSearchPage() {
   const router = useRouter();
   const [q, setQ] = React.useState("");
@@ -88,10 +98,20 @@ export default function MnoSearchPage() {
               field: "backupSccpCarriers",
               headerName: "Backup SCCP Provider(s)",
               flex: 1.4,
-              valueFormatter: (p) => (p.value && p.value.length > 0 ? p.value.join(", ") : "-"),
+              valueFormatter: joinOrDash,
             },
-            { field: "grxIpxProvider", headerName: "GRX/IPX Provider", flex: 1.2 },
-            { field: "lteIpxProvider", headerName: "LTE IPX Provider", flex: 1.2 },
+            {
+              field: "grxIpxProviders",
+              headerName: "GRX/IPX Provider(s)",
+              flex: 1.4,
+              valueFormatter: joinOrDash,
+            },
+            {
+              field: "lteIpxProviders",
+              headerName: "LTE IPX Provider(s)",
+              flex: 1.4,
+              valueFormatter: joinOrDash,
+            },
             {
               field: "lastEffectiveDate",
               headerName: "Last Effective Date",

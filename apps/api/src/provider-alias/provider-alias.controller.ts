@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -38,5 +38,11 @@ export class ProviderAliasController {
   @Roles(Role.ADMIN)
   merge(@Body() dto: MergeProviderDto) {
     return this.providerAliasService.mergeProvider(dto);
+  }
+
+  @Delete("provider/:id")
+  @Roles(Role.ADMIN)
+  deleteProvider(@Param("id", ParseIntPipe) id: number) {
+    return this.providerAliasService.deleteProvider(id);
   }
 }

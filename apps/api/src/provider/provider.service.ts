@@ -22,8 +22,16 @@ export class ProviderService {
    * `source=IR21`/`REACH_LIST` returns one row per provider with that
    * single source's footprint. `source=BOTH` returns *two* rows per
    * provider — one IR21-only, one REACH_LIST-only — so the two footprints
-   * can be compared side by side instead of blended into one union number. */
-  async search(q?: string, source: ProviderStatsSource = ProviderStatsSource.BOTH): Promise<ProviderSummary[]> {
+   * can be compared side by side instead of blended into one union number.
+   * `includeEmpty` bypasses the zero-MNO filter below — admin tooling (e.g.
+   * locating a duplicate/junk provider to merge or delete) needs to find a
+   * row regardless of its current footprint, not just what's normally
+   * shown to end users. */
+  async search(
+    q?: string,
+    source: ProviderStatsSource = ProviderStatsSource.BOTH,
+    includeEmpty = false,
+  ): Promise<ProviderSummary[]> {
     let aliasMatchIds: number[] = [];
     if (q) {
       const normalized = normalizeCarrierName(q);
@@ -70,8 +78,8 @@ export class ProviderService {
       for (const r of providers) {
         const ir21 = ir21Stats.get(r.id) ?? EMPTY_STATS;
         const reach = reachStats.get(r.id) ?? EMPTY_STATS;
-        if (ir21.totalMnos > 0) rows.push(toRow(r, ir21, ProviderStatsSource.IR21));
-        if (reach.totalMnos > 0) rows.push(toRow(r, reach, ProviderStatsSource.REACH_LIST));
+        if (includeEmpty || ir21.totalMnos > 0) rows.push(toRow(r, ir21, ProviderStatsSource.IR21));
+        if (includeEmpty || reach.totalMnos > 0) rows.push(toRow(r, reach, ProviderStatsSource.REACH_LIST));
       }
       return rows;
     }
@@ -79,7 +87,7 @@ export class ProviderService {
     const statsById = await this.computeFootprints(providerIds, source);
     return providers
       .map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS))
-      .filter((row) => row.stats.totalMnos > 0);
+      .filter((row) => includeEmpty || row.stats.totalMnos > 0);
   }
 
   async detail(id: number): Promise<ProviderDetail> {

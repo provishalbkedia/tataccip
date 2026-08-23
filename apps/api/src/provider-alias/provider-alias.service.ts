@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ProviderResolverService } from "../upload/provider-resolver.service";
 import { normalizeCarrierName, splitCompositeProviderNames } from "../upload/provider-normalize";
 import {
+  DeleteProviderResult,
   MergeProviderRequest,
   MergeProviderResult,
   RemapProviderRequest,
@@ -258,6 +259,33 @@ export class ProviderAliasService {
       ir21RowsMoved,
       aliasesMoved,
     };
+  }
+
+  /** Deletes a placeholder/junk ProviderMaster row outright ("None", "N/A",
+   * a bare "0.0.0.0") — refuses if it has any real Ir21Connectivity or
+   * ProviderReachlist rows attached, since that means it's an actual
+   * duplicate provider that needs mergeProvider() instead, not deletion. */
+  async deleteProvider(providerId: number): Promise<DeleteProviderResult> {
+    const provider = await this.prisma.providerMaster.findUnique({ where: { id: providerId } });
+    if (!provider) throw new NotFoundException(`Provider ${providerId} not found`);
+
+    const [reachCount, ir21Count] = await Promise.all([
+      this.prisma.providerReachlist.count({ where: { providerId } }),
+      this.prisma.ir21Connectivity.count({ where: { providerId } }),
+    ]);
+    if (reachCount > 0 || ir21Count > 0) {
+      throw new BadRequestException(
+        `Provider ${providerId} ("${provider.providerName}") has ${reachCount} ProviderReachlist and ${ir21Count} Ir21Connectivity rows — use merge instead of delete.`,
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.providerAlias.deleteMany({ where: { providerId } }),
+      this.prisma.providerMaster.delete({ where: { id: providerId } }),
+    ]);
+    await this.providerResolver.refreshCache();
+
+    return { deletedProviderId: providerId, deletedProviderName: provider.providerName };
   }
 
   private toRow = (v: {

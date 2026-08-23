@@ -31,6 +31,19 @@ export function normalizeCarrierName(raw: string): string {
   return cleaned.join(" ").trim();
 }
 
+// Placeholder text for "no provider declared here" rather than an actual
+// carrier name — seen verbatim in both IR.21 XML free-text fields and Reach
+// List Excel cells. Left unfiltered, each of these would otherwise resolve
+// to nothing, miss the alias cache, and get auto-created as its own bogus
+// ProviderMaster row (this is literally how "None"/"NA"/"Not applicable"
+// ended up as real rows in production).
+const JUNK_PROVIDER_NAMES = new Set(["none", "na", "n a", "not applicable", "not declared", "unknown", "tbd"]);
+
+/** True if a *normalized* name is placeholder text, not a real carrier. */
+export function isJunkProviderName(normalized: string): boolean {
+  return JUNK_PROVIDER_NAMES.has(normalized);
+}
+
 // Words that mark a parenthetical as descriptive annotation ("(for selected
 // operators only)", "(ANSI - new)", "(former Telia Carrier)") rather than an
 // alternate name for the carrier — such parens get stripped outright instead

@@ -250,3 +250,14 @@ export interface MergeProviderResult {
   ir21RowsMoved: number;
   aliasesMoved: number;
 }
+
+// Admin override: a ProviderMaster row is placeholder junk ("None", "N/A",
+// "Not Applicable", a bare "0.0.0.0", etc.) with no real data behind it —
+// not a duplicate of a real provider (that's MergeProviderRequest), just
+// noise to remove outright. Refused if the row has any Ir21Connectivity or
+// ProviderReachlist rows attached — that's real data, and means this should
+// be a merge instead.
+export interface DeleteProviderResult {
+  deletedProviderId: number;
+  deletedProviderName: string;
+}

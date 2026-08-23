@@ -4,7 +4,7 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeProviderName } from "./provider-alias";
-import { splitCompositeProviderNames } from "./provider-normalize";
+import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
@@ -89,7 +89,15 @@ export class UploadService {
       // "Arelion, CMI, BBIS") — split before resolving so each becomes its
       // own ProviderReachlist row against its own canonical provider,
       // rather than one row against a bogus composite ProviderMaster.
-      const providerTokens = splitCompositeProviderNames(providerRaw);
+      // Placeholder tokens ("None", "N/A") are dropped here rather than
+      // resolved — otherwise they'd auto-create their own junk provider.
+      const providerTokens = splitCompositeProviderNames(providerRaw).filter((token) => {
+        if (isJunkProviderName(this.providerResolver.normalize(token))) {
+          errors.push(`Row ${rowNum}: Provider token "${token}" is a placeholder, not a real provider, skipped.`);
+          return false;
+        }
+        return true;
+      });
       if (providerTokens.length === 0) {
         errors.push(`Row ${rowNum}: Provider "${providerRaw}" had no resolvable name after cleanup, skipped.`);
         continue;

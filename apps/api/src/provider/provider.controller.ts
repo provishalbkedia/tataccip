@@ -14,9 +14,9 @@ export class ProviderController {
   constructor(private providerService: ProviderService) {}
 
   @Get("search")
-  search(@Query("q") q?: string, @Query("source") source?: string) {
+  search(@Query("q") q?: string, @Query("source") source?: string, @Query("includeEmpty") includeEmpty?: string) {
     const parsedSource = source && VALID_SOURCES.includes(source) ? (source as ProviderStatsSource) : ProviderStatsSource.BOTH;
-    return this.providerService.search(q, parsedSource);
+    return this.providerService.search(q, parsedSource, includeEmpty === "true");
   }
 
   @Get(":id")

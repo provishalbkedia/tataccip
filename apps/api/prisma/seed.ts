@@ -47,6 +47,7 @@ const PROVIDERS = [
   { providerName: "HGC", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.hgc.com.hk" },
   { providerName: "Cable & Wireless", providerType: "IPX Provider", headquarters: "London, UK", website: "https://www.cwc.com" },
   { providerName: "CITIC Telecom CPC", providerType: "IPX Provider", headquarters: "Hong Kong", website: "https://www.citictel-cpc.com" },
+  { providerName: "Tele2", providerType: "IPX Provider", headquarters: "Stockholm, Sweden", website: "https://www.tele2.com" },
 ];
 
 // Baseline Tier-1/Tier-2 carrier aliases for the IR.21 XML provider-
@@ -59,11 +60,11 @@ const PROVIDERS = [
 // Solutions and Telenor Global Services) — those stay unresolved rather
 // than guessed.
 const PROVIDER_ALIAS_SEED: { providerName: string; variants: string[] }[] = [
-  { providerName: "BICS", variants: ["BICS", "Belgacom", "Belgacom BICS", "Belgacom International Carrier Services", "Belgacon International Carrier Services"] },
+  { providerName: "BICS", variants: ["BICS", "BIC", "Belgacom", "Belgacom BICS", "Belgacom International Carrier Services", "Belgacon International Carrier Services"] },
   { providerName: "Tata Comm", variants: ["Tata", "TataComm", "Tata Communications", "Tata Communications Ltd", "Tata Canada", "Tata India", "TCL", "Teleglobe"] },
-  { providerName: "Syniverse", variants: ["Syniverse", "Syniverse ANSI", "Syniverse Technologies Inc", "Aicent"] },
+  { providerName: "Syniverse", variants: ["Syniverse", "Synverse", "Syniverse ANSI", "Syniverse Technologies Inc", "Aicent"] },
   { providerName: "Orange", variants: ["Orange International Carriers", "Orange IC", "Orange Wholesale International", "FT", "France Telecom", "Orange INIS", "Orange International Networks Infrastructures and Services"] },
-  { providerName: "Vodafone", variants: ["Vodafone IPX", "Vodafone Roaming Services", "Vodafone Carrier Services", "VRS", "Vodafone Roaming Services S.a r.l"] },
+  { providerName: "Vodafone", variants: ["Vodafone IPX", "Vodafone Roaming Services", "Vodafone Carrier Services", "VRS", "VRS Hub", "International SCCP Gateway VRS Hub", "Vodafone Roaming Services S.a r.l"] },
   { providerName: "Comfone", variants: ["Comfone AG", "Comfone Switzerland"] },
   { providerName: "Telstra", variants: ["Telstra Global", "Telstra International", "Telstra International (Reach)", "Telstra Corporation Ltd"] },
   { providerName: "Arelion", variants: ["Telia", "TeliaSonera", "Telia Sonera", "Telia Carrier", "Arelion Ltd", "Arelion Carrier"] },
@@ -71,9 +72,9 @@ const PROVIDER_ALIAS_SEED: { providerName: string; variants: string[] }[] = [
   { providerName: "China Telecom", variants: ["China Telecom Global", "CTG", "China Telecom Macau"] },
   { providerName: "China Unicom", variants: ["China Unicom Global"] },
   { providerName: "Telefonica Global Solutions", variants: ["Telefonica", "Telefónica", "Telefonica Global Solutions SLU", "Telefonica Business Solutions", "Telefonica Moviles Espana"] },
-  { providerName: "iBasis", variants: ["iBasis GRX", "iBASIS TOFANE", "KPN iBasis"] },
+  { providerName: "iBasis", variants: ["iBasis GRX", "iBASIS TOFANE", "KPN iBasis", "IBNF"] },
   { providerName: "Sparkle", variants: ["Telecom Italia Sparkle", "TIS", "TI Sparkle", "Telecom Italy Sparkle"] },
-  { providerName: "Deutsche Telekom", variants: ["Deutsche Telekom AG", "Deutsche Telekom Global Carrier", "T-Systems", "DT", "T-COM"] },
+  { providerName: "Deutsche Telekom", variants: ["Deutsche Telekom AG", "Deutsche Telekom Global Carrier", "T-Systems", "DT", "T-COM", "DTAG", "DTAG Global Network"] },
   { providerName: "NTT Communications", variants: ["NTT Com", "NTT"] },
   { providerName: "Bayobab", variants: ["Bayobab Africa", "MTN GlobalConnect"] },
   { providerName: "Airtel", variants: ["Bharti Airtel", "Airtel India", "Bharti Airtel International"] },
@@ -86,7 +87,8 @@ const PROVIDER_ALIAS_SEED: { providerName: string; variants: string[] }[] = [
   { providerName: "A1 Telekom Austria", variants: ["A1 Telecom Austria", "A1 Telekom Austria AG", "A1 Group", "A1", "Telekom Austria"] },
   { providerName: "HGC", variants: ["Hutchison Global Communication", "HGC Global Communications Limited", "Hong Kong Telecommunications", "HKT"] },
   { providerName: "Cable & Wireless", variants: ["C&W", "C and W", "Liberty Latin America"] },
-  { providerName: "CITIC Telecom CPC", variants: ["CITIC", "CITIC Telecom", "CITIC Telecom International Ltd"] },
+  { providerName: "CITIC Telecom CPC", variants: ["CITIC", "CITIC Telecom", "CITIC Telecom International Ltd", "Citicel HK", "Citicel"] },
+  { providerName: "Tele2", variants: ["Tele2", "Tele2 AB", "Tele2 Sweden", "Tele2 International Carrier Services", "Tele2 Group"] },
 ];
 
 // Sample/synthetic reference data — not sourced from any real GSMA IR.21 filing.

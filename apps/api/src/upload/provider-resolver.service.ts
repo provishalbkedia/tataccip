@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { isConfidentSubstringMatch, normalizeCarrierName } from "./provider-normalize";
+import { isConfidentSubstringMatch, isJunkProviderName, normalizeCarrierName } from "./provider-normalize";
 
 export type ResolveResult = { status: "resolved"; providerId: number } | { status: "unmapped"; normalizedPattern: string };
 
@@ -53,10 +53,13 @@ export class ProviderResolverService implements OnModuleInit {
   /** Resolves a raw carrier-name string to a ProviderMaster id via exact,
    * then substring, match against the alias cache. On no match, queues the
    * variant in UnmappedProviderVariant for an admin to resolve — does not
-   * auto-create a ProviderMaster from unverified XML text. */
+   * auto-create a ProviderMaster from unverified XML text. Placeholder text
+   * ("None", "N/A", "Not Applicable") is treated the same as an empty
+   * string — unmapped with nothing queued, since there's nothing for an
+   * admin to actually resolve. */
   async resolve(rawName: string, detectedService: ServiceName, sourceTadig: string): Promise<ResolveResult> {
     const normalized = this.normalize(rawName);
-    if (!normalized) {
+    if (!normalized || isJunkProviderName(normalized)) {
       return { status: "unmapped", normalizedPattern: normalized };
     }
 

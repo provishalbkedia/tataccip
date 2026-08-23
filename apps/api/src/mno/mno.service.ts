@@ -6,16 +6,10 @@ import { ConnectivityMatrixRow, MnoDetail, MnoSummary, ProviderResolutionInfo } 
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
-/** Merges primary + backup SCCP carriers into one deduplicated list — the
- * search grid's consolidated "SCCP Provider(s)" column doesn't distinguish
- * primary/backup role (the detail page's Roaming Signaling section still
- * does, via connectivitySnapshot). */
-function mergeSccpProviders(connectivity: { primarySccpCarrier: string | null; backupSccpCarriers: string[] } | null): string[] {
-  if (!connectivity) return [];
-  const all = [connectivity.primarySccpCarrier, ...connectivity.backupSccpCarriers].filter(
-    (v): v is string => v !== null,
-  );
-  return Array.from(new Set(all));
+type ProvidersByService = { SCCP: Set<string>; DSX: Set<string>; IPX: Set<string> };
+
+function newProvidersByService(): ProvidersByService {
+  return { SCCP: new Set(), DSX: new Set(), IPX: new Set() };
 }
 
 @Injectable()
@@ -25,16 +19,20 @@ export class MnoService {
   /** Searches MnoMaster (the canonical operator identity table — every MNO
    * the platform knows about, from any ingestion path) enriched with
    * MnoMasterConnectivity where an IR.21 XML has been ingested for it. MNOs
-   * without a connectivity snapshot yet still appear, with those columns
-   * null, rather than disappearing from search until someone uploads their
-   * XML — the connectivity table is an enrichment layer, not the operator
-   * registry. `q` free-text matches across TADIG/operator/country plus the
-   * XML-sourced networkType, primarySccpCarrier, backupSccpCarriers, and
-   * the GRX/IPX/LTE provider name arrays (via a raw substring-on-array-
-   * element query — Prisma's array filters only support exact-element
-   * matches), so a carrier appearing anywhere in the consolidated SCCP/
-   * DSX/IPX provider columns surfaces the same way in results, regardless
-   * of primary/backup role. */
+   * without a connectivity snapshot yet still appear, with networkType/
+   * lastEffectiveDate null, rather than disappearing from search until
+   * someone uploads their XML — the connectivity table is an enrichment
+   * layer, not the operator registry. The consolidated SCCP/DSX/IPX
+   * Provider(s) columns, however, come from resolved Ir21Connectivity +
+   * ProviderReachlist (canonical ProviderMaster names) rather than the raw
+   * XML snapshot text — an MNO whose connectivity only ever came through a
+   * Reach List upload (or seed data) has no MnoMasterConnectivity row at
+   * all, but still has real resolved provider data that needs to show up
+   * here exactly as it does on the detail page's comparison grid. `q`
+   * free-text matches across TADIG/operator/country plus the XML-sourced
+   * networkType, primarySccpCarrier, backupSccpCarriers, and the GRX/IPX/
+   * LTE provider name arrays (via a raw substring-on-array-element query —
+   * Prisma's array filters only support exact-element matches). */
   async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string }): Promise<MnoSummary[]> {
     const { q, tadig, country, mcc, mnc } = params;
 
@@ -76,20 +74,59 @@ export class MnoService {
       take: 200,
     });
 
-    return rows.map((r) => ({
-      id: r.id,
-      operatorName: r.operatorName,
-      country: r.country,
-      tadigCode: r.tadigCode,
-      mcc: r.mcc,
-      mnc: r.mnc,
-      status: r.status,
-      networkType: r.connectivity?.networkType ?? null,
-      sccpProviders: mergeSccpProviders(r.connectivity),
-      dsxProviders: r.connectivity?.lteIpxProviders ?? [],
-      ipxProviders: r.connectivity?.grxIpxProviders ?? [],
-      lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
-    }));
+    const mnoIds = rows.map((r) => r.id);
+    const providersByMno = await this.resolvedProvidersByMno(mnoIds);
+
+    return rows.map((r) => {
+      const p = providersByMno.get(r.id);
+      return {
+        id: r.id,
+        operatorName: r.operatorName,
+        country: r.country,
+        tadigCode: r.tadigCode,
+        mcc: r.mcc,
+        mnc: r.mnc,
+        status: r.status,
+        networkType: r.connectivity?.networkType ?? null,
+        sccpProviders: p ? Array.from(p.SCCP) : [],
+        dsxProviders: p ? Array.from(p.DSX) : [],
+        ipxProviders: p ? Array.from(p.IPX) : [],
+        lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
+      };
+    });
+  }
+
+  /** Canonical (resolved) provider names per service for a batch of MNOs,
+   * merging Ir21Connectivity and ProviderReachlist — the authoritative
+   * source for "which provider(s) serve this MNO", independent of whether
+   * an actual IR.21 XML was ever uploaded (MnoMasterConnectivity is XML-
+   * only, so it's null for reach-list-only or seeded MNOs). */
+  private async resolvedProvidersByMno(mnoIds: number[]): Promise<Map<number, ProvidersByService>> {
+    if (mnoIds.length === 0) return new Map();
+
+    const [ir21Rows, reachRows] = await Promise.all([
+      this.prisma.ir21Connectivity.findMany({
+        where: { mnoId: { in: mnoIds } },
+        select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
+      }),
+      this.prisma.providerReachlist.findMany({
+        where: { mnoId: { in: mnoIds } },
+        select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
+      }),
+    ]);
+
+    const byMno = new Map<number, ProvidersByService>();
+    const touch = (mnoId: number, service: ServiceName, providerName: string) => {
+      let p = byMno.get(mnoId);
+      if (!p) {
+        p = newProvidersByService();
+        byMno.set(mnoId, p);
+      }
+      p[service].add(providerName);
+    };
+    for (const r of ir21Rows) touch(r.mnoId, r.service.serviceName, r.provider.providerName);
+    for (const r of reachRows) touch(r.mnoId, r.service.serviceName, r.provider.providerName);
+    return byMno;
   }
 
   async detail(id: number): Promise<MnoDetail> {
@@ -102,6 +139,10 @@ export class MnoService {
       },
     });
     if (!mno) throw new NotFoundException("MNO not found");
+
+    const providers = newProvidersByService();
+    for (const e of mno.ir21Entries) providers[e.service.serviceName].add(e.provider.providerName);
+    for (const e of mno.reachlistEntries) providers[e.service.serviceName].add(e.provider.providerName);
 
     const matrix: ConnectivityMatrixRow[] = await Promise.all(
       SERVICE_ORDER.map(async (service) => {
@@ -126,9 +167,9 @@ export class MnoService {
       mnc: mno.mnc,
       status: mno.status,
       networkType: mno.connectivity?.networkType ?? null,
-      sccpProviders: mergeSccpProviders(mno.connectivity),
-      dsxProviders: mno.connectivity?.lteIpxProviders ?? [],
-      ipxProviders: mno.connectivity?.grxIpxProviders ?? [],
+      sccpProviders: Array.from(providers.SCCP),
+      dsxProviders: Array.from(providers.DSX),
+      ipxProviders: Array.from(providers.IPX),
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
       connectivityMatrix: matrix,
       connectivitySnapshot: mno.connectivity

@@ -34,6 +34,22 @@ export class ProviderResolverService implements OnModuleInit {
     this.cache.set(aliasPattern, providerId);
   }
 
+  /** Exact, then substring, match of a normalized name against the alias
+   * cache — no side effects (no unmapped-queueing, no auto-create), so
+   * callers can decide what "no match" should mean for their ingestion
+   * path (XML queues for review; Reach List falls back to auto-create). */
+  matchAlias(normalized: string): number | undefined {
+    const exact = this.cache.get(normalized);
+    if (exact) return exact;
+
+    for (const [pattern, providerId] of this.cache) {
+      if (isConfidentSubstringMatch(normalized, pattern)) {
+        return providerId;
+      }
+    }
+    return undefined;
+  }
+
   /** Resolves a raw carrier-name string to a ProviderMaster id via exact,
    * then substring, match against the alias cache. On no match, queues the
    * variant in UnmappedProviderVariant for an admin to resolve — does not
@@ -44,15 +60,9 @@ export class ProviderResolverService implements OnModuleInit {
       return { status: "unmapped", normalizedPattern: normalized };
     }
 
-    const exact = this.cache.get(normalized);
-    if (exact) {
-      return { status: "resolved", providerId: exact };
-    }
-
-    for (const [pattern, providerId] of this.cache) {
-      if (isConfidentSubstringMatch(normalized, pattern)) {
-        return { status: "resolved", providerId };
-      }
+    const matched = this.matchAlias(normalized);
+    if (matched) {
+      return { status: "resolved", providerId: matched };
     }
 
     const tadig = sourceTadig.trim().toUpperCase();

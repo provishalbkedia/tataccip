@@ -362,16 +362,35 @@ export class UploadService {
     return new Map(providers.map((p) => [p.providerName.toLowerCase(), p.id]));
   }
 
+  /** Resolves a Reach List cell's provider text to a ProviderMaster id.
+   * Tries the exact-name cache first (handles the canonical name typed
+   * verbatim, or one of the small hardcoded PROVIDER_ALIASES variants),
+   * then falls back to the same alias-aware fuzzy matching the IR.21 XML
+   * pipeline uses — e.g. "Tata Communications Ltd." resolves to the
+   * existing "Tata Comm" row instead of spawning a duplicate ProviderMaster
+   * the way a plain exact-match miss used to. Only creates a new provider
+   * when neither tier finds anything, and registers that exact variant as
+   * an alias so a repeat of the same text resolves directly next time. */
   private async resolveProvider(raw: string, cache: Map<string, number>): Promise<number> {
     const canonical = normalizeProviderName(raw);
     const key = canonical.toLowerCase();
     const cached = cache.get(key);
     if (cached) return cached;
 
+    const normalized = this.providerResolver.normalize(raw);
+    const aliasMatch = normalized ? this.providerResolver.matchAlias(normalized) : undefined;
+    if (aliasMatch) {
+      cache.set(key, aliasMatch);
+      return aliasMatch;
+    }
+
     const created = await this.prisma.providerMaster.create({
       data: { providerName: canonical, providerType: "IPX Provider" },
     });
     cache.set(key, created.id);
+    if (normalized) {
+      await this.providerResolver.addAlias(created.id, normalized);
+    }
     return created.id;
   }
 }

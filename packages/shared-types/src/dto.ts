@@ -223,3 +223,24 @@ export interface RemapProviderResult {
   // this exact raw string.
   affectedTadigs: string[];
 }
+
+// Admin override: two ProviderMaster rows turned out to be the same
+// real-world provider (e.g. a Reach List upload created "TATAComms" as its
+// own row instead of resolving to the existing "Tata Comm"). Repoints every
+// ProviderReachlist/Ir21Connectivity/ProviderAlias row from source to
+// target, registers the source's normalized name as an alias so future
+// uploads resolve directly, then deletes the source row.
+export interface MergeProviderRequest {
+  sourceProviderId: number;
+  targetProviderId: number;
+}
+
+export interface MergeProviderResult {
+  sourceProviderId: number;
+  sourceProviderName: string;
+  targetProviderId: number;
+  targetProviderName: string;
+  reachlistRowsMoved: number;
+  ir21RowsMoved: number;
+  aliasesMoved: number;
+}

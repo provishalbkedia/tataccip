@@ -2,7 +2,13 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
-import { OnNetMnoRow, ProviderCoverageStats, ProviderDetail, ProviderSummary } from "@ccip/shared-types";
+import {
+  OnNetMnoRow,
+  ProviderCoverageStats,
+  ProviderDetail,
+  ProviderStatsSource,
+  ProviderSummary,
+} from "@ccip/shared-types";
 
 const EMPTY_STATS: ProviderCoverageStats = { totalCountries: 0, totalMnos: 0, sccpCount: 0, dsxCount: 0, ipxCount: 0 };
 
@@ -12,8 +18,10 @@ export class ProviderService {
 
   /** Matches `q` against the canonical ProviderMaster.providerName as well
    * as every known alias in ProviderAlias — e.g. searching "Belgacom"
-   * finds the "BICS" row it's aliased to, not just literal name matches. */
-  async search(q?: string): Promise<ProviderSummary[]> {
+   * finds the "BICS" row it's aliased to, not just literal name matches.
+   * `source` restricts the returned footprint stats to IR.21-declared
+   * connectivity, Reach-List-claimed connectivity, or their union. */
+  async search(q?: string, source: ProviderStatsSource = ProviderStatsSource.BOTH): Promise<ProviderSummary[]> {
     let aliasMatchIds: number[] = [];
     if (q) {
       const normalized = normalizeCarrierName(q);
@@ -36,7 +44,7 @@ export class ProviderService {
       orderBy: { providerName: "asc" },
     });
 
-    const statsById = await this.computeFootprints(providers.map((p) => p.id));
+    const statsById = await this.computeFootprints(providers.map((p) => p.id), source);
 
     return providers.map((r) => ({
       id: r.id,
@@ -151,20 +159,30 @@ export class ProviderService {
 
   /** Batch version of detail()'s stats computation, for the search list —
    * counts distinct MNOs (and countries/services among them) per provider
-   * across both Ir21Connectivity and ProviderReachlist in two queries
-   * total, rather than one round-trip per row. */
-  private async computeFootprints(providerIds: number[]): Promise<Map<number, ProviderCoverageStats>> {
+   * across Ir21Connectivity and/or ProviderReachlist (per `source`) in up
+   * to two queries total, rather than one round-trip per row. */
+  private async computeFootprints(
+    providerIds: number[],
+    source: ProviderStatsSource,
+  ): Promise<Map<number, ProviderCoverageStats>> {
     if (providerIds.length === 0) return new Map();
 
+    const includeIr21 = source !== ProviderStatsSource.REACH_LIST;
+    const includeReachList = source !== ProviderStatsSource.IR21;
+
     const [ir21Rows, reachRows] = await Promise.all([
-      this.prisma.ir21Connectivity.findMany({
-        where: { providerId: { in: providerIds } },
-        select: { providerId: true, mnoId: true, mno: { select: { country: true } }, service: { select: { serviceName: true } } },
-      }),
-      this.prisma.providerReachlist.findMany({
-        where: { providerId: { in: providerIds } },
-        select: { providerId: true, mnoId: true, mno: { select: { country: true } }, service: { select: { serviceName: true } } },
-      }),
+      includeIr21
+        ? this.prisma.ir21Connectivity.findMany({
+            where: { providerId: { in: providerIds } },
+            select: { providerId: true, mnoId: true, mno: { select: { country: true } }, service: { select: { serviceName: true } } },
+          })
+        : Promise.resolve([]),
+      includeReachList
+        ? this.prisma.providerReachlist.findMany({
+            where: { providerId: { in: providerIds } },
+            select: { providerId: true, mnoId: true, mno: { select: { country: true } }, service: { select: { serviceName: true } } },
+          })
+        : Promise.resolve([]),
     ]);
 
     type Acc = { mnos: Set<number>; countries: Set<string>; sccp: Set<number>; dsx: Set<number>; ipx: Set<number> };

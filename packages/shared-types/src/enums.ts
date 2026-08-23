@@ -42,3 +42,13 @@ export const VariantStatus = {
   IGNORED: "IGNORED",
 } as const;
 export type VariantStatus = (typeof VariantStatus)[keyof typeof VariantStatus];
+
+// Which ingestion source(s) to compute a provider's coverage footprint from —
+// IR21 (declared in GSMA IR.21 XML), REACH_LIST (claimed in published Reach
+// Lists), or BOTH (the union, historically the only behavior).
+export const ProviderStatsSource = {
+  IR21: "IR21",
+  REACH_LIST: "REACH_LIST",
+  BOTH: "BOTH",
+} as const;
+export type ProviderStatsSource = (typeof ProviderStatsSource)[keyof typeof ProviderStatsSource];

@@ -2,29 +2,37 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Box, Button, Grid, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, Grid, Paper, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api } from "@/lib/api";
-import { ProviderSummary } from "@ccip/shared-types";
+import { ProviderStatsSource, ProviderSummary } from "@ccip/shared-types";
+
+const SOURCE_HELPER_TEXT: Record<ProviderStatsSource, string> = {
+  [ProviderStatsSource.IR21]: "Showing provider coverage footprint as declared in GSMA IR.21 documents.",
+  [ProviderStatsSource.REACH_LIST]: "Showing provider coverage footprint claimed in published Reach Lists.",
+  [ProviderStatsSource.BOTH]: "Showing combined provider coverage footprint across IR.21 and Reach List data.",
+};
 
 export default function ProviderSearchPage() {
   const router = useRouter();
   const [q, setQ] = React.useState("");
+  const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.BOTH);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
 
   const runSearch = React.useCallback(() => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
+    params.set("source", source);
     api.get<ProviderSummary[]>(`/provider/search?${params.toString()}`).then(setResults);
-  }, [q]);
+  }, [q, source]);
 
   React.useEffect(() => {
     runSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [source]);
 
   return (
     <RequireAuth>
@@ -48,12 +56,35 @@ export default function ProviderSearchPage() {
                 Search
               </Button>
             </Grid>
+            <Grid item xs={12}>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                color="primary"
+                value={source}
+                onChange={(_, value) => value && setSource(value)}
+                sx={{
+                  "& .MuiToggleButton-root": {
+                    borderRadius: "999px !important",
+                    textTransform: "none",
+                    px: 2,
+                    mr: 1,
+                    border: "1px solid",
+                    borderColor: "divider",
+                  },
+                }}
+              >
+                <ToggleButton value={ProviderStatsSource.IR21}>As per IR.21 Data</ToggleButton>
+                <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
+                <ToggleButton value={ProviderStatsSource.BOTH}>Both (Combined)</ToggleButton>
+              </ToggleButtonGroup>
+            </Grid>
           </Grid>
         </Paper>
 
         <Box sx={{ mb: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — click a row for coverage stats
+            {results.length} result(s) — click a row for coverage stats. {SOURCE_HELPER_TEXT[source]}
           </Typography>
         </Box>
         <DataGrid<ProviderSummary>

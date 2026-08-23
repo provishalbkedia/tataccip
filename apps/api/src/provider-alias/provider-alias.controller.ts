@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -42,7 +42,7 @@ export class ProviderAliasController {
 
   @Delete("provider/:id")
   @Roles(Role.ADMIN)
-  deleteProvider(@Param("id", ParseIntPipe) id: number) {
-    return this.providerAliasService.deleteProvider(id);
+  deleteProvider(@Param("id", ParseIntPipe) id: number, @Query("force") force?: string) {
+    return this.providerAliasService.deleteProvider(id, force === "true");
   }
 }

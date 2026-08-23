@@ -262,10 +262,15 @@ export class ProviderAliasService {
   }
 
   /** Deletes a placeholder/junk ProviderMaster row outright ("None", "N/A",
-   * a bare "0.0.0.0") — refuses if it has any real Ir21Connectivity or
-   * ProviderReachlist rows attached, since that means it's an actual
-   * duplicate provider that needs mergeProvider() instead, not deletion. */
-  async deleteProvider(providerId: number): Promise<DeleteProviderResult> {
+   * a bare "0.0.0.0"). Refuses if it has any real Ir21Connectivity or
+   * ProviderReachlist rows attached — normally that means it's an actual
+   * duplicate provider needing mergeProvider() instead, not deletion. The
+   * one exception `force` covers: an MNO's IR.21 literally declared "None"/
+   * "N/A" as its provider for a service, so that connectivity row doesn't
+   * represent a real provider claim either — force also deletes those
+   * dangling rows, correctly leaving the MNO with no declared provider for
+   * that service rather than one pointing at a fake placeholder. */
+  async deleteProvider(providerId: number, force = false): Promise<DeleteProviderResult> {
     const provider = await this.prisma.providerMaster.findUnique({ where: { id: providerId } });
     if (!provider) throw new NotFoundException(`Provider ${providerId} not found`);
 
@@ -273,13 +278,15 @@ export class ProviderAliasService {
       this.prisma.providerReachlist.count({ where: { providerId } }),
       this.prisma.ir21Connectivity.count({ where: { providerId } }),
     ]);
-    if (reachCount > 0 || ir21Count > 0) {
+    if ((reachCount > 0 || ir21Count > 0) && !force) {
       throw new BadRequestException(
-        `Provider ${providerId} ("${provider.providerName}") has ${reachCount} ProviderReachlist and ${ir21Count} Ir21Connectivity rows — use merge instead of delete.`,
+        `Provider ${providerId} ("${provider.providerName}") has ${reachCount} ProviderReachlist and ${ir21Count} Ir21Connectivity rows — use merge instead of delete, or pass force=true if these are placeholder rows with no real provider behind them.`,
       );
     }
 
     await this.prisma.$transaction([
+      this.prisma.ir21Connectivity.deleteMany({ where: { providerId } }),
+      this.prisma.providerReachlist.deleteMany({ where: { providerId } }),
       this.prisma.providerAlias.deleteMany({ where: { providerId } }),
       this.prisma.providerMaster.delete({ where: { id: providerId } }),
     ]);

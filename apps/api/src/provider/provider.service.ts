@@ -57,6 +57,10 @@ export class ProviderService {
       source: rowSource,
     });
 
+    // Providers with zero MNOs under the selected source are almost always
+    // stray/junk ProviderMaster rows (bad IR.21 text fragments, "0.0.0.0",
+    // etc.) rather than real carriers with genuinely no footprint — dropping
+    // them keeps the list to providers actually visible in that source.
     if (source === ProviderStatsSource.BOTH) {
       const [ir21Stats, reachStats] = await Promise.all([
         this.computeFootprints(providerIds, ProviderStatsSource.IR21),
@@ -64,14 +68,18 @@ export class ProviderService {
       ]);
       const rows: ProviderSummary[] = [];
       for (const r of providers) {
-        rows.push(toRow(r, ir21Stats.get(r.id) ?? EMPTY_STATS, ProviderStatsSource.IR21));
-        rows.push(toRow(r, reachStats.get(r.id) ?? EMPTY_STATS, ProviderStatsSource.REACH_LIST));
+        const ir21 = ir21Stats.get(r.id) ?? EMPTY_STATS;
+        const reach = reachStats.get(r.id) ?? EMPTY_STATS;
+        if (ir21.totalMnos > 0) rows.push(toRow(r, ir21, ProviderStatsSource.IR21));
+        if (reach.totalMnos > 0) rows.push(toRow(r, reach, ProviderStatsSource.REACH_LIST));
       }
       return rows;
     }
 
     const statsById = await this.computeFootprints(providerIds, source);
-    return providers.map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS));
+    return providers
+      .map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS))
+      .filter((row) => row.stats.totalMnos > 0);
   }
 
   async detail(id: number): Promise<ProviderDetail> {

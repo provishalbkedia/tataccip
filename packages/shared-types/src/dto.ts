@@ -1,4 +1,4 @@
-import { DiscrepancyType, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
+import { DiscrepancyType, ProviderStatsSource, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
 
 export interface LoginRequest {
   email: string;
@@ -108,6 +108,12 @@ export interface ProviderSummary {
   // detail view's stats — surfaced on the list too so search doesn't
   // require opening each provider to gauge its footprint.
   stats: ProviderCoverageStats;
+  // Present only when the search was run with source=BOTH: each provider
+  // is returned as two rows — one IR21-only, one REACH_LIST-only — so the
+  // two footprints can be compared side by side instead of blended into a
+  // single union number. Absent (and `stats` is the requested single
+  // source's footprint) for source=IR21 or source=REACH_LIST.
+  source?: ProviderStatsSource;
 }
 
 export interface OnNetMnoRow {

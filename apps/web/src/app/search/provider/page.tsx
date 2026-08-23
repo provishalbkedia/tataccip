@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import type { ColDef } from "ag-grid-community";
 import { Box, Button, Grid, Paper, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import RequireAuth from "@/components/RequireAuth";
@@ -10,10 +11,16 @@ import DataGrid from "@/components/DataGrid";
 import { api } from "@/lib/api";
 import { ProviderStatsSource, ProviderSummary } from "@ccip/shared-types";
 
+const SOURCE_LABEL: Record<ProviderStatsSource, string> = {
+  [ProviderStatsSource.IR21]: "IR.21",
+  [ProviderStatsSource.REACH_LIST]: "Reach List",
+  [ProviderStatsSource.BOTH]: "Both",
+};
+
 const SOURCE_HELPER_TEXT: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.IR21]: "Showing provider coverage footprint as declared in GSMA IR.21 documents.",
   [ProviderStatsSource.REACH_LIST]: "Showing provider coverage footprint claimed in published Reach Lists.",
-  [ProviderStatsSource.BOTH]: "Showing combined provider coverage footprint across IR.21 and Reach List data.",
+  [ProviderStatsSource.BOTH]: "Showing one row per source per provider — compare the IR.21 footprint against the Reach List footprint directly.",
 };
 
 export default function ProviderSearchPage() {
@@ -32,6 +39,32 @@ export default function ProviderSearchPage() {
   React.useEffect(() => {
     runSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+
+  const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
+
+  const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
+    const cols: ColDef<ProviderSummary>[] = [
+      { field: "providerName", headerName: "Provider Name", flex: 1.5 },
+      { field: "providerType", headerName: "Type" },
+      { field: "headquarters", headerName: "Headquarters" },
+      { field: "website", headerName: "Website", flex: 1.2 },
+    ];
+    if (source === ProviderStatsSource.BOTH) {
+      cols.push({
+        field: "source",
+        headerName: "Source",
+        valueFormatter: (p) => (p.value ? SOURCE_LABEL[p.value as ProviderStatsSource] : ""),
+      });
+    }
+    cols.push(
+      { field: "stats.totalMnos", headerName: "Total MNOs" },
+      { field: "stats.totalCountries", headerName: "Countries" },
+      { field: "stats.sccpCount", headerName: "SCCP" },
+      { field: "stats.dsxCount", headerName: "DSX" },
+      { field: "stats.ipxCount", headerName: "IPX" },
+    );
+    return cols;
   }, [source]);
 
   return (
@@ -84,22 +117,12 @@ export default function ProviderSearchPage() {
 
         <Box sx={{ mb: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — click a row for coverage stats. {SOURCE_HELPER_TEXT[source]}
+            {uniqueProviderCount} result(s) — click a row for coverage stats. {SOURCE_HELPER_TEXT[source]}
           </Typography>
         </Box>
         <DataGrid<ProviderSummary>
           rowData={results}
-          columnDefs={[
-            { field: "providerName", headerName: "Provider Name", flex: 1.5 },
-            { field: "providerType", headerName: "Type" },
-            { field: "headquarters", headerName: "Headquarters" },
-            { field: "website", headerName: "Website", flex: 1.2 },
-            { field: "stats.totalMnos", headerName: "Total MNOs" },
-            { field: "stats.totalCountries", headerName: "Countries" },
-            { field: "stats.sccpCount", headerName: "SCCP" },
-            { field: "stats.dsxCount", headerName: "DSX" },
-            { field: "stats.ipxCount", headerName: "IPX" },
-          ]}
+          columnDefs={columnDefs}
           onRowClicked={(row) => router.push(`/search/provider/${row.id}`)}
         />
       </AppShell>

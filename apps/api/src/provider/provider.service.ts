@@ -19,8 +19,10 @@ export class ProviderService {
   /** Matches `q` against the canonical ProviderMaster.providerName as well
    * as every known alias in ProviderAlias — e.g. searching "Belgacom"
    * finds the "BICS" row it's aliased to, not just literal name matches.
-   * `source` restricts the returned footprint stats to IR.21-declared
-   * connectivity, Reach-List-claimed connectivity, or their union. */
+   * `source=IR21`/`REACH_LIST` returns one row per provider with that
+   * single source's footprint. `source=BOTH` returns *two* rows per
+   * provider — one IR21-only, one REACH_LIST-only — so the two footprints
+   * can be compared side by side instead of blended into one union number. */
   async search(q?: string, source: ProviderStatsSource = ProviderStatsSource.BOTH): Promise<ProviderSummary[]> {
     let aliasMatchIds: number[] = [];
     if (q) {
@@ -43,17 +45,33 @@ export class ProviderService {
         : undefined,
       orderBy: { providerName: "asc" },
     });
+    const providerIds = providers.map((p) => p.id);
 
-    const statsById = await this.computeFootprints(providers.map((p) => p.id), source);
-
-    return providers.map((r) => ({
+    const toRow = (r: (typeof providers)[number], stats: ProviderCoverageStats, rowSource?: ProviderStatsSource): ProviderSummary => ({
       id: r.id,
       providerName: r.providerName,
       providerType: r.providerType,
       headquarters: r.headquarters,
       website: r.website,
-      stats: statsById.get(r.id) ?? EMPTY_STATS,
-    }));
+      stats,
+      source: rowSource,
+    });
+
+    if (source === ProviderStatsSource.BOTH) {
+      const [ir21Stats, reachStats] = await Promise.all([
+        this.computeFootprints(providerIds, ProviderStatsSource.IR21),
+        this.computeFootprints(providerIds, ProviderStatsSource.REACH_LIST),
+      ]);
+      const rows: ProviderSummary[] = [];
+      for (const r of providers) {
+        rows.push(toRow(r, ir21Stats.get(r.id) ?? EMPTY_STATS, ProviderStatsSource.IR21));
+        rows.push(toRow(r, reachStats.get(r.id) ?? EMPTY_STATS, ProviderStatsSource.REACH_LIST));
+      }
+      return rows;
+    }
+
+    const statsById = await this.computeFootprints(providerIds, source);
+    return providers.map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS));
   }
 
   async detail(id: number): Promise<ProviderDetail> {

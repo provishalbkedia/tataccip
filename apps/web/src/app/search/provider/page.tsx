@@ -101,6 +101,20 @@ function ProviderSearchPageInner() {
     return Array.from(seen.values());
   }, [selected]);
 
+  // In "Both (Combined)" mode, checking BOTH of one provider's two rows
+  // (its IR21 row and its REACH_LIST row) isn't "comparing 2 providers" —
+  // it's "compare this one provider's IR.21 footprint against its own
+  // Reach List footprint", which the detail page's source=BOTH view already
+  // renders as split columns. Route there instead of into the multi-
+  // provider matrix (which operates on distinct provider ids, not sources).
+  const selfCompareTarget = React.useMemo(() => {
+    if (uniqueSelected.length !== 1) return null;
+    const sources = new Set(selected.filter((s) => s.id === uniqueSelected[0].id).map((s) => s.source));
+    return sources.has(ProviderStatsSource.IR21) && sources.has(ProviderStatsSource.REACH_LIST)
+      ? uniqueSelected[0]
+      : null;
+  }, [selected, uniqueSelected]);
+
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
     const cols: ColDef<ProviderSummary>[] = [
       { field: "providerName", headerName: "Provider Name", flex: 1.5, checkboxSelection: true, headerCheckboxSelection: true },
@@ -197,7 +211,38 @@ function ProviderSearchPageInner() {
           onRowClicked={(row) => router.push(`/search/provider/${row.id}?source=${row.source ?? source}`)}
         />
 
-        {uniqueSelected.length >= 2 && (
+        {selfCompareTarget && (
+          <Paper
+            elevation={4}
+            sx={{
+              position: "fixed",
+              bottom: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              px: 3,
+              py: 1.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              zIndex: 1200,
+              borderRadius: 999,
+            }}
+          >
+            <Typography variant="body2">
+              {selfCompareTarget.providerName}: IR.21 row + Reach List row selected
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CompareArrowsIcon />}
+              onClick={() => router.push(`/search/provider/${selfCompareTarget.id}?source=BOTH`)}
+            >
+              View IR.21 vs Reach List for {selfCompareTarget.providerName}
+            </Button>
+          </Paper>
+        )}
+
+        {!selfCompareTarget && uniqueSelected.length >= 2 && (
           <Paper
             elevation={4}
             sx={{

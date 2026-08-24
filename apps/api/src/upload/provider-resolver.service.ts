@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { isConfidentSubstringMatch, isJunkProviderName, normalizeCarrierName } from "./provider-normalize";
+import { isConfidentSubstringMatch, isGenericServiceToken, isJunkProviderName, normalizeCarrierName } from "./provider-normalize";
 
 export type ResolveResult = { status: "resolved"; providerId: number } | { status: "unmapped"; normalizedPattern: string };
 
@@ -46,8 +46,14 @@ export class ProviderResolverService implements OnModuleInit {
   /** Exact, then substring, match of a normalized name against the alias
    * cache — no side effects (no unmapped-queueing, no auto-create), so
    * callers can decide what "no match" should mean for their ingestion
-   * path (XML queues for review; Reach List falls back to auto-create). */
+   * path (XML queues for review; Reach List falls back to auto-create).
+   * Bare service-type residuals ("sccp", "ipx", ...) never match, exact or
+   * fuzzy — see isGenericServiceToken; a placeholder like "SCCP Carrier"
+   * must stay unmapped for admin triage, not silently resolve to whichever
+   * alias happens to contain that word. */
   matchAlias(normalized: string): number | undefined {
+    if (isGenericServiceToken(normalized)) return undefined;
+
     const exact = this.cache.get(normalized);
     if (exact) return exact;
 

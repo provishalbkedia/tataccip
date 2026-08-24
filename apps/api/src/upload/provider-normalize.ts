@@ -72,6 +72,23 @@ export function isJunkProviderName(normalized: string): boolean {
   return false;
 }
 
+// A raw string like "SCCP Carrier" or "IPX Carrier" loses its only
+// distinguishing word here — "carrier" is a LEGAL_SUFFIXES filler word, so
+// normalizeCarrierName reduces it to a bare "sccp"/"ipx"/"dsx"/"grx" with no
+// brand content left at all. That residual isn't junk (it's exactly the
+// kind of placeholder ProviderResolverService.resolve() should still queue
+// for admin review — see ProviderOverrideService/"Map Per Operator"), but it
+// must never be treated as if it identified a real provider: fuzzy-matching
+// a bare service-type word against the alias cache would match ANY alias
+// that happens to contain it as a qualifier word (e.g. "belgacom sccp"),
+// silently misattributing every MNO using this placeholder to whichever
+// provider's alias happens to iterate first.
+const GENERIC_SERVICE_TOKENS = new Set(["sccp", "dsx", "ipx", "grx"]);
+
+export function isGenericServiceToken(normalized: string): boolean {
+  return GENERIC_SERVICE_TOKENS.has(normalized);
+}
+
 // Words that mark a parenthetical as descriptive annotation ("(for selected
 // operators only)", "(ANSI - new)", "(former Telia Carrier)") rather than an
 // alternate name for the carrier — such parens get stripped outright instead

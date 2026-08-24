@@ -62,6 +62,18 @@ export default function DataGrid<T>({
     });
   }, []);
 
+  // AG Grid occasionally finishes its very first header layout pass one
+  // column short on a production (non-Strict-Mode) mount — observed on
+  // wide grids (7+ columns needing horizontal scroll). Re-pushing the same
+  // columnDefs through the imperative API right after ready forces a full
+  // header rebuild and reliably fixes it; harmless no-op otherwise.
+  const onGridReady = React.useCallback(() => {
+    const api = gridRef.current?.api;
+    if (api) api.setGridOption("columnDefs", columnDefs);
+    if (showTopPagination) syncPageInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnDefs, showTopPagination, syncPageInfo]);
+
   function handlePageSizeChange(value: number) {
     const api = gridRef.current?.api;
     if (!api) return;
@@ -158,7 +170,7 @@ export default function DataGrid<T>({
             onSelectionChanged ? (e) => onSelectionChanged(e.api.getSelectedRows()) : undefined
           }
           onPaginationChanged={showTopPagination ? syncPageInfo : undefined}
-          onGridReady={showTopPagination ? syncPageInfo : undefined}
+          onGridReady={onGridReady}
         />
       </div>
     </Box>

@@ -140,6 +140,7 @@ export class Ir21XmlParserService {
     const sccpScope = scopeTo(doc, [/^internationalsccpgatewaysection$/i]);
     const grxScope = scopeTo(doc, [/^grxipxroutingfordataroamingsection$/i]);
     const lteScope = scopeTo(doc, [/^lteinfosection$/i]);
+    const signallingScope = scopeTo(doc, [/^signallinginfosection$/i]);
     const contactScope = scopeTo(doc, [/^contactinfosection$/i]);
 
     const sccp = this.extractSccpCarriers(sccpScope);
@@ -157,7 +158,7 @@ export class Ir21XmlParserService {
       backupSccpCarriers: sccp.backups,
       sccpPointCodes: sccp.pointCodes,
       grxIpxProviders: collectProviderNames(grxScope, [/^providername$/i]),
-      lteIpxProviders: collectProviderNames(lteScope, [/^ipxprovidername$/i]),
+      lteIpxProviders: this.extractDsxDiameterProviders(lteScope, signallingScope),
       interPmnIpRanges: collectTexts(grxScope, [/^ipaddressrange$/i]),
       diameterEdgeAgentFqdn:
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),
@@ -225,6 +226,49 @@ export class Ir21XmlParserService {
     }
 
     return { primary, backups: Array.from(new Set(backups)), pointCodes: Array.from(new Set(pointCodes)) };
+  }
+
+  /** Diameter Signaling Exchange (DSX/LTE) carrier extraction. GSMA IR.21
+   * versions 8.x-18.x scatter this under several different tag names rather
+   * than one canonical "DSX" element — collects explicit provider/carrier
+   * name tags from LTEInfoSection (IPX interconnect lists, DRA/edge-agent
+   * lists, Diameter provider lists) and SignallingInfoSection's Diameter
+   * block, plus best-effort brand names inferred from Diameter Edge Agent
+   * FQDNs (e.g. "*.dra.bics3gppnetwork.org" -> "bics") since some files only
+   * ever declare the carrier as a hostname, never as a named element. */
+  private extractDsxDiameterProviders(lteScope: unknown, signallingScope: unknown): string[] {
+    const named = collectProviderNames(lteScope, [
+      /^ipxprovidername$/i,
+      /^providername$/i,
+      /^carriername$/i,
+      /^diameterprovidername$/i,
+    ]);
+    const diameterInfoScope = scopeTo(signallingScope, [/^diameterinfo$/i]) ?? signallingScope;
+    const signalling = collectProviderNames(diameterInfoScope, [/^carriername$/i, /^signallingcarriername$/i]);
+    const fqdns = collectTexts(lteScope, [/^fqdn$/i, /diameteredgeagent/i, /deahostname/i]);
+    const fromFqdns = fqdns.map((f) => this.inferProviderFromFqdn(f)).filter((v): v is string => !!v);
+
+    return Array.from(new Set([...named, ...signalling, ...fromFqdns]));
+  }
+
+  /** Pulls a brand-like token out of a Diameter Edge Agent hostname, e.g.
+   * "dra1.dra.bics3gppnetwork.org" -> "bics" after dropping generic infra
+   * labels ("dra", "dea", ...) and stripping the "3gppnetwork" realm suffix
+   * IR.21 files consistently append to the carrier brand. Returned as a raw
+   * candidate string fed through the same alias-resolution pipeline as any
+   * other declared carrier name — an unrecognized host just routes to
+   * Others/Unassigned like any other unmatched string, rather than needing
+   * a hand-maintained FQDN-to-brand table. */
+  private inferProviderFromFqdn(fqdn: string): string | null {
+    const host = fqdn.trim().toLowerCase().replace(/\.$/, "");
+    if (!host || !host.includes(".")) return null;
+    const labels = host.split(".");
+    const genericLabel = /^(dra\d*|dea\d*|diameter|edge|agent|gw|www)$/;
+    const genericWord = /^(3gppnetwork|gprs|epc|org|com|net|[a-z]{2,3}\d{2,3})$/;
+    const candidate = labels.find((l) => !genericLabel.test(l) && !genericWord.test(l));
+    if (!candidate) return null;
+    const brand = candidate.replace(/3gppnetwork$/, "").replace(/^-+|-+$/g, "");
+    return brand.length >= 3 ? brand : null;
   }
 
   /** The three operational contact channels IR.21 tracks separately:

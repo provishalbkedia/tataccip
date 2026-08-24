@@ -24,12 +24,13 @@ import {
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import FolderZipIcon from "@mui/icons-material/FolderZip";
+import LanIcon from "@mui/icons-material/Lan";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
 import { splitZipForUpload } from "@/lib/splitZipForUpload";
-import { BulkXmlUploadResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
+import { BulkXmlUploadResult, DsxBackfillResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
 
 // Cloud Run's HTTP/1.1 request cap is 32 MiB — a ZIP above this needs to be
 // split into several smaller uploads client-side (see splitZipForUpload).
@@ -340,6 +341,60 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
   );
 }
 
+function DsxBackfillCard() {
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState<DsxBackfillResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await api.post<DsxBackfillResult>("/upload/backfill-dsx"));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Backfill failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card sx={{ height: "100%" }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight={700}>
+          DSX (LTE/Diameter) Backfill
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Links MNOs to a DSX provider using LTE/Diameter data already captured on their last IR.21
+          upload, for MNOs ingested before DSX got its own dedicated extraction.
+        </Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+          This reads from already-stored connectivity data — it does not re-parse the original XML
+          (not retained after ingestion). To pick up carriers only the newer LTE/Diameter extraction
+          paths would find, re-upload the active IR.21 batch instead (with &quot;Replace Active
+          Dataset&quot;).
+        </Typography>
+        <Button variant="outlined" startIcon={<LanIcon />} onClick={run} disabled={busy}>
+          {busy ? "Running…" : "Run DSX Backfill"}
+        </Button>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {result && (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            Scanned {result.scanned} MNO(s) with LTE data — created {result.created} new DSX link(s),{" "}
+            {result.alreadyLinked} already linked, {result.unmapped} unmapped.
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function UploadPage() {
   const [history, setHistory] = React.useState<UploadHistoryRow[]>([]);
 
@@ -369,6 +424,9 @@ export default function UploadPage() {
               columnsHint="Provider, Country, MNO, TADIG, Services"
               onUploaded={loadHistory}
             />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <DsxBackfillCard />
           </Grid>
         </Grid>
 

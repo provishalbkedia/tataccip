@@ -240,6 +240,22 @@ export interface ActiveBaselineInfo {
   currentMnoCount: number;
 }
 
+// Best-effort DSX (LTE/Diameter) backfill for MNOs whose IR.21 was already
+// ingested before the wider LTE/Diameter extraction paths existed. Runs
+// against the already-stored MnoMasterConnectivity.lteIpxProviders snapshot
+// — not a re-parse of the original XML, which the platform never retains —
+// so `scanned`/`created` reflect what that older, narrower extraction had
+// already captured, not the full benefit of the newer parser. Re-uploading
+// the active batch (with "Replace Active Dataset") is the only way to pick
+// up carriers only the newer LTEInfoSection/SignallingInfoSection/FQDN
+// paths would find.
+export interface DsxBackfillResult {
+  scanned: number;
+  created: number;
+  alreadyLinked: number;
+  unmapped: number;
+}
+
 export interface BulkXmlUploadResult {
   uploadHistory: UploadHistoryRow;
   filesProcessed: number;

@@ -3,8 +3,9 @@
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
-import { Box, Button, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, Button, Chip, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import CloseIcon from "@mui/icons-material/Close";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -25,6 +26,8 @@ const SOURCE_HELPER_TEXT: Record<ProviderStatsSource, string> = {
 };
 
 const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
+const VALID_SERVICES = ["SCCP", "DSX", "IPX"] as const;
+type ServiceFilter = (typeof VALID_SERVICES)[number];
 
 export default function ProviderSearchPage() {
   return (
@@ -43,6 +46,7 @@ function ProviderSearchPageInner() {
   // when the URL explicitly carries a different source (e.g. restored via
   // Back navigation, or a shared link).
   const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.IR21);
+  const [service, setService] = React.useState<ServiceFilter | null>(null);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
 
   // The URL query string is the single source of truth for "what did we
@@ -53,8 +57,12 @@ function ProviderSearchPageInner() {
     const urlSource = searchParams.get("source");
     const effectiveSource =
       urlSource && VALID_SOURCES.includes(urlSource) ? (urlSource as ProviderStatsSource) : ProviderStatsSource.IR21;
+    const urlService = searchParams.get("service");
+    const effectiveService =
+      urlService && (VALID_SERVICES as readonly string[]).includes(urlService) ? (urlService as ServiceFilter) : null;
     setQ(searchParams.get("q") ?? "");
     setSource(effectiveSource);
+    setService(effectiveService);
 
     const params = new URLSearchParams(searchParams);
     params.set("source", effectiveSource);
@@ -63,16 +71,17 @@ function ProviderSearchPageInner() {
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (nextQ: string, nextSource: ProviderStatsSource) => {
+    (nextQ: string, nextSource: ProviderStatsSource, nextService?: ServiceFilter | null) => {
       const params = new URLSearchParams();
       if (nextQ) params.set("q", nextQ);
       params.set("source", nextSource);
+      if (nextService) params.set("service", nextService);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router],
   );
 
-  const runSearch = React.useCallback(() => pushParams(q, source), [pushParams, q, source]);
+  const runSearch = React.useCallback(() => pushParams(q, source, service), [pushParams, q, source, service]);
 
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<ProviderSuggestion[]>(`/provider/suggestions?q=${encodeURIComponent(query)}`),
@@ -134,7 +143,7 @@ function ProviderSearchPageInner() {
                 size="small"
                 color="primary"
                 value={source}
-                onChange={(_, value) => value && pushParams(q, value)}
+                onChange={(_, value) => value && pushParams(q, value, service)}
                 sx={{
                   "& .MuiToggleButton-root": {
                     borderRadius: "999px !important",
@@ -154,10 +163,19 @@ function ProviderSearchPageInner() {
           </Grid>
         </Paper>
 
-        <Box sx={{ mb: 1 }}>
+        <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <Typography variant="body2" color="text.secondary">
             {uniqueProviderCount} result(s) — click a row for coverage stats. {SOURCE_HELPER_TEXT[source]}
           </Typography>
+          {service && (
+            <Chip
+              size="small"
+              color="primary"
+              label={`Filtered to ${service} providers`}
+              onDelete={() => pushParams(q, source, null)}
+              deleteIcon={<CloseIcon fontSize="small" />}
+            />
+          )}
         </Box>
         <DataGrid<ProviderSummary>
           rowData={results}

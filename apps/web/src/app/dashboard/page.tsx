@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Alert, Box, Card, CardContent, Grid, Skeleton, Typography } from "@mui/material";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
@@ -20,14 +21,28 @@ function StatTile({
   value,
   icon,
   color,
+  href,
 }: {
   label: string;
   value: number;
   icon: React.ReactNode;
   color: string;
+  href?: string;
 }) {
-  return (
-    <Card sx={{ height: "100%", borderTop: 4, borderColor: color }}>
+  const card = (
+    <Card
+      sx={{
+        height: "100%",
+        borderTop: 4,
+        borderColor: color,
+        ...(href && {
+          cursor: "pointer",
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          "&:hover": { transform: "translateY(-2px)", boxShadow: 3 },
+        }),
+      }}
+      title={href ? "Click to explore..." : undefined}
+    >
       <CardContent>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Box>
@@ -42,6 +57,13 @@ function StatTile({
         </Box>
       </CardContent>
     </Card>
+  );
+  return href ? (
+    <Link href={href} style={{ textDecoration: "none", color: "inherit", display: "block", height: "100%" }}>
+      {card}
+    </Link>
+  ) : (
+    card
   );
 }
 
@@ -66,17 +88,17 @@ export default function DashboardPage() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2}>
           {[
-            { label: "Total MNOs", key: "totalMnos" as const, icon: <CellTowerIcon fontSize="large" />, color: "#0A2540" },
-            { label: "Total Providers", key: "totalProviders" as const, icon: <BusinessIcon fontSize="large" />, color: "#0B6FBF" },
-            { label: "Total Connections", key: "totalConnections" as const, icon: <HubIcon fontSize="large" />, color: "#2E7D32" },
-            { label: "SCCP Relationships", key: "sccpCount" as const, icon: <RouterIcon fontSize="large" />, color: "#0B6FBF" },
-            { label: "DSX Relationships", key: "dsxCount" as const, icon: <LanIcon fontSize="large" />, color: "#0B6FBF" },
-            { label: "IPX Relationships", key: "ipxCount" as const, icon: <SwapHorizIcon fontSize="large" />, color: "#0B6FBF" },
-            { label: "Discrepancies Found", key: "discrepancyCount" as const, icon: <WarningAmberIcon fontSize="large" />, color: "#C62828" },
+            { label: "Total MNOs", key: "totalMnos" as const, icon: <CellTowerIcon fontSize="large" />, color: "#0A2540", href: "/search/mno" },
+            { label: "Total Providers", key: "totalProviders" as const, icon: <BusinessIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider" },
+            { label: "Total Connections", key: "totalConnections" as const, icon: <HubIcon fontSize="large" />, color: "#2E7D32", href: "/search/mno" },
+            { label: "SCCP Relationships", key: "sccpCount" as const, icon: <RouterIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=SCCP&source=IR21" },
+            { label: "DSX Relationships", key: "dsxCount" as const, icon: <LanIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=DSX&source=IR21" },
+            { label: "IPX Relationships", key: "ipxCount" as const, icon: <SwapHorizIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=IPX&source=IR21" },
+            { label: "Discrepancies Found", key: "discrepancyCount" as const, icon: <WarningAmberIcon fontSize="large" />, color: "#C62828", href: "/comparison" },
           ].map((tile) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={tile.key}>
               {metrics ? (
-                <StatTile label={tile.label} value={metrics[tile.key]} icon={tile.icon} color={tile.color} />
+                <StatTile label={tile.label} value={metrics[tile.key]} icon={tile.icon} color={tile.color} href={tile.href} />
               ) : (
                 <Skeleton variant="rounded" height={110} />
               )}

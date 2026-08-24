@@ -33,6 +33,7 @@ export class ProviderService {
     q?: string,
     source: ProviderStatsSource = ProviderStatsSource.BOTH,
     includeEmpty = false,
+    service?: ServiceName,
   ): Promise<ProviderSummary[]> {
     let aliasMatchIds: number[] = [];
     if (q) {
@@ -71,6 +72,13 @@ export class ProviderService {
     // stray/junk ProviderMaster rows (bad IR.21 text fragments, "0.0.0.0",
     // etc.) rather than real carriers with genuinely no footprint — dropping
     // them keeps the list to providers actually visible in that source.
+    const passesServiceFilter = (stats: ProviderCoverageStats) => {
+      if (!service) return true;
+      if (service === "SCCP") return stats.sccpCount > 0;
+      if (service === "DSX") return stats.dsxCount > 0;
+      return stats.ipxCount > 0;
+    };
+
     if (source === ProviderStatsSource.BOTH) {
       const [ir21Stats, reachStats] = await Promise.all([
         this.computeFootprints(providerIds, ProviderStatsSource.IR21),
@@ -80,8 +88,8 @@ export class ProviderService {
       for (const r of providers) {
         const ir21 = ir21Stats.get(r.id) ?? EMPTY_STATS;
         const reach = reachStats.get(r.id) ?? EMPTY_STATS;
-        if (includeEmpty || ir21.totalMnos > 0) rows.push(toRow(r, ir21, ProviderStatsSource.IR21));
-        if (includeEmpty || reach.totalMnos > 0) rows.push(toRow(r, reach, ProviderStatsSource.REACH_LIST));
+        if ((includeEmpty || ir21.totalMnos > 0) && passesServiceFilter(ir21)) rows.push(toRow(r, ir21, ProviderStatsSource.IR21));
+        if ((includeEmpty || reach.totalMnos > 0) && passesServiceFilter(reach)) rows.push(toRow(r, reach, ProviderStatsSource.REACH_LIST));
       }
       return rows;
     }
@@ -89,7 +97,7 @@ export class ProviderService {
     const statsById = await this.computeFootprints(providerIds, source);
     return providers
       .map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS))
-      .filter((row) => includeEmpty || row.stats.totalMnos > 0);
+      .filter((row) => (includeEmpty || row.stats.totalMnos > 0) && passesServiceFilter(row.stats));
   }
 
   /** Lightweight matches for the Provider Search autocomplete — canonical

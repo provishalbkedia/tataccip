@@ -8,7 +8,7 @@ import { isJunkProviderName, splitCompositeProviderNames } from "./provider-norm
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
-import { ActiveBaselineInfo, BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
+import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UploadResult } from "@ccip/shared-types";
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
@@ -351,7 +351,7 @@ export class UploadService {
       }
     }
 
-    const ipxCandidate = parsed.grxIpxProviders[0] ?? parsed.lteIpxProviders[0] ?? null;
+    const ipxCandidate = parsed.grxIpxProviders[0] ?? null;
     if (ipxCandidate) {
       const resolved = await this.providerResolver.resolve(ipxCandidate, "IPX", parsed.senderTadig);
       if (resolved.status === "resolved") {
@@ -362,6 +362,30 @@ export class UploadService {
             mnoId: mno.id,
             providerId: resolved.providerId,
             serviceId: services.get("IPX")!,
+            sourceFile: filename,
+            effectiveDate,
+          },
+        });
+      } else {
+        unmapped++;
+      }
+    }
+
+    // LTE/Diameter (DSX) is a distinct declared carrier from the GRX/IPX
+    // data-roaming provider above — see Ir21XmlParserService.
+    // extractDsxDiameterProviders — so it gets its own resolution + service
+    // row rather than only being an IPX fallback.
+    const dsxCandidate = parsed.lteIpxProviders[0] ?? null;
+    if (dsxCandidate) {
+      const resolved = await this.providerResolver.resolve(dsxCandidate, "DSX", parsed.senderTadig);
+      if (resolved.status === "resolved") {
+        await this.prisma.ir21Connectivity.upsert({
+          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("DSX")! } },
+          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
+          create: {
+            mnoId: mno.id,
+            providerId: resolved.providerId,
+            serviceId: services.get("DSX")!,
             sourceFile: filename,
             effectiveDate,
           },
@@ -416,6 +440,54 @@ export class UploadService {
     });
 
     return unmapped;
+  }
+
+  /** Best-effort DSX backfill for MNOs ingested before the widened LTE/
+   * Diameter extraction existed — see DsxBackfillResult's doc comment for
+   * why this reads from the already-stored MnoMasterConnectivity snapshot
+   * rather than re-parsing XML (never retained after ingestion). Only fills
+   * gaps: an MNO that already has a DSX Ir21Connectivity row is left alone. */
+  async backfillDsxFromSnapshot(): Promise<DsxBackfillResult> {
+    const services = await this.serviceMap();
+    const dsxServiceId = services.get("DSX");
+    if (!dsxServiceId) return { scanned: 0, created: 0, alreadyLinked: 0, unmapped: 0 };
+
+    const snapshots = await this.prisma.mnoMasterConnectivity.findMany({
+      where: { lteIpxProviders: { isEmpty: false } },
+      select: { mnoId: true, tadigCode: true, lteIpxProviders: true },
+    });
+
+    let created = 0;
+    let alreadyLinked = 0;
+    let unmapped = 0;
+
+    for (const snap of snapshots) {
+      const existing = await this.prisma.ir21Connectivity.findUnique({
+        where: { mnoId_serviceId: { mnoId: snap.mnoId, serviceId: dsxServiceId } },
+      });
+      if (existing) {
+        alreadyLinked++;
+        continue;
+      }
+      const candidate = snap.lteIpxProviders[0];
+      const resolved = await this.providerResolver.resolve(candidate, "DSX", snap.tadigCode);
+      if (resolved.status === "resolved") {
+        await this.prisma.ir21Connectivity.create({
+          data: {
+            mnoId: snap.mnoId,
+            providerId: resolved.providerId,
+            serviceId: dsxServiceId,
+            sourceFile: "dsx-backfill",
+            effectiveDate: new Date(),
+          },
+        });
+        created++;
+      } else {
+        unmapped++;
+      }
+    }
+
+    return { scanned: snapshots.length, created, alreadyLinked, unmapped };
   }
 
   private deriveStatus(recordsLoaded: number, errorCount: number): UploadStatus {

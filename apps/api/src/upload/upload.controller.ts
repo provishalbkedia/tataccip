@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   UploadedFile,
   UploadedFiles,
@@ -98,5 +99,12 @@ export class UploadController {
   @Roles(Role.ADMIN, Role.ANALYST)
   async activeBaseline() {
     return this.uploadService.getActiveBaseline();
+  }
+
+  @Post("backfill-dsx")
+  @Roles(Role.ADMIN)
+  @HttpCode(200)
+  async backfillDsx() {
+    return this.uploadService.backfillDsxFromSnapshot();
   }
 }

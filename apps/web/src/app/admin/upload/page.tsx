@@ -7,13 +7,19 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  FormControlLabel,
   Grid,
   LinearProgress,
   List,
   ListItem,
   ListItemText,
-  Stack,
   Typography,
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -141,14 +147,18 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
   const [batchLabel, setBatchLabel] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<BulkXmlUploadResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [replaceActiveDataset, setReplaceActiveDataset] = React.useState(false);
+  const [confirmReplaceOpen, setConfirmReplaceOpen] = React.useState(false);
+  const pendingFilesRef = React.useRef<FileList | null>(null);
 
-  async function uploadOne(blob: Blob, filename: string, onProgress: (ratio: number) => void) {
+  async function uploadOne(blob: Blob, filename: string, replace: boolean, onProgress: (ratio: number) => void) {
     const formData = new FormData();
     formData.append("files", blob, filename);
+    formData.append("replaceActiveDataset", String(replace));
     return api.postFormWithProgress<BulkXmlUploadResult>("/upload/ir21-xml", formData, onProgress);
   }
 
-  async function handleFiles(files: FileList) {
+  async function doUpload(files: FileList) {
     setBusy(true);
     setError(null);
     setResult(null);
@@ -171,13 +181,22 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
         for (let i = 0; i < batches.length; i++) {
           setBatchLabel(`Uploading batch ${i + 1} of ${batches.length}`);
           setProgress(0);
-          const res = await uploadOne(batches[i], `batch-${i + 1}-of-${batches.length}.zip`, setProgress);
+          // Only the first sub-batch purges the prior dataset — passing
+          // this on every sub-batch would wipe out the ones ingested just
+          // before it (see UploadService.uploadIr21XmlBatch).
+          const res = await uploadOne(
+            batches[i],
+            `batch-${i + 1}-of-${batches.length}.zip`,
+            i === 0 && replaceActiveDataset,
+            setProgress,
+          );
           results.push(res);
         }
         setResult(mergeBulkResults(results));
       } else {
         const formData = new FormData();
         Array.from(files).forEach((f) => formData.append("files", f));
+        formData.append("replaceActiveDataset", String(replaceActiveDataset));
         const res = await api.postFormWithProgress<BulkXmlUploadResult>(
           "/upload/ir21-xml",
           formData,
@@ -193,6 +212,15 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
       setBatchLabel(null);
       if (inputRef.current) inputRef.current.value = "";
     }
+  }
+
+  function handleFiles(files: FileList) {
+    if (replaceActiveDataset) {
+      pendingFilesRef.current = files;
+      setConfirmReplaceOpen(true);
+      return;
+    }
+    doUpload(files);
   }
 
   return (
@@ -211,9 +239,27 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
           (over 30MB, e.g. a 150MB zip of 1,000 XML + 1,000 paired PDFs) are automatically split
           into several smaller uploads in your browser — each PDF stays grouped with its own XML.
         </Typography>
+        <FormControlLabel
+          sx={{ display: "block", mb: 1 }}
+          control={
+            <Checkbox
+              checked={replaceActiveDataset}
+              onChange={(e) => setReplaceActiveDataset(e.target.checked)}
+              disabled={busy}
+              color="warning"
+            />
+          }
+          label={
+            <Typography variant="body2">
+              <strong>Replace Active IR.21 Dataset</strong> — purges all existing IR.21 connectivity
+              before ingesting this upload as the sole active baseline (asks for confirmation)
+            </Typography>
+          }
+        />
         <Button
           variant="contained"
           component="label"
+          color={replaceActiveDataset ? "warning" : "primary"}
           startIcon={<FolderZipIcon />}
           disabled={busy}
         >
@@ -229,6 +275,31 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
             }}
           />
         </Button>
+
+        <Dialog open={confirmReplaceOpen} onClose={() => setConfirmReplaceOpen(false)}>
+          <DialogTitle>Replace Active IR.21 Dataset?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              This will permanently delete <strong>all</strong> existing IR.21-sourced connectivity
+              data (every MNO&apos;s SCCP/GRX-IPX/LTE declarations) before ingesting this upload. Any
+              MNO not present in this archive will lose its IR.21 connectivity entirely — Reach List
+              data is not affected. This cannot be undone. Continue?
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmReplaceOpen(false)}>Cancel</Button>
+            <Button
+              color="warning"
+              variant="contained"
+              onClick={() => {
+                setConfirmReplaceOpen(false);
+                if (pendingFilesRef.current) doUpload(pendingFilesRef.current);
+              }}
+            >
+              Replace Dataset &amp; Upload
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {busy && (
           <Box sx={{ mt: 2 }}>
@@ -284,7 +355,7 @@ export default function UploadPage() {
     <RequireAuth roles={[Role.ADMIN]}>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-          Admin Upload
+          IR.21 &amp; Reach List Uploads
         </Typography>
         <Grid container spacing={2} sx={{ mb: 4 }}>
           <Grid item xs={12} md={6}>
@@ -325,6 +396,12 @@ export default function UploadPage() {
                   color={p.value === "SUCCESS" ? "success" : p.value === "PARTIAL" ? "warning" : "error"}
                 />
               ),
+            },
+            {
+              field: "isCurrentActive",
+              headerName: "Active Baseline",
+              cellRenderer: (p: { value: boolean }) =>
+                p.value ? <Chip size="small" label="ACTIVE" color="info" /> : null,
             },
           ]}
         />

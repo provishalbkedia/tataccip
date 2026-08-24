@@ -11,6 +11,7 @@ import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
 import { api, ApiError } from "@/lib/api";
 import { DashboardMetrics } from "@ccip/shared-types";
 
@@ -61,6 +62,7 @@ export default function DashboardPage() {
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
           Dashboard
         </Typography>
+        <ActiveBaselineBanner />
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2}>
           {[

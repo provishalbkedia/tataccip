@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef } from "ag-grid-community";
+import type { ColDef, RowSelectionOptions } from "ag-grid-community";
 import { Box, Button } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import "ag-grid-community/styles/ag-grid.css";
@@ -14,12 +14,18 @@ export default function DataGrid<T>({
   height = 480,
   onRowClicked,
   exportFileName,
+  rowSelection,
+  onSelectionChanged,
 }: {
   rowData: T[];
   columnDefs: ColDef<T>[];
   height?: number;
   onRowClicked?: (row: T) => void;
   exportFileName?: string;
+  // Opt-in checkbox multi-select — pass "multiRow" and give the first
+  // columnDef `checkboxSelection: true` to render checkboxes.
+  rowSelection?: RowSelectionOptions<T>["mode"];
+  onSelectionChanged?: (rows: T[]) => void;
 }) {
   const gridRef = React.useRef<AgGridReact<T>>(null);
   const defaultColDef = React.useMemo<ColDef>(
@@ -52,6 +58,10 @@ export default function DataGrid<T>({
           animateRows
           rowStyle={onRowClicked ? { cursor: "pointer" } : undefined}
           onRowClicked={onRowClicked ? (e) => e.data && onRowClicked(e.data) : undefined}
+          rowSelection={rowSelection ? { mode: rowSelection } : undefined}
+          onSelectionChanged={
+            onSelectionChanged ? (e) => onSelectionChanged(e.api.getSelectedRows()) : undefined
+          }
         />
       </div>
     </Box>

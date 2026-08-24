@@ -20,8 +20,7 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
-import RuleIcon from "@mui/icons-material/Rule";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
 import LoginHistoryChip from "./LoginHistoryChip";
@@ -33,8 +32,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
   { href: "/search/mno", label: "Operator Search", icon: <CellTowerIcon /> },
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
   { href: "/comparison", label: "Comparison", icon: <CompareArrowsIcon /> },
-  { href: "/admin/upload", label: "Admin Upload", icon: <UploadFileIcon />, roles: [Role.ADMIN] },
-  { href: "/admin/provider-aliases", label: "Unmapped Providers", icon: <RuleIcon />, roles: [Role.ADMIN] },
+  { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon />, roles: [Role.ADMIN] },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

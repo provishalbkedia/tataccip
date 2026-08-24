@@ -76,7 +76,7 @@ export default function ProviderMergePage() {
 
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(
     () => [
-      { field: "providerName", headerName: "Provider Name", flex: 1.5, checkboxSelection: true, headerCheckboxSelection: true },
+      { field: "providerName", headerName: "Provider Name", flex: 1.5 },
       { field: "providerType", headerName: "Type" },
       { field: "headquarters", headerName: "Headquarters" },
       { field: "stats.totalMnos", headerName: "Total MNOs (IR.21)" },

@@ -36,8 +36,10 @@ export default function DataGrid<T>({
   height?: number;
   onRowClicked?: (row: T) => void;
   exportFileName?: string;
-  // Opt-in checkbox multi-select — pass "multiRow" and give the first
-  // columnDef `checkboxSelection: true` to render checkboxes.
+  // Opt-in checkbox multi-select — pass "multiRow" and AG Grid renders its
+  // own selection checkbox column automatically (rowSelection.checkboxes
+  // defaults to true). Don't also set checkboxSelection on a columnDef —
+  // that's the legacy pre-v32 API and stacks a second checkbox column.
   rowSelection?: RowSelectionOptions<T>["mode"];
   onSelectionChanged?: (rows: T[]) => void;
   // Set true when the grid also has onRowClicked (e.g. navigate-to-detail)

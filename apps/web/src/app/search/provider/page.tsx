@@ -117,7 +117,7 @@ function ProviderSearchPageInner() {
 
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
     const cols: ColDef<ProviderSummary>[] = [
-      { field: "providerName", headerName: "Provider Name", flex: 1.5, checkboxSelection: true, headerCheckboxSelection: true },
+      { field: "providerName", headerName: "Provider Name", flex: 1.5 },
       { field: "providerType", headerName: "Type" },
       { field: "headquarters", headerName: "Headquarters" },
       { field: "website", headerName: "Website", flex: 1.2 },

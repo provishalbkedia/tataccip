@@ -170,14 +170,22 @@ export class ProviderService {
     for (const r of ir21Rows) touch(r.mnoId, r.mno, r.service.serviceName);
     for (const r of reachRows) touch(r.mnoId, r.mno, r.service.serviceName);
 
-    const onNetMnos: OnNetMnoRow[] = Array.from(byMno.values())
-      .map((r) => ({
+    const pdfFlags = await this.prisma.mnoMasterConnectivity.findMany({
+      where: { mnoId: { in: Array.from(byMno.keys()) } },
+      select: { mnoId: true, hasPdfDocument: true },
+    });
+    const hasPdfByMno = new Map(pdfFlags.map((p) => [p.mnoId, p.hasPdfDocument]));
+
+    const onNetMnos: OnNetMnoRow[] = Array.from(byMno.entries())
+      .map(([mnoId, r]) => ({
+        mnoId,
         country: r.country,
         operatorName: r.operatorName,
         tadigCode: r.tadigCode,
         sccp: r.sccp,
         dsx: r.dsx,
         ipx: r.ipx,
+        hasPdfDocument: hasPdfByMno.get(mnoId) ?? false,
       }))
       .sort((a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName));
 

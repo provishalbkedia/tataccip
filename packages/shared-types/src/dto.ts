@@ -172,12 +172,16 @@ export interface ProviderSummary {
 }
 
 export interface OnNetMnoRow {
+  mnoId: number;
   country: string;
   operatorName: string;
   tadigCode: string;
   sccp: boolean;
   dsx: boolean;
   ipx: boolean;
+  // From MnoMasterConnectivity — lets Provider Detail's On-Net MNO List
+  // link straight to GET /mno/:mnoId/pdf per row, same as Operator Search.
+  hasPdfDocument: boolean;
 }
 
 export interface ProviderDetail extends ProviderSummary {

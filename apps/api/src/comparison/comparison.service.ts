@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { DiscrepancyType, ServiceName } from "@prisma/client";
+import { DiscrepancyType, Prisma, ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { DiscrepancyRow } from "@ccip/shared-types";
 import { ComparisonFilterDto } from "./dto/comparison-filter.dto";
@@ -120,13 +120,28 @@ export class ComparisonService {
   }
 
   async find(filters: ComparisonFilterDto): Promise<DiscrepancyRow[]> {
+    // Operator (MNO) search field on the Comparison filter bar is a single
+    // free-text input that can match either the operator's name or its
+    // TADIG code — combined here as one substring OR rather than requiring
+    // two separate fields for what's conceptually one lookup.
+    const mnoConditions: Prisma.MnoMasterWhereInput[] = [];
+    if (filters.country) mnoConditions.push({ country: { equals: filters.country, mode: "insensitive" } });
+    if (filters.operator) {
+      mnoConditions.push({
+        OR: [
+          { operatorName: { contains: filters.operator, mode: "insensitive" } },
+          { tadigCode: { contains: filters.operator, mode: "insensitive" } },
+        ],
+      });
+    }
+
     const rows = await this.prisma.dataDiscrepancy.findMany({
       where: {
         mnoId: filters.mnoId,
         providerId: filters.providerId,
         service: filters.service,
         discrepancyType: filters.discrepancyType,
-        mno: filters.country ? { country: { equals: filters.country, mode: "insensitive" } } : undefined,
+        mno: mnoConditions.length > 0 ? { AND: mnoConditions } : undefined,
       },
       include: { mno: true, provider: true },
       orderBy: [{ computedAt: "desc" }, { id: "asc" }],

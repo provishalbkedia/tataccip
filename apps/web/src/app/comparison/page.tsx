@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   Alert,
   Button,
@@ -12,12 +13,14 @@ import {
   Typography,
 } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { DiscrepancyRow, ProviderSummary, Role, ServiceName, DiscrepancyType } from "@ccip/shared-types";
+import { DiscrepancyRow, MnoSuggestion, ProviderSummary, Role, ServiceName, DiscrepancyType } from "@ccip/shared-types";
 
 const DISCREPANCY_COLORS: Record<string, "error" | "warning" | "info"> = {
   MISSING_IN_REACHLIST: "warning",
@@ -25,8 +28,23 @@ const DISCREPANCY_COLORS: Record<string, "error" | "warning" | "info"> = {
   PROVIDER_MISMATCH: "error",
 };
 
+const VALID_SERVICES: string[] = Object.values(ServiceName);
+const VALID_DISCREPANCY_TYPES: string[] = Object.values(DiscrepancyType);
+
 export default function ComparisonPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <ComparisonPageInner />
+    </React.Suspense>
+  );
+}
+
+function ComparisonPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
+  const [operator, setOperator] = React.useState("");
   const [country, setCountry] = React.useState("");
   const [service, setService] = React.useState("");
   const [providerId, setProviderId] = React.useState("");
@@ -36,20 +54,63 @@ export default function ComparisonPage() {
   const [running, setRunning] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
 
-  const runSearch = React.useCallback(() => {
+  const fetchMnoSuggestions = React.useCallback(
+    (q: string) => api.get<MnoSuggestion[]>(`/mno/suggestions?q=${encodeURIComponent(q)}`),
+    [],
+  );
+
+  // The URL query string is the source of truth for the active filters —
+  // fires on initial load and whenever Filter/Reset push a new query, and
+  // restores exact filter state on browser Back/Forward navigation.
+  React.useEffect(() => {
+    const nextOperator = searchParams.get("operator") ?? "";
+    const nextCountry = searchParams.get("country") ?? "";
+    const nextService = searchParams.get("service") ?? "";
+    const nextProviderId = searchParams.get("providerId") ?? "";
+    const nextDiscrepancyType = searchParams.get("discrepancyType") ?? "";
+    setOperator(nextOperator);
+    setCountry(nextCountry);
+    setService(VALID_SERVICES.includes(nextService) ? nextService : "");
+    setProviderId(nextProviderId);
+    setDiscrepancyType(VALID_DISCREPANCY_TYPES.includes(nextDiscrepancyType) ? nextDiscrepancyType : "");
+
     const params = new URLSearchParams();
-    if (country) params.set("country", country);
-    if (service) params.set("service", service);
-    if (providerId) params.set("providerId", providerId);
-    if (discrepancyType) params.set("discrepancyType", discrepancyType);
+    if (nextOperator) params.set("operator", nextOperator);
+    if (nextCountry) params.set("country", nextCountry);
+    if (nextService) params.set("service", nextService);
+    if (nextProviderId) params.set("providerId", nextProviderId);
+    if (nextDiscrepancyType) params.set("discrepancyType", nextDiscrepancyType);
     api.get<DiscrepancyRow[]>(`/comparison?${params.toString()}`).then(setRows);
-  }, [country, service, providerId, discrepancyType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   React.useEffect(() => {
     api.get<ProviderSummary[]>("/provider/search").then(setProviders);
-    runSearch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const pushParams = React.useCallback(
+    (next: { operator: string; country: string; service: string; providerId: string; discrepancyType: string }) => {
+      const params = new URLSearchParams();
+      if (next.operator) params.set("operator", next.operator);
+      if (next.country) params.set("country", next.country);
+      if (next.service) params.set("service", next.service);
+      if (next.providerId) params.set("providerId", next.providerId);
+      if (next.discrepancyType) params.set("discrepancyType", next.discrepancyType);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const runSearch = React.useCallback(
+    () => pushParams({ operator, country, service, providerId, discrepancyType }),
+    [pushParams, operator, country, service, providerId, discrepancyType],
+  );
+
+  const resetFilters = React.useCallback(
+    () => pushParams({ operator: "", country: "", service: "", providerId: "", discrepancyType: "" }),
+    [pushParams],
+  );
 
   async function handleRun() {
     setRunning(true);
@@ -90,10 +151,20 @@ export default function ComparisonPage() {
 
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={3}>
+            <Grid item xs={12} sm={2.4}>
+              <SuggestionAutocomplete<MnoSuggestion>
+                label="Operator (MNO) / TADIG"
+                value={operator}
+                onValueChange={setOperator}
+                fetchSuggestions={fetchMnoSuggestions}
+                getOptionLabel={(o) => `${o.operatorName} (${o.tadigCode})`}
+                onEnter={runSearch}
+              />
+            </Grid>
+            <Grid item xs={12} sm={2.2}>
               <TextField fullWidth label="Country" value={country} onChange={(e) => setCountry(e.target.value)} />
             </Grid>
-            <Grid item xs={6} sm={2.5}>
+            <Grid item xs={6} sm={2}>
               <TextField
                 fullWidth
                 select
@@ -109,7 +180,7 @@ export default function ComparisonPage() {
                 ))}
               </TextField>
             </Grid>
-            <Grid item xs={6} sm={2.5}>
+            <Grid item xs={6} sm={2}>
               <TextField
                 fullWidth
                 select
@@ -125,7 +196,7 @@ export default function ComparisonPage() {
                 ))}
               </TextField>
             </Grid>
-            <Grid item xs={6} sm={2.5}>
+            <Grid item xs={6} sm={2}>
               <TextField
                 fullWidth
                 select
@@ -141,9 +212,14 @@ export default function ComparisonPage() {
                 ))}
               </TextField>
             </Grid>
-            <Grid item xs={6} sm={1.5}>
-              <Button fullWidth variant="outlined" onClick={runSearch}>
+            <Grid item xs={6} sm={1.4}>
+              <Button fullWidth variant="contained" onClick={runSearch}>
                 Filter
+              </Button>
+            </Grid>
+            <Grid item xs={6} sm={1}>
+              <Button fullWidth variant="outlined" startIcon={<RestartAltIcon />} onClick={resetFilters}>
+                Reset
               </Button>
             </Grid>
           </Grid>

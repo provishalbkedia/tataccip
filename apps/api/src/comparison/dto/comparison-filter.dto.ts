@@ -8,6 +8,13 @@ export class ComparisonFilterDto {
   @IsString()
   country?: string;
 
+  // Free-text match against MnoMaster.operatorName or tadigCode — powers
+  // the Comparison filter bar's Operator (MNO) / TADIG autocomplete.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  operator?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()

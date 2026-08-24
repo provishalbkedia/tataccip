@@ -210,6 +210,8 @@ export interface DiscrepancyRow {
 
 export interface ComparisonFilters {
   country?: string;
+  // Free-text match against operator name or TADIG code.
+  operator?: string;
   mnoId?: number;
   providerId?: number;
   service?: ServiceName;

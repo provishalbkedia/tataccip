@@ -43,6 +43,25 @@ model User {
   passwordHash String
   role         Role     @default(VIEWER)
   createdAt    DateTime @default(now())
+
+  loginHistory LoginHistory[]
+}
+
+// One row per successful login — JWT auth is stateless (no session table,
+// nothing invalidates a prior token), so this is purely an activity log,
+// not an access-control mechanism. ipAddress/userAgent are best-effort: a
+// browser never exposes the client's actual machine name to a web app, so
+// this is the closest real substitute for "where did this login come from".
+model LoginHistory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  loginAt   DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model MnoMaster {

@@ -24,6 +24,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RuleIcon from "@mui/icons-material/Rule";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
+import LoginHistoryChip from "./LoginHistoryChip";
 
 const DRAWER_WIDTH = 240;
 
@@ -52,6 +53,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {user && (
             <>
               <Chip label={`${user.email} · ${user.role}`} size="small" sx={{ color: "white", borderColor: "white" }} variant="outlined" />
+              <LoginHistoryChip />
               <Button color="inherit" onClick={logout}>
                 Logout
               </Button>

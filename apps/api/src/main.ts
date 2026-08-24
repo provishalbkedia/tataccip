@@ -11,6 +11,12 @@ import { AppModule } from "./app.module";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Both Render and Cloud Run terminate TLS at a proxy in front of the app,
+  // so without this every request's socket IP is the proxy's internal
+  // address, not the real client — @Ip() (used for login-history logging)
+  // needs this to read the real IP from X-Forwarded-For instead.
+  app.getHttpAdapter().getInstance().set("trust proxy", true);
+
   app.setGlobalPrefix("api");
   app.useGlobalPipes(
     new ValidationPipe({

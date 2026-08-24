@@ -14,6 +14,21 @@ export interface LoginResponse {
   };
 }
 
+// A browser never exposes the client's actual machine name to a web app —
+// ipAddress + a parsed browser/OS label from the User-Agent header is the
+// closest real substitute for "where did this login come from".
+export interface LoginHistoryRow {
+  id: number;
+  loginAt: string;
+  ipAddress: string | null;
+  browserOs: string | null;
+}
+
+export interface LoginHistorySummary {
+  totalLogins: number;
+  recent: LoginHistoryRow[];
+}
+
 export interface DashboardMetrics {
   totalMnos: number;
   totalProviders: number;

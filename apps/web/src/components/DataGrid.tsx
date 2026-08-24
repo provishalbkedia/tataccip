@@ -62,23 +62,32 @@ export default function DataGrid<T>({
     });
   }, []);
 
-  // AG Grid occasionally finishes its very first flex-width layout pass one
-  // column short on a production (non-Strict-Mode) mount — observed on
-  // wide grids (7+ columns needing horizontal scroll), where the last
-  // column's header cell never mounts even though the grid's own column
-  // model and total layout width both account for it. Forcing one
-  // sizeColumnsToFit() pass after ready reliably completes the layout;
-  // re-pushing columnDefs alone (tried first) was not sufficient. Costs the
-  // per-column flex ratio (e.g. a wider name column) in favor of the column
-  // actually being there — acceptable, since columns stay user-resizable.
   const forceLayout = React.useCallback(() => {
     gridRef.current?.api?.sizeColumnsToFit();
   }, []);
 
   const onGridReady = React.useCallback(() => {
-    requestAnimationFrame(forceLayout);
+    forceLayout();
     if (showTopPagination) syncPageInfo();
   }, [forceLayout, showTopPagination, syncPageInfo]);
+
+  // AG Grid occasionally finishes its very first flex-width layout pass one
+  // column short on a production (non-Strict-Mode) mount — observed on
+  // wide grids (7+ columns needing horizontal scroll), where the last
+  // column's header cell never mounts even though the grid's own column
+  // model and total layout width both account for it. Calling
+  // sizeColumnsToFit() from onGridReady/onFirstDataRendered wasn't enough —
+  // showTopPagination's own onGridReady-triggered setPageInfo() re-renders
+  // DataGrid with a fresh columnDefs array reference, and ag-grid-react
+  // reapplies it (re-triggering the same drop) shortly after. A delayed
+  // effect, run once React/AG Grid have both settled, reliably outlasts
+  // that churn. Costs each column's flex ratio (all end up equal-width) in
+  // favor of the column actually being there — acceptable, since columns
+  // stay user-resizable.
+  React.useEffect(() => {
+    const timer = setTimeout(forceLayout, 400);
+    return () => clearTimeout(timer);
+  }, [rowData, columnDefs, forceLayout]);
 
   function handlePageSizeChange(value: number) {
     const api = gridRef.current?.api;

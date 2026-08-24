@@ -242,53 +242,71 @@ export default function MnoDetailPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {mno.connectivityMatrix.map((row) => (
-                    <TableRow key={row.service}>
-                      <TableCell>
-                        <Chip label={row.service} size="small" />
-                      </TableCell>
-                      <TableCell>
-                        {row.ir21Provider ? (
-                          <Chip
-                            label={row.ir21Provider}
-                            size="small"
-                            variant="outlined"
-                            clickable={!!row.ir21ProviderResolution}
-                            onClick={
-                              row.ir21ProviderResolution
-                                ? () =>
+                  {mno.connectivityMatrix.map((row) => {
+                    const reachNames = new Set(row.reachlistProviders);
+                    const ir21Names = new Set(row.ir21Providers.map((p) => p.name));
+                    const matchedCount = row.ir21Providers.filter((p) => reachNames.has(p.name)).length;
+                    const totalDistinct = new Set([...ir21Names, ...reachNames]).size;
+                    const discrepancyCount = totalDistinct - matchedCount;
+
+                    return (
+                      <TableRow key={row.service}>
+                        <TableCell sx={{ verticalAlign: "top" }}>
+                          <Chip label={row.service} size="small" />
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                            {row.ir21Providers.length} IR.21 Declared vs {row.reachlistProviders.length} Reach List
+                            Claimed ({matchedCount} Matched
+                            {discrepancyCount > 0 ? `, ${discrepancyCount} Discrepancy` : ""})
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          {row.ir21Providers.length > 0 ? (
+                            <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                              {row.ir21Providers.map((p) => (
+                                <Chip
+                                  key={p.id}
+                                  label={p.name}
+                                  size="small"
+                                  variant="outlined"
+                                  color={reachNames.has(p.name) ? "success" : "info"}
+                                  clickable
+                                  onClick={() =>
                                     setInspector({
-                                      providerId: row.ir21ProviderResolution!.canonicalProviderId,
-                                      providerName: row.ir21ProviderResolution!.canonicalProviderName,
-                                      rawStrings: row.ir21ProviderResolution!.rawDeclaredStrings,
-                                      resolvedViaAlias: row.ir21ProviderResolution!.resolvedViaAlias,
+                                      providerId: p.id,
+                                      providerName: p.name,
+                                      rawStrings: p.rawDeclaredString ? [p.rawDeclaredString] : [],
+                                      resolvedViaAlias: p.isPrimary
+                                        ? row.ir21ProviderResolution?.resolvedViaAlias
+                                        : undefined,
                                     })
-                                : undefined
-                            }
-                          />
-                        ) : (
-                          <em>Not declared</em>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {row.reachlistProviders.length > 0 ? (
-                          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-                            {row.reachlistProviders.map((p) => (
-                              <Chip
-                                key={p}
-                                label={p}
-                                size="small"
-                                color={p === row.ir21Provider ? "success" : "warning"}
-                                variant="outlined"
-                              />
-                            ))}
-                          </Box>
-                        ) : (
-                          <em>Not found</em>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                                  }
+                                />
+                              ))}
+                            </Box>
+                          ) : (
+                            <em>Not declared</em>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.reachlistProviders.length > 0 ? (
+                            <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                              {row.reachlistProviders.map((p) => (
+                                <Chip
+                                  key={p}
+                                  label={p}
+                                  size="small"
+                                  color={ir21Names.has(p) ? "success" : "warning"}
+                                  variant="outlined"
+                                />
+                              ))}
+                            </Box>
+                          ) : (
+                            <em>Not found</em>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>

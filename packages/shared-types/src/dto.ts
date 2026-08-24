@@ -113,9 +113,27 @@ export interface ProviderResolutionInfo {
   resolvedViaAlias: string | null;
 }
 
+// One declared provider found among a service's raw candidate strings
+// (primary SCCP + backups, or the full GRX/IPX or LTE/Diameter provider
+// list) that resolved to a distinct ProviderMaster — see
+// MnoService.resolveAllDeclaredProviders. isPrimary marks whichever one
+// the schema's one-row-per-(MNO,service) Ir21Connectivity actually stores
+// (index 0 during ingestion, or an admin override) — the rest are real
+// declared carriers that don't have their own Ir21Connectivity row today,
+// shown here for the Comparison Grid only.
+export interface Ir21DeclaredProvider {
+  id: number;
+  name: string;
+  rawDeclaredString: string;
+  isPrimary: boolean;
+}
+
 export interface ConnectivityMatrixRow {
   service: ServiceName;
+  // The single provider Ir21Connectivity actually stores for this service —
+  // kept for backward compatibility; prefer ir21Providers for display.
   ir21Provider: string | null;
+  ir21Providers: Ir21DeclaredProvider[];
   reachlistProviders: string[];
   ir21ProviderResolution: ProviderResolutionInfo | null;
 }

@@ -2,8 +2,16 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
+import { ProviderResolverService } from "../upload/provider-resolver.service";
 import { SupabaseStorageService } from "../upload/supabase-storage.service";
-import { ConnectivityMatrixRow, MnoDetail, MnoSuggestion, MnoSummary, ProviderResolutionInfo } from "@ccip/shared-types";
+import {
+  ConnectivityMatrixRow,
+  Ir21DeclaredProvider,
+  MnoDetail,
+  MnoSuggestion,
+  MnoSummary,
+  ProviderResolutionInfo,
+} from "@ccip/shared-types";
 
 const SUGGESTION_LIMIT = 10;
 
@@ -20,6 +28,7 @@ export class MnoService {
   constructor(
     private prisma: PrismaService,
     private storage: SupabaseStorageService,
+    private providerResolver: ProviderResolverService,
   ) {}
 
   /** Searches MnoMaster (the canonical operator identity table — every MNO
@@ -179,6 +188,7 @@ export class MnoService {
         return {
           service,
           ir21Provider: ir21?.provider.providerName ?? null,
+          ir21Providers: await this.resolveAllDeclaredProviders(candidates, ir21?.providerId ?? null),
           reachlistProviders: reach.map((r) => r.provider.providerName),
           ir21ProviderResolution: ir21 ? await this.resolveProvenance(ir21.providerId, candidates) : null,
         };
@@ -249,6 +259,48 @@ export class MnoService {
     if (service === "DSX") return connectivity.lteIpxProviders;
     if (service === "IPX") return connectivity.grxIpxProviders;
     return [];
+  }
+
+  /** Resolves EVERY raw declared string for a service — not just the single
+   * one Ir21Connectivity stores, since it's unique per (mnoId, serviceId)
+   * by design (GSMA IR.21 is one MNO's single published truth per service —
+   * see schema.prisma) even when the source XML declares several carriers
+   * (e.g. THAWN's 8-9 GRX/IPX providers). Read-only, using the same
+   * in-memory alias cache ingestion uses (ProviderResolverService.
+   * matchAlias) — doesn't touch Ir21Connectivity or queue anything as
+   * unmapped, purely for the Operator Detail Comparison Grid's display.
+   * Multiple raw strings resolving to the same provider (e.g. "BICS" and
+   * "Belgacom") collapse into one entry. The provider actually stored in
+   * Ir21Connectivity is always included and flagged isPrimary — even if it
+   * came from an admin override rather than matching any of these raw
+   * strings, so the Comparison Grid never drops it. */
+  private async resolveAllDeclaredProviders(
+    candidateRawStrings: string[],
+    currentIr21ProviderId: number | null,
+  ): Promise<Ir21DeclaredProvider[]> {
+    const rawByProviderId = new Map<number, string>();
+    for (const raw of candidateRawStrings) {
+      const normalized = this.providerResolver.normalize(raw);
+      if (!normalized) continue;
+      const providerId = this.providerResolver.matchAlias(normalized);
+      if (providerId && !rawByProviderId.has(providerId)) rawByProviderId.set(providerId, raw);
+    }
+    if (currentIr21ProviderId && !rawByProviderId.has(currentIr21ProviderId)) {
+      rawByProviderId.set(currentIr21ProviderId, "");
+    }
+    if (rawByProviderId.size === 0) return [];
+
+    const providers = await this.prisma.providerMaster.findMany({
+      where: { id: { in: Array.from(rawByProviderId.keys()) } },
+    });
+    const nameById = new Map(providers.map((p) => [p.id, p.providerName]));
+
+    return Array.from(rawByProviderId.entries()).map(([id, rawDeclaredString]) => ({
+      id,
+      name: nameById.get(id) ?? String(id),
+      rawDeclaredString,
+      isPrimary: currentIr21ProviderId === id,
+    }));
   }
 
   /** Given the provider a service resolved to and the candidate raw strings

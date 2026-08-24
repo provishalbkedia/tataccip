@@ -88,7 +88,6 @@ export class MnoService {
       },
       include: { connectivity: true },
       orderBy: { operatorName: "asc" },
-      take: 200,
     });
 
     const mnoIds = rows.map((r) => r.id);

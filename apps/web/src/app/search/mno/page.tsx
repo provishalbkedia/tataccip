@@ -188,6 +188,8 @@ function MnoSearchPageInner() {
           onSelectionChanged={setSelected}
           clearSelectionSignal={clearSignal}
           onRowClicked={(row) => router.push(`/search/mno/${row.id}`)}
+          showTopPagination
+          exportFileName="operator-search-results"
         />
 
         {selected.length >= 2 && (

@@ -22,7 +22,23 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
+import { splitZipForUpload } from "@/lib/splitZipForUpload";
 import { BulkXmlUploadResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
+
+// Cloud Run's HTTP/1.1 request cap is 32 MiB — a ZIP above this needs to be
+// split into several smaller uploads client-side (see splitZipForUpload).
+const MAX_SINGLE_UPLOAD_BYTES = 30 * 1024 * 1024;
+
+function mergeBulkResults(results: BulkXmlUploadResult[]): BulkXmlUploadResult {
+  return results.reduce((acc, r) => ({
+    uploadHistory: r.uploadHistory,
+    filesProcessed: acc.filesProcessed + r.filesProcessed,
+    filesFailed: acc.filesFailed + r.filesFailed,
+    mnosUpdated: acc.mnosUpdated + r.mnosUpdated,
+    unmappedVariantsFound: acc.unmappedVariantsFound + r.unmappedVariantsFound,
+    errors: [...acc.errors, ...r.errors],
+  }));
+}
 
 function UploadCard({
   title,
@@ -122,28 +138,59 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
+  const [batchLabel, setBatchLabel] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<BulkXmlUploadResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  async function uploadOne(blob: Blob, filename: string, onProgress: (ratio: number) => void) {
+    const formData = new FormData();
+    formData.append("files", blob, filename);
+    return api.postFormWithProgress<BulkXmlUploadResult>("/upload/ir21-xml", formData, onProgress);
+  }
 
   async function handleFiles(files: FileList) {
     setBusy(true);
     setError(null);
     setResult(null);
     setProgress(0);
+    setBatchLabel(null);
     try {
-      const formData = new FormData();
-      Array.from(files).forEach((f) => formData.append("files", f));
-      const res = await api.postFormWithProgress<BulkXmlUploadResult>(
-        "/upload/ir21-xml",
-        formData,
-        setProgress,
-      );
-      setResult(res);
+      // A single oversized .zip has to be split into several requests —
+      // Cloud Run rejects any one request over 32MB outright. Bare XML
+      // file selections and already-small ZIPs go through unchanged.
+      const single = files.length === 1 ? files[0] : null;
+      const needsSplit = single && single.name.toLowerCase().endsWith(".zip") && single.size > MAX_SINGLE_UPLOAD_BYTES;
+
+      if (needsSplit) {
+        setBatchLabel("Splitting archive…");
+        const batches = await splitZipForUpload(single);
+        if (batches.length === 0) {
+          throw new ApiError('No .xml or .pdf files found inside "' + single.name + '"', 400);
+        }
+        const results: BulkXmlUploadResult[] = [];
+        for (let i = 0; i < batches.length; i++) {
+          setBatchLabel(`Uploading batch ${i + 1} of ${batches.length}`);
+          setProgress(0);
+          const res = await uploadOne(batches[i], `batch-${i + 1}-of-${batches.length}.zip`, setProgress);
+          results.push(res);
+        }
+        setResult(mergeBulkResults(results));
+      } else {
+        const formData = new FormData();
+        Array.from(files).forEach((f) => formData.append("files", f));
+        const res = await api.postFormWithProgress<BulkXmlUploadResult>(
+          "/upload/ir21-xml",
+          formData,
+          setProgress,
+        );
+        setResult(res);
+      }
       onUploaded();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed");
     } finally {
       setBusy(false);
+      setBatchLabel(null);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
@@ -156,11 +203,13 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Native GSMA RAEX IR.21 XML ingestion — select up to ~1,000 .xml files, or a single .zip
-          archive containing them.
+          archive containing them and their paired PDFs.
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
           Extracts SCCP/GRX-IPX/LTE connectivity, DNS, and contact info per MNO. Unrecognized
-          provider names are queued under Unmapped Providers instead of guessed.
+          provider names are queued under Unmapped Providers instead of guessed. Large archives
+          (over 30MB, e.g. a 150MB zip of 1,000 XML + 1,000 paired PDFs) are automatically split
+          into several smaller uploads in your browser — each PDF stays grouped with its own XML.
         </Typography>
         <Button
           variant="contained"
@@ -185,7 +234,8 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
           <Box sx={{ mt: 2 }}>
             <LinearProgress variant={progress > 0 ? "determinate" : "indeterminate"} value={progress * 100} />
             <Typography variant="caption" color="text.secondary">
-              {progress > 0 ? `Uploading — ${Math.round(progress * 100)}%` : "Uploading..."}
+              {batchLabel ?? (progress > 0 ? `Uploading — ${Math.round(progress * 100)}%` : "Uploading...")}
+              {batchLabel && progress > 0 && ` — ${Math.round(progress * 100)}%`}
             </Typography>
           </Box>
         )}

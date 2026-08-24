@@ -62,17 +62,23 @@ export default function DataGrid<T>({
     });
   }, []);
 
-  // AG Grid occasionally finishes its very first header layout pass one
+  // AG Grid occasionally finishes its very first flex-width layout pass one
   // column short on a production (non-Strict-Mode) mount — observed on
-  // wide grids (7+ columns needing horizontal scroll). Re-pushing the same
-  // columnDefs through the imperative API right after ready forces a full
-  // header rebuild and reliably fixes it; harmless no-op otherwise.
+  // wide grids (7+ columns needing horizontal scroll), where the last
+  // column's header cell never mounts even though the grid's own column
+  // model and total layout width both account for it. Forcing one
+  // sizeColumnsToFit() pass after ready reliably completes the layout;
+  // re-pushing columnDefs alone (tried first) was not sufficient. Costs the
+  // per-column flex ratio (e.g. a wider name column) in favor of the column
+  // actually being there — acceptable, since columns stay user-resizable.
+  const forceLayout = React.useCallback(() => {
+    gridRef.current?.api?.sizeColumnsToFit();
+  }, []);
+
   const onGridReady = React.useCallback(() => {
-    const api = gridRef.current?.api;
-    if (api) api.setGridOption("columnDefs", columnDefs);
+    requestAnimationFrame(forceLayout);
     if (showTopPagination) syncPageInfo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnDefs, showTopPagination, syncPageInfo]);
+  }, [forceLayout, showTopPagination, syncPageInfo]);
 
   function handlePageSizeChange(value: number) {
     const api = gridRef.current?.api;
@@ -171,6 +177,7 @@ export default function DataGrid<T>({
           }
           onPaginationChanged={showTopPagination ? syncPageInfo : undefined}
           onGridReady={onGridReady}
+          onFirstDataRendered={forceLayout}
         />
       </div>
     </Box>

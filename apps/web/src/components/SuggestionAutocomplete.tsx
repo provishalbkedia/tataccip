@@ -60,7 +60,15 @@ export default function SuggestionAutocomplete<T>({
       filterOptions={(x) => x}
       getOptionLabel={(option) => (typeof option === "string" ? option : getOptionLabel(option))}
       inputValue={value}
-      onInputChange={(_, newValue) => onValueChange(newValue)}
+      onInputChange={(_, newValue, reason) => {
+        // MUI fires this with reason "reset" right after a selection, to
+        // resync the input's displayed text using plain getOptionLabel —
+        // which would clobber the getOptionValue we just set below with
+        // the full display label again. onChange already set the correct
+        // value for a real selection; only forward genuine typing/clearing.
+        if (reason === "reset") return;
+        onValueChange(newValue);
+      }}
       onChange={(_, newValue) => {
         if (newValue && typeof newValue !== "string") {
           onValueChange((getOptionValue ?? getOptionLabel)(newValue));

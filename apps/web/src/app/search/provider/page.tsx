@@ -190,7 +190,8 @@ function ProviderSearchPageInner() {
 
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <Typography variant="body2" color="text.secondary">
-            {uniqueProviderCount} result(s) — click a row for coverage stats. {SOURCE_HELPER_TEXT[source]}
+            {uniqueProviderCount} result(s) — click a row for coverage stats, or check the box on 2-5 rows to
+            compare selected providers side by side. {SOURCE_HELPER_TEXT[source]}
           </Typography>
           {service && (
             <Chip

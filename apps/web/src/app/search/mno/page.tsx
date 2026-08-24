@@ -138,7 +138,8 @@ function MnoSearchPageInner() {
 
         <Box sx={{ mb: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — click a row for the connectivity matrix
+            {results.length} result(s) — click a row for the connectivity matrix, or check the box on 2-5 rows to
+            compare selected operators side by side.
           </Typography>
         </Box>
         <DataGrid<MnoSummary>

@@ -38,11 +38,17 @@ enum VariantStatus {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
   passwordHash String
-  role         Role     @default(VIEWER)
-  createdAt    DateTime @default(now())
+  role         Role      @default(VIEWER)
+  createdAt    DateTime  @default(now())
+  // Updated (fire-and-forget, not awaited) on every authenticated request
+  // by JwtStrategy — powers the "N Online" header badge. Stored on User
+  // rather than in-memory: Cloud Run can run multiple container instances
+  // and scale to zero, so in-memory presence tracking wouldn't be
+  // consistent across instances the way a shared DB column is.
+  lastActiveAt DateTime?
 
   loginHistory LoginHistory[]
 }

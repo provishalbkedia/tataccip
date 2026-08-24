@@ -20,4 +20,11 @@ export class AuthController {
   loginHistory(@Req() req: { user: { userId: number } }) {
     return this.authService.loginHistory(req.user.userId);
   }
+
+  @Get("active-users")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  activeUsers() {
+    return this.authService.getActiveUsers();
+  }
 }

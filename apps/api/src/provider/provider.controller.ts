@@ -19,6 +19,13 @@ export class ProviderController {
     return this.providerService.search(q, parsedSource, includeEmpty === "true");
   }
 
+  // Must come before ":id" — otherwise Nest would route /provider/suggestions
+  // into detail() with id="suggestions" and fail ParseIntPipe.
+  @Get("suggestions")
+  suggestions(@Query("q") q?: string) {
+    return this.providerService.suggestions(q ?? "");
+  }
+
   @Get(":id")
   detail(@Param("id", ParseIntPipe) id: number) {
     return this.providerService.detail(id);

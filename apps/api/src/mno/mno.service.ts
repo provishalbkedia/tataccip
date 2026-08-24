@@ -3,7 +3,9 @@ import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
 import { SupabaseStorageService } from "../upload/supabase-storage.service";
-import { ConnectivityMatrixRow, MnoDetail, MnoSummary, ProviderResolutionInfo } from "@ccip/shared-types";
+import { ConnectivityMatrixRow, MnoDetail, MnoSuggestion, MnoSummary, ProviderResolutionInfo } from "@ccip/shared-types";
+
+const SUGGESTION_LIMIT = 10;
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
@@ -99,6 +101,26 @@ export class MnoService {
         hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
       };
     });
+  }
+
+  /** Lightweight matches for the Operator Search autocomplete — fetched on
+   * every keystroke (debounced client-side), so this stays a single small
+   * query rather than the full search() join. */
+  async suggestions(q: string): Promise<MnoSuggestion[]> {
+    if (!q.trim()) return [];
+    const rows = await this.prisma.mnoMaster.findMany({
+      where: {
+        OR: [
+          { operatorName: { contains: q, mode: "insensitive" } },
+          { tadigCode: { contains: q, mode: "insensitive" } },
+          { country: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, operatorName: true, tadigCode: true, country: true },
+      orderBy: { operatorName: "asc" },
+      take: SUGGESTION_LIMIT,
+    });
+    return rows;
   }
 
   /** Canonical (resolved) provider names per service for a batch of MNOs,

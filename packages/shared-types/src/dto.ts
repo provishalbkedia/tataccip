@@ -29,6 +29,42 @@ export interface LoginHistorySummary {
   recent: LoginHistoryRow[];
 }
 
+// Powers the "N Online | M Total Logins" header badge. "Online" is anyone
+// whose lastActiveAt (updated on every authenticated request — see
+// JwtStrategy) falls within the last 5 minutes; totalLoginsCount is
+// cumulative across all users, distinct from LoginHistorySummary's
+// per-user count.
+export interface ActiveUserEntry {
+  email: string;
+  role: Role;
+  lastActiveAt: string;
+}
+
+export interface ActiveUsersInfo {
+  totalLoginsCount: number;
+  onlineUsersCount: number;
+  onlineUsersList: ActiveUserEntry[];
+}
+
+// Lightweight results for the search-bar Autocomplete inputs — deliberately
+// smaller than MnoSummary/ProviderSummary (no stats/connectivity), since
+// these are fetched on every keystroke (debounced) while typing.
+export interface MnoSuggestion {
+  id: number;
+  operatorName: string;
+  tadigCode: string;
+  country: string;
+}
+
+export interface ProviderSuggestion {
+  id: number;
+  providerName: string;
+  // Populated when this suggestion matched via a ProviderAlias rather than
+  // the canonical name itself, e.g. typing "Belgacom" suggesting "BICS" —
+  // shown so the dropdown doesn't look like an unexplained non-match.
+  matchedAlias: string | null;
+}
+
 export interface DashboardMetrics {
   totalMnos: number;
   totalProviders: number;

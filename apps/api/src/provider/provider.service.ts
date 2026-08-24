@@ -7,10 +7,12 @@ import {
   ProviderCoverageStats,
   ProviderDetail,
   ProviderStatsSource,
+  ProviderSuggestion,
   ProviderSummary,
 } from "@ccip/shared-types";
 
 const EMPTY_STATS: ProviderCoverageStats = { totalCountries: 0, totalMnos: 0, sccpCount: 0, dsxCount: 0, ipxCount: 0 };
+const SUGGESTION_LIMIT = 10;
 
 @Injectable()
 export class ProviderService {
@@ -88,6 +90,46 @@ export class ProviderService {
     return providers
       .map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS))
       .filter((row) => includeEmpty || row.stats.totalMnos > 0);
+  }
+
+  /** Lightweight matches for the Provider Search autocomplete — canonical
+   * names first, then alias-only matches (so typing "Belgacom" suggests
+   * "BICS" with the matched alias shown, not just literal name hits).
+   * Fetched on every keystroke (debounced client-side). */
+  async suggestions(q: string): Promise<ProviderSuggestion[]> {
+    if (!q.trim()) return [];
+
+    const nameMatches = await this.prisma.providerMaster.findMany({
+      where: { providerName: { contains: q, mode: "insensitive" } },
+      select: { id: true, providerName: true },
+      orderBy: { providerName: "asc" },
+      take: SUGGESTION_LIMIT,
+    });
+    const results: ProviderSuggestion[] = nameMatches.map((p) => ({
+      id: p.id,
+      providerName: p.providerName,
+      matchedAlias: null,
+    }));
+
+    if (results.length < SUGGESTION_LIMIT) {
+      const normalized = normalizeCarrierName(q);
+      const aliasMatches = await this.prisma.providerAlias.findMany({
+        where: {
+          aliasPattern: { contains: normalized, mode: "insensitive" },
+          providerId: { notIn: results.map((r) => r.id) },
+        },
+        include: { provider: { select: { id: true, providerName: true } } },
+        take: SUGGESTION_LIMIT - results.length,
+      });
+      const seen = new Set(results.map((r) => r.id));
+      for (const a of aliasMatches) {
+        if (seen.has(a.provider.id)) continue;
+        seen.add(a.provider.id);
+        results.push({ id: a.provider.id, providerName: a.provider.providerName, matchedAlias: a.aliasPattern });
+      }
+    }
+
+    return results;
   }
 
   async detail(id: number): Promise<ProviderDetail> {

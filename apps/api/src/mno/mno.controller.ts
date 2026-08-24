@@ -22,6 +22,13 @@ export class MnoController {
     return this.mnoService.search({ q, tadig, country, mcc, mnc });
   }
 
+  // Must come before ":id" — otherwise Nest would route /mno/suggestions
+  // into detail() with id="suggestions" and fail ParseIntPipe.
+  @Get("suggestions")
+  suggestions(@Query("q") q?: string) {
+    return this.mnoService.suggestions(q ?? "");
+  }
+
   @Get(":id")
   detail(@Param("id", ParseIntPipe) id: number) {
     return this.mnoService.detail(id);

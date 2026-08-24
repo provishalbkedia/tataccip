@@ -90,13 +90,13 @@ export class UploadController {
   }
 
   @Get("history")
-  @Roles(Role.ADMIN, Role.ANALYST)
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   async history() {
     return this.uploadService.getHistory();
   }
 
   @Get("active-baseline")
-  @Roles(Role.ADMIN, Role.ANALYST)
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   async activeBaseline() {
     return this.uploadService.getActiveBaseline();
   }

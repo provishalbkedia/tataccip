@@ -32,7 +32,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
   { href: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
   { href: "/search/mno", label: "Operator Search", icon: <CellTowerIcon /> },
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
-  { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon />, roles: [Role.ADMIN] },
+  { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon /> },
   { href: "/help", label: "Platform Guide & Help", icon: <MenuBookIcon /> },
 ];
 

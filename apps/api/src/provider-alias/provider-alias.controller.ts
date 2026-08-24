@@ -18,7 +18,7 @@ export class ProviderAliasController {
   constructor(private providerAliasService: ProviderAliasService) {}
 
   @Get("unmapped")
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   listUnmapped() {
     return this.providerAliasService.listUnmapped();
   }
@@ -43,7 +43,7 @@ export class ProviderAliasController {
 
   // Provider Normalization & Alias Dictionary (Admin Overrides dashboard, Tab 2)
   @Get("dictionary")
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   dictionary() {
     return this.providerAliasService.dictionary();
   }

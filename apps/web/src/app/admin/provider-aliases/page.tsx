@@ -29,6 +29,8 @@ import {
 import CallSplitIcon from "@mui/icons-material/CallSplit";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
+import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import {
   AffectedMno,
@@ -116,12 +118,14 @@ function OperatorOverrideModal({
   open,
   onClose,
   onSaved,
+  isAdmin,
 }: {
   variant: UnmappedProviderVariantRow;
   providers: ProviderSummary[];
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  isAdmin: boolean;
 }) {
   const [assignments, setAssignments] = React.useState<Record<string, { providerId: number | null; note: string }>>({});
   const [busy, setBusy] = React.useState(false);
@@ -212,7 +216,7 @@ function OperatorOverrideModal({
                       getOptionLabel={(p) => p.providerName}
                       value={providers.find((p) => p.id === assignments[m.tadigCode]?.providerId) ?? null}
                       onChange={(_, v) => setAssignment(m.tadigCode, { providerId: v?.id ?? null })}
-                      disabled={busy}
+                      disabled={busy || !isAdmin}
                       renderInput={(params) => <TextField {...params} placeholder="(Unassigned / Inherit Global)" />}
                     />
                   </TableCell>
@@ -222,7 +226,7 @@ function OperatorOverrideModal({
                       fullWidth
                       placeholder="Optional note"
                       value={assignments[m.tadigCode]?.note ?? ""}
-                      disabled={busy}
+                      disabled={busy || !isAdmin}
                       onChange={(e) => setAssignment(m.tadigCode, { note: e.target.value })}
                     />
                   </TableCell>
@@ -234,9 +238,13 @@ function OperatorOverrideModal({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
-        <Button variant="contained" disabled={busy || assignedCount === 0} onClick={handleSave}>
-          Save Operator Overrides {assignedCount > 0 && `(${assignedCount})`}
-        </Button>
+        <Tooltip title={!isAdmin ? "Administrator privileges required to save overrides." : ""}>
+          <span>
+            <Button variant="contained" disabled={busy || assignedCount === 0 || !isAdmin} onClick={handleSave}>
+              Save Operator Overrides {assignedCount > 0 && `(${assignedCount})`}
+            </Button>
+          </span>
+        </Tooltip>
       </DialogActions>
     </Dialog>
   );
@@ -246,10 +254,12 @@ function ResolveRow({
   variant,
   providers,
   onResolved,
+  isAdmin,
 }: {
   variant: UnmappedProviderVariantRow;
   providers: ProviderSummary[];
   onResolved: () => void;
+  isAdmin: boolean;
 }) {
   const [selected, setSelected] = React.useState<ProviderSummary | null>(null);
   const [newName, setNewName] = React.useState("");
@@ -306,6 +316,7 @@ function ResolveRow({
           open={overrideModalOpen}
           onClose={() => setOverrideModalOpen(false)}
           onSaved={onResolved}
+          isAdmin={isAdmin}
         />
       </TableCell>
       <TableCell sx={cellSx}>
@@ -321,7 +332,7 @@ function ResolveRow({
             setSelected(v);
             if (v) setNewName("");
           }}
-          disabled={busy}
+          disabled={busy || !isAdmin}
           renderInput={(params) => <TextField {...params} label="Map to existing provider" />}
         />
       </TableCell>
@@ -331,19 +342,23 @@ function ResolveRow({
           fullWidth
           label="...or new provider name"
           value={newName}
-          disabled={busy || !!selected}
+          disabled={busy || !!selected || !isAdmin}
           onChange={(e) => setNewName(e.target.value)}
         />
       </TableCell>
       <TableCell sx={cellSx}>
-        <Button
-          variant="contained"
-          size="small"
-          disabled={busy || (!selected && !newName.trim())}
-          onClick={handleResolve}
-        >
-          Resolve &amp; Update All
-        </Button>
+        <Tooltip title={!isAdmin ? "Administrator privileges required to map provider variants." : ""}>
+          <span>
+            <Button
+              variant="contained"
+              size="small"
+              disabled={busy || (!selected && !newName.trim()) || !isAdmin}
+              onClick={handleResolve}
+            >
+              Resolve &amp; Update All
+            </Button>
+          </span>
+        </Tooltip>
         {error && (
           <Typography variant="caption" color="error" display="block" sx={{ mt: 0.5 }}>
             {error}
@@ -355,6 +370,8 @@ function ResolveRow({
 }
 
 export default function ProviderAliasesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === Role.ADMIN;
   const [variants, setVariants] = React.useState<UnmappedProviderVariantRow[]>([]);
   const [providers, setProviders] = React.useState<ProviderSummary[]>([]);
   const [error, setError] = React.useState<string | null>(null);
@@ -372,7 +389,7 @@ export default function ProviderAliasesPage() {
   }, [load]);
 
   return (
-    <RequireAuth roles={[Role.ADMIN]}>
+    <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           Unmapped Providers
@@ -382,6 +399,7 @@ export default function ProviderAliasesPage() {
           provider alias. Map each to a canonical provider — future uploads will resolve it automatically,
           and every affected MNO shown here is backfilled immediately.
         </Typography>
+        <ReadOnlyBanner />
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         {variants.length === 0 && !error && (
@@ -404,7 +422,7 @@ export default function ProviderAliasesPage() {
               </TableHead>
               <TableBody>
                 {variants.map((v) => (
-                  <ResolveRow key={v.id} variant={v} providers={providers} onResolved={load} />
+                  <ResolveRow key={v.id} variant={v} providers={providers} onResolved={load} isAdmin={isAdmin} />
                 ))}
               </TableBody>
             </Table>

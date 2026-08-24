@@ -27,6 +27,7 @@ import {
 import BlockIcon from "@mui/icons-material/Block";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { AuthProvider, Role, UserRow } from "@ccip/shared-types";
@@ -52,6 +53,7 @@ function SummaryBadge({ label, value, color }: { label: string; value: number; c
 
 export default function UserManagementPage() {
   const { user: currentUser } = useAuth();
+  const isAdmin = currentUser?.role === Role.ADMIN;
   const [users, setUsers] = React.useState<UserRow[]>([]);
   const [q, setQ] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -112,7 +114,7 @@ export default function UserManagementPage() {
   );
 
   return (
-    <RequireAuth roles={[Role.ADMIN]}>
+    <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           User Access &amp; Roles
@@ -121,6 +123,7 @@ export default function UserManagementPage() {
           Every registered user — local seeded accounts and Microsoft SSO sign-ins alike. Change a role and it
           takes effect on that user&apos;s very next request; no re-login required.
         </Typography>
+        <ReadOnlyBanner />
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <SummaryBadge label="Total Users" value={counts.total} color="#0A2540" />
@@ -182,19 +185,31 @@ export default function UserManagementPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Select
-                        size="small"
-                        value={u.role}
-                        disabled={busyId === u.id || isSelf}
-                        onChange={(e) => handleRoleChange(u, e.target.value as Role)}
-                        sx={{ minWidth: 130 }}
+                      <Tooltip
+                        title={
+                          !isAdmin
+                            ? "Administrator privileges required to change roles."
+                            : isSelf
+                              ? "You cannot change your own role"
+                              : ""
+                        }
                       >
-                        {ROLE_OPTIONS.map((r) => (
-                          <MenuItem key={r} value={r}>
-                            {r}
-                          </MenuItem>
-                        ))}
-                      </Select>
+                        <span>
+                          <Select
+                            size="small"
+                            value={u.role}
+                            disabled={busyId === u.id || isSelf || !isAdmin}
+                            onChange={(e) => handleRoleChange(u, e.target.value as Role)}
+                            sx={{ minWidth: 130 }}
+                          >
+                            {ROLE_OPTIONS.map((r) => (
+                              <MenuItem key={r} value={r}>
+                                {r}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Chip size="small" label={u.isActive ? "Active" : "Inactive"} color={u.isActive ? "success" : "default"} />
@@ -202,12 +217,22 @@ export default function UserManagementPage() {
                     <TableCell>{new Date(u.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <em>Never</em>}</TableCell>
                     <TableCell>
-                      <Tooltip title={isSelf ? "You cannot deactivate your own account" : u.isActive ? "Deactivate" : "Reactivate"}>
+                      <Tooltip
+                        title={
+                          !isAdmin
+                            ? "Administrator privileges required to change account status."
+                            : isSelf
+                              ? "You cannot deactivate your own account"
+                              : u.isActive
+                                ? "Deactivate"
+                                : "Reactivate"
+                        }
+                      >
                         <span>
                           <Switch
                             size="small"
                             checked={u.isActive}
-                            disabled={busyId === u.id || isSelf}
+                            disabled={busyId === u.id || isSelf || !isAdmin}
                             onChange={() => handleStatusToggle(u)}
                             icon={<BlockIcon fontSize="small" sx={{ p: "1px" }} />}
                           />

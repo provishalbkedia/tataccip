@@ -20,6 +20,7 @@ import {
   List,
   ListItem,
   ListItemText,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -28,9 +29,13 @@ import LanIcon from "@mui/icons-material/Lan";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
+import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { splitZipForUpload } from "@/lib/splitZipForUpload";
 import { BulkXmlUploadResult, DsxBackfillResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
+
+const ADMIN_ONLY_TOOLTIP = "Administrator privileges required to upload datasets.";
 
 // Cloud Run's HTTP/1.1 request cap is 32 MiB — a ZIP above this needs to be
 // split into several smaller uploads client-side (see splitZipForUpload).
@@ -53,12 +58,14 @@ function UploadCard({
   endpoint,
   columnsHint,
   onUploaded,
+  isAdmin,
 }: {
   title: string;
   description: string;
   endpoint: string;
   columnsHint: string;
   onUploaded: () => void;
+  isAdmin: boolean;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
@@ -95,24 +102,29 @@ function UploadCard({
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
           Expected columns: {columnsHint}
         </Typography>
-        <Button
-          variant="contained"
-          component="label"
-          startIcon={<UploadFileIcon />}
-          disabled={busy}
-        >
-          {busy ? "Uploading..." : "Choose Excel file"}
-          <input
-            ref={inputRef}
-            type="file"
-            hidden
-            accept=".xlsx,.xls"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFile(file);
-            }}
-          />
-        </Button>
+        <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
+          <span>
+            <Button
+              variant="contained"
+              component="label"
+              startIcon={<UploadFileIcon />}
+              disabled={busy || !isAdmin}
+            >
+              {busy ? "Uploading..." : "Choose Excel file"}
+              <input
+                ref={inputRef}
+                type="file"
+                hidden
+                accept=".xlsx,.xls"
+                disabled={!isAdmin}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }}
+              />
+            </Button>
+          </span>
+        </Tooltip>
 
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
@@ -141,7 +153,7 @@ function UploadCard({
   );
 }
 
-function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
+function XmlBatchUploadCard({ onUploaded, isAdmin }: { onUploaded: () => void; isAdmin: boolean }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -246,7 +258,7 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
             <Checkbox
               checked={replaceActiveDataset}
               onChange={(e) => setReplaceActiveDataset(e.target.checked)}
-              disabled={busy}
+              disabled={busy || !isAdmin}
               color="warning"
             />
           }
@@ -257,25 +269,30 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
             </Typography>
           }
         />
-        <Button
-          variant="contained"
-          component="label"
-          color={replaceActiveDataset ? "warning" : "primary"}
-          startIcon={<FolderZipIcon />}
-          disabled={busy}
-        >
-          {busy ? "Uploading..." : "Choose .xml files or .zip"}
-          <input
-            ref={inputRef}
-            type="file"
-            hidden
-            multiple
-            accept=".xml,.zip"
-            onChange={(e) => {
-              if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files);
-            }}
-          />
-        </Button>
+        <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
+          <span>
+            <Button
+              variant="contained"
+              component="label"
+              color={replaceActiveDataset ? "warning" : "primary"}
+              startIcon={<FolderZipIcon />}
+              disabled={busy || !isAdmin}
+            >
+              {busy ? "Uploading..." : "Choose .xml files or .zip"}
+              <input
+                ref={inputRef}
+                type="file"
+                hidden
+                multiple
+                accept=".xml,.zip"
+                disabled={!isAdmin}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files);
+                }}
+              />
+            </Button>
+          </span>
+        </Tooltip>
 
         <Dialog open={confirmReplaceOpen} onClose={() => setConfirmReplaceOpen(false)}>
           <DialogTitle>Replace Active IR.21 Dataset?</DialogTitle>
@@ -341,7 +358,7 @@ function XmlBatchUploadCard({ onUploaded }: { onUploaded: () => void }) {
   );
 }
 
-function DsxBackfillCard() {
+function DsxBackfillCard({ isAdmin }: { isAdmin: boolean }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<DsxBackfillResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -375,9 +392,13 @@ function DsxBackfillCard() {
           paths would find, re-upload the active IR.21 batch instead (with &quot;Replace Active
           Dataset&quot;).
         </Typography>
-        <Button variant="outlined" startIcon={<LanIcon />} onClick={run} disabled={busy}>
-          {busy ? "Running…" : "Run DSX Backfill"}
-        </Button>
+        <Tooltip title={!isAdmin ? "Administrator privileges required to run this action." : ""}>
+          <span>
+            <Button variant="outlined" startIcon={<LanIcon />} onClick={run} disabled={busy || !isAdmin}>
+              {busy ? "Running…" : "Run DSX Backfill"}
+            </Button>
+          </span>
+        </Tooltip>
 
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
@@ -396,6 +417,8 @@ function DsxBackfillCard() {
 }
 
 export default function UploadPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === Role.ADMIN;
   const [history, setHistory] = React.useState<UploadHistoryRow[]>([]);
 
   const loadHistory = React.useCallback(() => {
@@ -407,14 +430,15 @@ export default function UploadPage() {
   }, [loadHistory]);
 
   return (
-    <RequireAuth roles={[Role.ADMIN]}>
+    <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
           IR.21 &amp; Reach List Uploads
         </Typography>
+        <ReadOnlyBanner />
         <Grid container spacing={2} sx={{ mb: 4 }}>
           <Grid item xs={12} md={6}>
-            <XmlBatchUploadCard onUploaded={loadHistory} />
+            <XmlBatchUploadCard onUploaded={loadHistory} isAdmin={isAdmin} />
           </Grid>
           <Grid item xs={12} md={6}>
             <UploadCard
@@ -423,10 +447,11 @@ export default function UploadPage() {
               endpoint="/upload/reachlist"
               columnsHint="Provider, Country, MNO, TADIG, Services"
               onUploaded={loadHistory}
+              isAdmin={isAdmin}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <DsxBackfillCard />
+            <DsxBackfillCard isAdmin={isAdmin} />
           </Grid>
         </Grid>
 

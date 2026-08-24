@@ -16,7 +16,7 @@ export class ProviderOverrideController {
   constructor(private overrideService: ProviderOverrideService) {}
 
   @Get()
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   list() {
     return this.overrideService.list();
   }

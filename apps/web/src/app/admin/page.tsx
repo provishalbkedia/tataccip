@@ -10,7 +10,7 @@ import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
-import { Role } from "@ccip/shared-types";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 
 const SECTIONS = [
   {
@@ -41,11 +41,12 @@ const SECTIONS = [
 
 export default function AdminMenuPage() {
   return (
-    <RequireAuth roles={[Role.ADMIN]}>
+    <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
           Admin Menu
         </Typography>
+        <ReadOnlyBanner />
         <ActiveBaselineBanner />
         <Grid container spacing={2}>
           {SECTIONS.map((s) => (

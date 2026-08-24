@@ -14,18 +14,19 @@ const VALID_ROLES: string[] = Object.values(Role);
 @ApiTags("users")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
 @Controller("users")
 export class UserController {
   constructor(private userService: UserService) {}
 
   @Get()
+  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
   list(@Query("q") q?: string, @Query("role") role?: string) {
     const parsedRole = role && VALID_ROLES.includes(role) ? (role as Role) : undefined;
     return this.userService.list(q, parsedRole);
   }
 
   @Put(":id/role")
+  @Roles(Role.ADMIN)
   updateRole(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateUserRoleDto,
@@ -35,6 +36,7 @@ export class UserController {
   }
 
   @Put(":id/status")
+  @Roles(Role.ADMIN)
   updateStatus(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateUserStatusDto,

@@ -34,6 +34,8 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
+import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { MnoProviderOverrideRow, ProviderNormalizationCard, ProviderSummary, Role } from "@ccip/shared-types";
 
@@ -126,7 +128,7 @@ function EditOverrideDialog({
   );
 }
 
-function OverridesLogTab() {
+function OverridesLogTab({ isAdmin }: { isAdmin: boolean }) {
   const [overrides, setOverrides] = React.useState<MnoProviderOverrideRow[]>([]);
   const [providers, setProviders] = React.useState<ProviderSummary[]>([]);
   const [editing, setEditing] = React.useState<MnoProviderOverrideRow | null>(null);
@@ -209,15 +211,30 @@ function OverridesLogTab() {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Tooltip title="Edit Mapping">
-                      <IconButton size="small" onClick={() => setEditing(o)} disabled={busyId === o.id}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip title={!isAdmin ? "Administrator privileges required to edit mappings." : "Edit Mapping"}>
+                      <span>
+                        <IconButton size="small" onClick={() => setEditing(o)} disabled={busyId === o.id || !isAdmin}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
-                    <Tooltip title="Revert / Delete Rule (restores raw XML baseline)">
-                      <IconButton size="small" color="error" disabled={busyId === o.id} onClick={() => handleRevert(o.id)}>
-                        <RestartAltIcon fontSize="small" />
-                      </IconButton>
+                    <Tooltip
+                      title={
+                        !isAdmin
+                          ? "Administrator privileges required to revert rules."
+                          : "Revert / Delete Rule (restores raw XML baseline)"
+                      }
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          disabled={busyId === o.id || !isAdmin}
+                          onClick={() => handleRevert(o.id)}
+                        >
+                          <RestartAltIcon fontSize="small" />
+                        </IconButton>
+                      </span>
                     </Tooltip>
                   </TableCell>
                 </TableRow>
@@ -365,7 +382,7 @@ function AddAliasDialog({
   );
 }
 
-function AliasDictionaryTab() {
+function AliasDictionaryTab({ isAdmin }: { isAdmin: boolean }) {
   const [cards, setCards] = React.useState<ProviderNormalizationCard[]>([]);
   const [providers, setProviders] = React.useState<ProviderSummary[]>([]);
   const [error, setError] = React.useState<string | null>(null);
@@ -432,28 +449,37 @@ function AliasDictionaryTab() {
                   <Typography variant="subtitle1" fontWeight={700}>
                     {card.providerName}
                   </Typography>
-                  <Tooltip title="Add Alias / Variant">
-                    <IconButton size="small" onClick={() => setAddingTo({ id: card.providerId, name: card.providerName })}>
-                      <AddIcon fontSize="small" />
-                    </IconButton>
+                  <Tooltip title={isAdmin ? "Add Alias / Variant" : "Administrator privileges required to add aliases."}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!isAdmin}
+                        onClick={() => setAddingTo({ id: card.providerId, name: card.providerName })}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    </span>
                   </Tooltip>
                 </Box>
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                   {card.aliases.map((a) => (
-                    <Chip
-                      key={a.id}
-                      size="small"
-                      label={`${a.aliasPattern} (${a.occurrenceCount})`}
-                      onDelete={() => handleDelete(a.id)}
-                      deleteIcon={
-                        <Tooltip title="Delete alias">
-                          <DeleteIcon fontSize="small" />
-                        </Tooltip>
-                      }
-                      onClick={() => setReassigning({ id: a.id, aliasPattern: a.aliasPattern })}
-                      icon={<SwapHorizIcon fontSize="small" />}
-                      variant="outlined"
-                    />
+                    <Tooltip key={a.id} title={isAdmin ? "" : "Administrator privileges required to reassign aliases."}>
+                      <Chip
+                        size="small"
+                        label={`${a.aliasPattern} (${a.occurrenceCount})`}
+                        onDelete={isAdmin ? () => handleDelete(a.id) : undefined}
+                        deleteIcon={
+                          isAdmin ? (
+                            <Tooltip title="Delete alias">
+                              <DeleteIcon fontSize="small" />
+                            </Tooltip>
+                          ) : undefined
+                        }
+                        onClick={isAdmin ? () => setReassigning({ id: a.id, aliasPattern: a.aliasPattern }) : undefined}
+                        icon={<SwapHorizIcon fontSize="small" />}
+                        variant="outlined"
+                      />
+                    </Tooltip>
                   ))}
                   {card.aliases.length === 0 && (
                     <Typography variant="caption" color="text.secondary">
@@ -483,10 +509,12 @@ function AliasDictionaryTab() {
 }
 
 export default function OverridesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === Role.ADMIN;
   const [tab, setTab] = React.useState(0);
 
   return (
-    <RequireAuth roles={[Role.ADMIN]}>
+    <RequireAuth>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           Provider Overrides &amp; Normalization Audit
@@ -495,12 +523,13 @@ export default function OverridesPage() {
           Granular per-operator provider assignments and a full audit of how raw carrier-name variants
           consolidate into canonical providers.
         </Typography>
+        <ReadOnlyBanner />
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}>
           <Tab label="Operator-Level Overrides Log" />
           <Tab label="Provider Normalization &amp; Alias Dictionary" />
         </Tabs>
-        {tab === 0 && <OverridesLogTab />}
-        {tab === 1 && <AliasDictionaryTab />}
+        {tab === 0 && <OverridesLogTab isAdmin={isAdmin} />}
+        {tab === 1 && <AliasDictionaryTab isAdmin={isAdmin} />}
       </AppShell>
     </RequireAuth>
   );

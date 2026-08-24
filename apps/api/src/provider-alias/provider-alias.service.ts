@@ -7,6 +7,9 @@ import {
   DeleteProviderResult,
   MergeProviderRequest,
   MergeProviderResult,
+  ProviderAliasEntry,
+  ProviderNormalizationCard,
+  ReassignAliasRequest,
   RemapProviderRequest,
   RemapProviderResult,
   ResolveProviderAliasRequest,
@@ -325,6 +328,87 @@ export class ProviderAliasService {
     await this.providerResolver.refreshCache();
 
     return { deletedProviderId: providerId, deletedProviderName: provider.providerName };
+  }
+
+  /** Tab 2 of the Provider Normalization & Overrides dashboard: every
+   * canonical provider that has at least one registered alias, with each
+   * alias's occurrence count computed live from how many raw declared
+   * strings across the active dataset (MnoMasterConnectivity's SCCP/GRX-IPX/
+   * LTE fields) normalize to that exact pattern. Providers with zero
+   * aliases are omitted — nothing to audit there, just noise. */
+  async dictionary(): Promise<ProviderNormalizationCard[]> {
+    const [providers, aliases, connectivitySnapshots] = await Promise.all([
+      this.prisma.providerMaster.findMany({ orderBy: { providerName: "asc" } }),
+      this.prisma.providerAlias.findMany({ orderBy: { aliasPattern: "asc" } }),
+      this.prisma.mnoMasterConnectivity.findMany({
+        select: { primarySccpCarrier: true, backupSccpCarriers: true, grxIpxProviders: true, lteIpxProviders: true },
+      }),
+    ]);
+
+    const occurrenceCounts = new Map<string, number>();
+    for (const c of connectivitySnapshots) {
+      const raws = [c.primarySccpCarrier, ...c.backupSccpCarriers, ...c.grxIpxProviders, ...c.lteIpxProviders].filter(
+        (v): v is string => !!v,
+      );
+      for (const raw of raws) {
+        const normalized = normalizeCarrierName(raw);
+        if (!normalized) continue;
+        occurrenceCounts.set(normalized, (occurrenceCounts.get(normalized) ?? 0) + 1);
+      }
+    }
+
+    const aliasesByProvider = new Map<number, ProviderAliasEntry[]>();
+    for (const a of aliases) {
+      const list = aliasesByProvider.get(a.providerId) ?? [];
+      list.push({ id: a.id, aliasPattern: a.aliasPattern, occurrenceCount: occurrenceCounts.get(a.aliasPattern) ?? 0 });
+      aliasesByProvider.set(a.providerId, list);
+    }
+
+    return providers
+      .map((p) => ({
+        providerId: p.id,
+        providerName: p.providerName,
+        aliases: (aliasesByProvider.get(p.id) ?? []).sort((a, b) => b.occurrenceCount - a.occurrenceCount),
+      }))
+      .filter((card) => card.aliases.length > 0);
+  }
+
+  /** Registers a new raw-string spelling for an existing canonical
+   * provider — normalized the same way ingestion normalizes incoming
+   * carrier names, so it actually matches future uploads. */
+  async addAlias(providerId: number, rawAliasPattern: string): Promise<void> {
+    const provider = await this.prisma.providerMaster.findUnique({ where: { id: providerId } });
+    if (!provider) throw new NotFoundException(`Provider ${providerId} not found`);
+
+    const normalized = normalizeCarrierName(rawAliasPattern);
+    if (!normalized) throw new BadRequestException(`"${rawAliasPattern}" has no resolvable name after normalization`);
+
+    await this.providerResolver.addAlias(provider.id, normalized);
+  }
+
+  /** Moves an existing alias to point at a different (or brand-new)
+   * canonical provider — thin wrapper over remap(), since an alias's own
+   * pattern is already normalized text, exactly what remap() expects as
+   * its rawString input. Retroactively repoints every matching
+   * Ir21Connectivity row, not just future resolutions. */
+  async reassignAlias(aliasId: string, req: ReassignAliasRequest): Promise<RemapProviderResult> {
+    const alias = await this.prisma.providerAlias.findUnique({ where: { id: aliasId } });
+    if (!alias) throw new NotFoundException("Alias not found");
+    return this.remap({ rawString: alias.aliasPattern, ...req });
+  }
+
+  /** Detaches an alias from its canonical provider outright. Only affects
+   * *future* resolution (removed from the in-memory match cache) — does
+   * not retroactively revert already-resolved Ir21Connectivity rows, since
+   * silently moving historical data on a simple detach would be
+   * surprising; use reassignAlias to actively repoint existing rows
+   * instead. Future ingestion of this raw string routes back into the
+   * Unmapped Providers queue for triage. */
+  async deleteAlias(aliasId: string): Promise<void> {
+    const alias = await this.prisma.providerAlias.findUnique({ where: { id: aliasId } });
+    if (!alias) throw new NotFoundException("Alias not found");
+    await this.prisma.providerAlias.delete({ where: { id: aliasId } });
+    await this.providerResolver.refreshCache();
   }
 
   private toRow = (

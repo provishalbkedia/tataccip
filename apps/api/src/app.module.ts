@@ -8,6 +8,7 @@ import { MnoModule } from "./mno/mno.module";
 import { ProviderModule } from "./provider/provider.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
+import { ProviderOverrideModule } from "./provider-override/provider-override.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
     ProviderModule,
     DashboardModule,
     ProviderAliasModule,
+    ProviderOverrideModule,
   ],
 })
 export class AppModule {}

@@ -332,68 +332,50 @@ export class UploadService {
       ? new Date(parsed.fileCreationTimestamp)
       : new Date();
 
-    if (parsed.primarySccpCarrier) {
-      const resolved = await this.providerResolver.resolve(parsed.primarySccpCarrier, "SCCP", parsed.senderTadig);
-      if (resolved.status === "resolved") {
-        await this.prisma.ir21Connectivity.upsert({
-          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("SCCP")! } },
-          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
-          create: {
-            mnoId: mno.id,
-            providerId: resolved.providerId,
-            serviceId: services.get("SCCP")!,
-            sourceFile: filename,
-            effectiveDate,
-          },
-        });
-      } else {
-        unmapped++;
-      }
-    }
+    // Admin-pinned per-(MNO, service) overrides take priority over whatever
+    // this file's own declared text would resolve to — e.g. every MNO
+    // declaring the generic "SCCP Carrier" resolves the same way by
+    // default, but a specific MNO's override says otherwise. Loaded once
+    // per file rather than per-service query.
+    const activeOverrides = await this.prisma.mnoProviderOverride.findMany({
+      where: { tadigCode: parsed.senderTadig, isActive: true },
+    });
+    const overrideByService = new Map(activeOverrides.map((o) => [o.serviceName, o]));
 
-    const ipxCandidate = parsed.grxIpxProviders[0] ?? null;
-    if (ipxCandidate) {
-      const resolved = await this.providerResolver.resolve(ipxCandidate, "IPX", parsed.senderTadig);
-      if (resolved.status === "resolved") {
-        await this.prisma.ir21Connectivity.upsert({
-          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("IPX")! } },
-          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
-          create: {
-            mnoId: mno.id,
-            providerId: resolved.providerId,
-            serviceId: services.get("IPX")!,
-            sourceFile: filename,
-            effectiveDate,
-          },
-        });
-      } else {
-        unmapped++;
-      }
-    }
-
+    unmapped += await this.applyServiceConnectivity(
+      mno.id,
+      parsed.senderTadig,
+      "SCCP",
+      parsed.primarySccpCarrier,
+      overrideByService.get("SCCP"),
+      services,
+      filename,
+      effectiveDate,
+    );
+    unmapped += await this.applyServiceConnectivity(
+      mno.id,
+      parsed.senderTadig,
+      "IPX",
+      parsed.grxIpxProviders[0] ?? null,
+      overrideByService.get("IPX"),
+      services,
+      filename,
+      effectiveDate,
+    );
     // LTE/Diameter (DSX) is a distinct declared carrier from the GRX/IPX
     // data-roaming provider above — see Ir21XmlParserService.
     // extractDsxDiameterProviders — so it gets its own resolution + service
     // row rather than only being an IPX fallback.
-    const dsxCandidate = parsed.lteIpxProviders[0] ?? null;
-    if (dsxCandidate) {
-      const resolved = await this.providerResolver.resolve(dsxCandidate, "DSX", parsed.senderTadig);
-      if (resolved.status === "resolved") {
-        await this.prisma.ir21Connectivity.upsert({
-          where: { mnoId_serviceId: { mnoId: mno.id, serviceId: services.get("DSX")! } },
-          update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate },
-          create: {
-            mnoId: mno.id,
-            providerId: resolved.providerId,
-            serviceId: services.get("DSX")!,
-            sourceFile: filename,
-            effectiveDate,
-          },
-        });
-      } else {
-        unmapped++;
-      }
-    }
+    unmapped += await this.applyServiceConnectivity(
+      mno.id,
+      parsed.senderTadig,
+      "DSX",
+      parsed.lteIpxProviders[0] ?? null,
+      overrideByService.get("DSX"),
+      services,
+      filename,
+      effectiveDate,
+    );
 
     const snapshotFields = {
       tadigCode: mno.tadigCode,
@@ -440,6 +422,54 @@ export class UploadService {
     });
 
     return unmapped;
+  }
+
+  /** Resolves and upserts one (MNO, service) Ir21Connectivity row — through
+   * an active MnoProviderOverride when one is pinned for this MNO+service
+   * (skipping normal alias resolution entirely, so a generic declared
+   * string like "SCCP Carrier" doesn't clobber a deliberately-overridden
+   * MNO on every re-upload), otherwise through the normal resolver.
+   * Returns 1 if the raw string went unmapped (queued for admin triage), 0
+   * otherwise — folded into applyParsedIr21's running `unmapped` count. */
+  private async applyServiceConnectivity(
+    mnoId: number,
+    senderTadig: string,
+    serviceName: ServiceName,
+    rawCandidate: string | null,
+    override: { overrideProviderId: number; originalRawString: string } | undefined,
+    services: Map<ServiceName, number>,
+    filename: string,
+    effectiveDate: Date,
+  ): Promise<number> {
+    const serviceId = services.get(serviceName)!;
+
+    if (override) {
+      await this.prisma.ir21Connectivity.upsert({
+        where: { mnoId_serviceId: { mnoId, serviceId } },
+        update: { providerId: override.overrideProviderId, sourceFile: filename, effectiveDate, isManualOverride: true },
+        create: {
+          mnoId,
+          providerId: override.overrideProviderId,
+          serviceId,
+          sourceFile: filename,
+          effectiveDate,
+          isManualOverride: true,
+        },
+      });
+      return 0;
+    }
+
+    if (!rawCandidate) return 0;
+
+    const resolved = await this.providerResolver.resolve(rawCandidate, serviceName, senderTadig);
+    if (resolved.status !== "resolved") return 1;
+
+    await this.prisma.ir21Connectivity.upsert({
+      where: { mnoId_serviceId: { mnoId, serviceId } },
+      update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate, isManualOverride: false },
+      create: { mnoId, providerId: resolved.providerId, serviceId, sourceFile: filename, effectiveDate },
+    });
+    return 0;
   }
 
   /** Best-effort DSX backfill for MNOs ingested before the widened LTE/

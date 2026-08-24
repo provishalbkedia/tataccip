@@ -85,6 +85,7 @@ model MnoMaster {
   reachlistEntries ProviderReachlist[]
   discrepancies    DataDiscrepancy[]
   connectivity     MnoMasterConnectivity?
+  providerOverrides MnoProviderOverride[]
 
   @@index([operatorName])
   @@index([country])
@@ -144,6 +145,7 @@ model ProviderMaster {
   discrepancies    DataDiscrepancy[]
   aliases          ProviderAlias[]
   unmappedVariants UnmappedProviderVariant[]
+  overrides        MnoProviderOverride[]
 }
 
 // A known raw-string spelling of a provider name (from an IR.21 XML export,
@@ -184,6 +186,35 @@ model UnmappedProviderVariant {
   @@index([status])
 }
 
+// An admin-pinned (MNO, service) -> provider mapping that outlives normal
+// alias resolution — for cases where a generic declared string ("SCCP
+// Carrier", "IPX Provider") resolves the same way for every MNO that uses
+// it, but a specific MNO's real relationship is actually with a different
+// provider. Re-applied on every future IR.21 XML re-ingestion of that
+// TADIG (see UploadService.applyParsedIr21), taking priority over whatever
+// the file's own declared text would otherwise resolve to.
+model MnoProviderOverride {
+  id                 String      @id @default(uuid())
+  tadigCode          String
+  mnoId              Int
+  serviceName        ServiceName
+  overrideProviderId Int
+  // The raw declared string this override replaces (e.g. "SCCP Carrier") —
+  // kept for audit visibility, not used for matching.
+  originalRawString String  @default("")
+  reasonNote        String?
+  updatedBy         String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  mno              MnoMaster      @relation(fields: [mnoId], references: [id])
+  overrideProvider ProviderMaster @relation(fields: [overrideProviderId], references: [id])
+
+  @@unique([tadigCode, serviceName])
+  @@index([mnoId])
+}
+
 model Service {
   id          Int         @id @default(autoincrement())
   serviceName ServiceName @unique
@@ -203,6 +234,10 @@ model Ir21Connectivity {
   uploadDate    DateTime @default(now())
   effectiveDate DateTime
   remarks       String?
+  // True when this row's providerId came from an active MnoProviderOverride
+  // rather than normal alias resolution of the file's own declared text —
+  // see UploadService.applyParsedIr21 and MnoProviderOverrideService.
+  isManualOverride Boolean @default(false)
 
   mno      MnoMaster      @relation(fields: [mnoId], references: [id])
   provider ProviderMaster @relation(fields: [providerId], references: [id])

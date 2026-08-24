@@ -361,3 +361,68 @@ export interface DeleteProviderResult {
   deletedProviderId: number;
   deletedProviderName: string;
 }
+
+// --- Granular per-operator overrides ---------------------------------
+
+// One MNO's provider assignment for one service, pinned by an admin
+// regardless of what a generic declared string ("SCCP Carrier") would
+// otherwise resolve to for every MNO sharing that string. originalRawString
+// is the declared text this override replaces — kept for audit visibility
+// and for re-resolving a sane fallback if the override is later reverted.
+export interface MnoProviderOverrideEntry {
+  tadigCode: string;
+  providerId: number;
+  reasonNote?: string;
+  originalRawString?: string;
+}
+
+export interface SaveOverridesBatchRequest {
+  service: ServiceName;
+  entries: MnoProviderOverrideEntry[];
+}
+
+export interface SaveOverridesBatchResult {
+  savedCount: number;
+  skippedCount: number;
+  errors: string[];
+}
+
+export interface MnoProviderOverrideRow {
+  id: string;
+  tadigCode: string;
+  operatorName: string;
+  country: string;
+  serviceName: ServiceName;
+  originalRawString: string;
+  overrideProviderId: number;
+  overrideProviderName: string;
+  reasonNote: string | null;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+// --- Provider normalization / alias dictionary audit -------------------
+
+export interface ProviderAliasEntry {
+  id: string;
+  aliasPattern: string;
+  // How many raw declared strings across the active dataset (MnoMasterConnectivity's
+  // SCCP/GRX-IPX/LTE fields) normalize to this exact alias pattern.
+  occurrenceCount: number;
+}
+
+export interface ProviderNormalizationCard {
+  providerId: number;
+  providerName: string;
+  aliases: ProviderAliasEntry[];
+}
+
+export interface AddAliasRequest {
+  providerId: number;
+  aliasPattern: string;
+}
+
+export interface ReassignAliasRequest {
+  targetProviderId?: number;
+  newProviderName?: string;
+}

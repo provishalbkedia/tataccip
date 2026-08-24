@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -8,6 +8,8 @@ import { ProviderAliasService } from "./provider-alias.service";
 import { ResolveProviderAliasDto } from "./dto/resolve-provider-alias.dto";
 import { RemapProviderDto } from "./dto/remap-provider.dto";
 import { MergeProviderDto } from "./dto/merge-provider.dto";
+import { AddAliasDto } from "./dto/add-alias.dto";
+import { ReassignAliasDto } from "./dto/reassign-alias.dto";
 
 @ApiTags("provider-aliases")
 @ApiBearerAuth()
@@ -44,5 +46,32 @@ export class ProviderAliasController {
   @Roles(Role.ADMIN)
   deleteProvider(@Param("id", ParseIntPipe) id: number, @Query("force") force?: string) {
     return this.providerAliasService.deleteProvider(id, force === "true");
+  }
+
+  // Provider Normalization & Alias Dictionary (Admin Overrides dashboard, Tab 2)
+  @Get("dictionary")
+  @Roles(Role.ADMIN)
+  dictionary() {
+    return this.providerAliasService.dictionary();
+  }
+
+  @Post("alias")
+  @Roles(Role.ADMIN)
+  @HttpCode(204)
+  addAlias(@Body() dto: AddAliasDto) {
+    return this.providerAliasService.addAlias(dto.providerId, dto.aliasPattern);
+  }
+
+  @Patch("alias/:id/reassign")
+  @Roles(Role.ADMIN)
+  reassignAlias(@Param("id") id: string, @Body() dto: ReassignAliasDto) {
+    return this.providerAliasService.reassignAlias(id, dto);
+  }
+
+  @Delete("alias/:id")
+  @Roles(Role.ADMIN)
+  @HttpCode(204)
+  deleteAlias(@Param("id") id: string) {
+    return this.providerAliasService.deleteAlias(id);
   }
 }

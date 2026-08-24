@@ -6,6 +6,7 @@ import { Box, Card, CardActionArea, CardContent, Grid, Typography } from "@mui/m
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import MergeTypeIcon from "@mui/icons-material/MergeType";
 import RuleIcon from "@mui/icons-material/Rule";
+import TuneIcon from "@mui/icons-material/Tune";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
@@ -29,6 +30,12 @@ const SECTIONS = [
     title: "Unmapped Variants Queue",
     description: "Resolve raw carrier-name strings encountered during ingestion that didn't match any known alias.",
     icon: <RuleIcon fontSize="large" color="primary" />,
+  },
+  {
+    href: "/admin/overrides",
+    title: "Provider Overrides & Normalization Audit",
+    description: "Per-operator provider overrides, and a full audit of how raw carrier-name variants consolidate into canonical providers.",
+    icon: <TuneIcon fontSize="large" color="primary" />,
   },
 ];
 

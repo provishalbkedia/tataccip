@@ -70,10 +70,27 @@ function postFormWithProgress<T>(path: string, formData: FormData, onProgress?: 
   });
 }
 
+/** For binary responses (e.g. PDFs) that need the Authorization header —
+ * a plain `<a href>`/`window.open` to an API URL can't attach that header,
+ * so the caller fetches the bytes here and opens/downloads the resulting
+ * blob URL instead. */
+async function getBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  if (!res.ok) {
+    throw new ApiError(res.statusText, res.status);
+  }
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
   postFormWithProgress,
+  getBlob,
 };

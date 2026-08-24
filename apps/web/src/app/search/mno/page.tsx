@@ -2,13 +2,37 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Box, Button, Grid, Paper, TextField, Typography } from "@mui/material";
+import type { ICellRendererParams } from "ag-grid-community";
+import { Box, Button, Grid, IconButton, Paper, TextField, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api } from "@/lib/api";
+import { openMnoPdf } from "@/lib/openPdf";
 import { MnoSummary } from "@ccip/shared-types";
+
+/** stopPropagation so clicking the PDF icon doesn't also trigger the row's
+ * own onRowClicked navigation to the detail page. */
+function PdfCell(params: ICellRendererParams<MnoSummary>) {
+  if (!params.data?.hasPdfDocument) {
+    return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
+  }
+  return (
+    <IconButton
+      size="small"
+      color="error"
+      title="View IR.21 PDF"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (params.data) openMnoPdf(params.data.id);
+      }}
+    >
+      <PictureAsPdfIcon fontSize="small" />
+    </IconButton>
+  );
+}
 
 /** Renders a string-array cell as a comma-joined list, "-" when empty/absent.
  * Defensive about the shape since it's an ag-grid valueFormatter, not a
@@ -115,6 +139,15 @@ export default function MnoSearchPage() {
               field: "lastEffectiveDate",
               headerName: "Last Effective Date",
               valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : ""),
+            },
+            {
+              field: "hasPdfDocument",
+              headerName: "IR.21 PDF",
+              cellRenderer: PdfCell,
+              sortable: false,
+              filter: false,
+              minWidth: 100,
+              flex: 0.6,
             },
             { field: "status", headerName: "Status" },
           ]}

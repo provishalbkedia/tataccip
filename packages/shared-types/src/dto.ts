@@ -60,6 +60,10 @@ export interface MnoSummary {
   dsxProviders: string[];
   ipxProviders: string[];
   lastEffectiveDate: string | null;
+  // True when a PDF was paired (by TADIG match) with this MNO's XML at
+  // ingestion time — see UploadService.matchPdfForTadig. Stored in Supabase
+  // Storage, served via GET /mno/:id/pdf.
+  hasPdfDocument: boolean;
 }
 
 // Provenance for one resolved provider: which canonical row it landed on,

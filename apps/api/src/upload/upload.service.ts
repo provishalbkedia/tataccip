@@ -7,10 +7,13 @@ import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { ProviderResolverService } from "./provider-resolver.service";
+import { SupabaseStorageService } from "./supabase-storage.service";
 import { BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
+
+type UploadedFile = { buffer: Buffer; originalname: string };
 
 @Injectable()
 export class UploadService {
@@ -20,6 +23,7 @@ export class UploadService {
     private prisma: PrismaService,
     private xmlParser: Ir21XmlParserService,
     private providerResolver: ProviderResolverService,
+    private storage: SupabaseStorageService,
   ) {}
 
   async getHistory() {
@@ -159,7 +163,7 @@ export class UploadService {
     files: { buffer: Buffer; originalname: string }[],
     uploadedBy: string,
   ): Promise<BulkXmlUploadResult> {
-    const xmlFiles = this.expandZips(files);
+    const { xmlFiles, pdfFiles } = this.expandZips(files);
     const services = await this.serviceMap();
     const errors: string[] = [];
     let filesProcessed = 0;
@@ -178,7 +182,8 @@ export class UploadService {
       }
 
       try {
-        unmappedVariantsFound += await this.applyParsedIr21(parsed, file.originalname, services);
+        const pdfMatch = this.matchPdfForTadig(parsed.senderTadig, pdfFiles);
+        unmappedVariantsFound += await this.applyParsedIr21(parsed, file.originalname, services, pdfMatch);
         filesProcessed++;
         mnosUpdated++;
       } catch (e) {
@@ -209,36 +214,59 @@ export class UploadService {
     };
   }
 
-  /** Expands any .zip entries into their contained .xml files; passes .xml
-   * files through unchanged. */
-  private expandZips(
-    files: { buffer: Buffer; originalname: string }[],
-  ): { buffer: Buffer; originalname: string }[] {
-    const out: { buffer: Buffer; originalname: string }[] = [];
+  /** Expands any .zip entries into their contained .xml and .pdf files
+   * (GSMA IR.21 zips often bundle the official PDF alongside the machine-
+   * readable XML for the same operator); bare .xml/.pdf files pass through
+   * unchanged. PDFs are paired to an XML by TADIG match, not positionally —
+   * see matchPdfForTadig. */
+  private expandZips(files: UploadedFile[]): { xmlFiles: UploadedFile[]; pdfFiles: UploadedFile[] } {
+    const xmlFiles: UploadedFile[] = [];
+    const pdfFiles: UploadedFile[] = [];
     for (const file of files) {
-      if (file.originalname.toLowerCase().endsWith(".zip")) {
+      const lower = file.originalname.toLowerCase();
+      if (lower.endsWith(".zip")) {
         const zip = new AdmZip(file.buffer);
         for (const entry of zip.getEntries()) {
-          if (!entry.isDirectory && entry.entryName.toLowerCase().endsWith(".xml")) {
-            out.push({ buffer: entry.getData(), originalname: entry.entryName });
+          if (entry.isDirectory) continue;
+          const entryLower = entry.entryName.toLowerCase();
+          if (entryLower.endsWith(".xml")) {
+            xmlFiles.push({ buffer: entry.getData(), originalname: entry.entryName });
+          } else if (entryLower.endsWith(".pdf")) {
+            pdfFiles.push({ buffer: entry.getData(), originalname: entry.entryName });
           }
         }
-      } else if (file.originalname.toLowerCase().endsWith(".xml")) {
-        out.push(file);
+      } else if (lower.endsWith(".xml")) {
+        xmlFiles.push(file);
+      } else if (lower.endsWith(".pdf")) {
+        pdfFiles.push(file);
       }
     }
-    return out;
+    return { xmlFiles, pdfFiles };
+  }
+
+  /** Finds the PDF (if any) belonging to a parsed XML's TADIG — matched by
+   * the TADIG code appearing anywhere in the PDF's filename (GSMA vendor
+   * exports use varied naming, e.g. "IR21_USAFF_FreedomFi_Inc.pdf" or just
+   * "USAFF.pdf"), not by position in the archive. */
+  private matchPdfForTadig(tadig: string, pdfFiles: UploadedFile[]): UploadedFile | undefined {
+    const upperTadig = tadig.toUpperCase();
+    return pdfFiles.find((p) => p.originalname.toUpperCase().includes(upperTadig));
   }
 
   /** Applies one parsed IR.21 XML document: upserts MnoMaster, resolves
    * SCCP/IPX providers and upserts Ir21Connectivity for them (DSX isn't
    * covered by the XML sections this parser extracts), and refreshes the
    * MnoMasterConnectivity wide snapshot. Returns how many providers in this
-   * file were unmapped. */
+   * file were unmapped. If a PDF was paired with this TADIG, it's uploaded
+   * to Supabase Storage and the pdf* fields are set; if not, those fields
+   * are simply omitted from the upsert — leaving any previously-stored PDF
+   * for this MNO untouched rather than clearing it on a re-upload that
+   * doesn't happen to include a PDF this time. */
   private async applyParsedIr21(
     parsed: ParsedIr21Document,
     filename: string,
     services: Map<ServiceName, number>,
+    pdfMatch?: UploadedFile,
   ): Promise<number> {
     let unmapped = 0;
     const [mccStr, mncStr] = (parsed.mccMncPairs[0] ?? "").split("-");
@@ -325,10 +353,26 @@ export class UploadService {
       lastEffectiveDate: effectiveDate,
     };
 
+    let pdfFields = {};
+    if (pdfMatch) {
+      const storagePath = `${mno.tadigCode}.pdf`;
+      try {
+        await this.storage.upload(storagePath, pdfMatch.buffer);
+        pdfFields = {
+          pdfFileName: pdfMatch.originalname,
+          pdfStoragePath: storagePath,
+          pdfFileSize: pdfMatch.buffer.length,
+          hasPdfDocument: true,
+        };
+      } catch (e) {
+        this.logger.error(`Failed storing PDF for ${mno.tadigCode}`, e instanceof Error ? e.stack : undefined);
+      }
+    }
+
     await this.prisma.mnoMasterConnectivity.upsert({
       where: { mnoId: mno.id },
-      update: { ...snapshotFields, lastParsedAt: new Date() },
-      create: { mnoId: mno.id, ...snapshotFields },
+      update: { ...snapshotFields, ...pdfFields, lastParsedAt: new Date() },
+      create: { mnoId: mno.id, ...snapshotFields, ...pdfFields },
     });
 
     return unmapped;

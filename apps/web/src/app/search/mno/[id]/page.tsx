@@ -19,10 +19,11 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { MnoDetail } from "@ccip/shared-types";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -60,21 +61,73 @@ export default function MnoDetailPage() {
   const router = useRouter();
   const [mno, setMno] = React.useState<MnoDetail | null>(null);
   const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
+  const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
+  const [pdfOpen, setPdfOpen] = React.useState(false);
+  const [pdfLoading, setPdfLoading] = React.useState(false);
 
   React.useEffect(() => {
     api.get<MnoDetail>(`/mno/${params.id}`).then(setMno);
   }, [params.id]);
+
+  // Blob URLs are only valid for this page's lifetime — revoke on unmount
+  // (and before fetching a new one) to avoid leaking memory.
+  React.useEffect(() => {
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    };
+  }, [pdfUrl]);
+
+  async function togglePdf() {
+    if (pdfOpen) {
+      setPdfOpen(false);
+      return;
+    }
+    if (pdfUrl) {
+      setPdfOpen(true);
+      return;
+    }
+    setPdfLoading(true);
+    try {
+      const blob = await api.getBlob(`/mno/${params.id}/pdf`);
+      setPdfUrl(URL.createObjectURL(blob));
+      setPdfOpen(true);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Failed to load PDF");
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   const snap = mno?.connectivitySnapshot ?? null;
 
   return (
     <RequireAuth>
       <AppShell>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ mb: 2 }}>
-          Back to search
-        </Button>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()}>
+            Back to search
+          </Button>
+          {mno?.hasPdfDocument && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<PictureAsPdfIcon />}
+              onClick={togglePdf}
+              disabled={pdfLoading}
+            >
+              {pdfLoading ? "Loading…" : pdfOpen ? "Hide Original IR.21 PDF" : "View Original IR.21 PDF"}
+            </Button>
+          )}
+        </Box>
         {mno && (
           <>
+            {pdfOpen && pdfUrl && (
+              <Card sx={{ mb: 3 }}>
+                <Box sx={{ height: 800 }}>
+                  <iframe src={pdfUrl} title="IR.21 PDF" style={{ width: "100%", height: "100%", border: "none" }} />
+                </Box>
+              </Card>
+            )}
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Grid container spacing={2}>

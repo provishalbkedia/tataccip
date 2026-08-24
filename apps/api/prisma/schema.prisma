@@ -112,6 +112,17 @@ model MnoMasterConnectivity {
   lastEffectiveDate       DateTime?
   lastParsedAt            DateTime  @default(now())
 
+  // The original PDF, if one was paired with this MNO's XML in a ZIP
+  // upload (matched by TADIG appearing in the PDF's filename). Stored in
+  // Supabase Storage (pdfStoragePath is the object path within that
+  // bucket) rather than local disk — Render/Cloud Run containers are
+  // ephemeral, so anything written to local disk is lost on every
+  // restart/redeploy.
+  pdfFileName    String?
+  pdfStoragePath String?
+  pdfFileSize    Int?
+  hasPdfDocument Boolean @default(false)
+
   mno MnoMaster @relation(fields: [mnoId], references: [id])
 }
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
+import { SupabaseStorageService } from "../upload/supabase-storage.service";
 import { ConnectivityMatrixRow, MnoDetail, MnoSummary, ProviderResolutionInfo } from "@ccip/shared-types";
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
@@ -14,7 +15,10 @@ function newProvidersByService(): ProvidersByService {
 
 @Injectable()
 export class MnoService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storage: SupabaseStorageService,
+  ) {}
 
   /** Searches MnoMaster (the canonical operator identity table — every MNO
    * the platform knows about, from any ingestion path) enriched with
@@ -92,6 +96,7 @@ export class MnoService {
         dsxProviders: p ? Array.from(p.DSX) : [],
         ipxProviders: p ? Array.from(p.IPX) : [],
         lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
+        hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
       };
     });
   }
@@ -171,6 +176,7 @@ export class MnoService {
       dsxProviders: Array.from(providers.DSX),
       ipxProviders: Array.from(providers.IPX),
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
+      hasPdfDocument: mno.connectivity?.hasPdfDocument ?? false,
       connectivityMatrix: matrix,
       connectivitySnapshot: mno.connectivity
         ? {
@@ -194,6 +200,18 @@ export class MnoService {
           }
         : null,
     };
+  }
+
+  /** Fetches the official IR.21 PDF paired with this MNO's XML at ingestion
+   * time (see UploadService.matchPdfForTadig), streamed from Supabase
+   * Storage. Throws if no PDF was ever paired for this MNO. */
+  async getPdf(id: number): Promise<{ buffer: Buffer; fileName: string }> {
+    const connectivity = await this.prisma.mnoMasterConnectivity.findUnique({ where: { mnoId: id } });
+    if (!connectivity?.hasPdfDocument || !connectivity.pdfStoragePath) {
+      throw new NotFoundException("No IR.21 PDF is available for this operator");
+    }
+    const buffer = await this.storage.download(connectivity.pdfStoragePath);
+    return { buffer, fileName: connectivity.pdfFileName ?? `${connectivity.tadigCode}.pdf` };
   }
 
   /** The raw (unresolved) declared strings that could have fed a given

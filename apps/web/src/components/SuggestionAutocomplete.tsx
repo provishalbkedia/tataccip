@@ -17,6 +17,7 @@ export default function SuggestionAutocomplete<T>({
   onValueChange,
   fetchSuggestions,
   getOptionLabel,
+  getOptionValue,
   onEnter,
 }: {
   label: string;
@@ -24,6 +25,11 @@ export default function SuggestionAutocomplete<T>({
   onValueChange: (v: string) => void;
   fetchSuggestions: (q: string) => Promise<T[]>;
   getOptionLabel: (option: T) => string;
+  // What actually gets searched/submitted when an option is picked — falls
+  // back to getOptionLabel when omitted. Needed whenever the display label
+  // includes disambiguating text (e.g. "Reliance Jio (INDRC)") that
+  // wouldn't itself substring-match the field being searched.
+  getOptionValue?: (option: T) => string;
   onEnter?: () => void;
 }) {
   const [options, setOptions] = React.useState<T[]>([]);
@@ -56,7 +62,9 @@ export default function SuggestionAutocomplete<T>({
       inputValue={value}
       onInputChange={(_, newValue) => onValueChange(newValue)}
       onChange={(_, newValue) => {
-        if (newValue && typeof newValue !== "string") onValueChange(getOptionLabel(newValue));
+        if (newValue && typeof newValue !== "string") {
+          onValueChange((getOptionValue ?? getOptionLabel)(newValue));
+        }
       }}
       renderInput={(params) => (
         <TextField

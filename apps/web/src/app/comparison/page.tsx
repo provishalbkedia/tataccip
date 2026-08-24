@@ -158,6 +158,7 @@ function ComparisonPageInner() {
                 onValueChange={setOperator}
                 fetchSuggestions={fetchMnoSuggestions}
                 getOptionLabel={(o) => `${o.operatorName} (${o.tadigCode})`}
+                getOptionValue={(o) => o.operatorName}
                 onEnter={runSearch}
               />
             </Grid>

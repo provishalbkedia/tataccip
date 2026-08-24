@@ -245,12 +245,22 @@ export interface BulkXmlUploadResult {
   errors: string[];
 }
 
+export interface AffectedMno {
+  tadigCode: string;
+  operatorName: string;
+  country: string;
+}
+
 export interface UnmappedProviderVariantRow {
   id: string;
   rawCarrierName: string;
   normalizedPattern: string;
   detectedService: ServiceName;
-  affectedTadigs: string[];
+  // Enriched from MnoMaster — a TADIG with no matching MnoMaster row (rare,
+  // shouldn't happen given ingestion always upserts one first) falls back
+  // to the bare code as operatorName with an empty country.
+  affectedMnos: AffectedMno[];
+  affectedMnoCount: number;
   occurrenceCount: number;
   status: VariantStatus;
   resolvedProviderId: number | null;

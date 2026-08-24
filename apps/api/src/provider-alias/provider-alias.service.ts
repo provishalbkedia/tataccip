@@ -25,7 +25,21 @@ export class ProviderAliasService {
       where: { status: "PENDING" },
       orderBy: [{ occurrenceCount: "desc" }, { createdAt: "desc" }],
     });
-    return rows.map(this.toRow);
+    const mnoLookup = await this.mnoLookup(rows.flatMap((r) => r.affectedTadigs));
+    return rows.map((r) => this.toRow(r, mnoLookup));
+  }
+
+  /** Batches one MnoMaster lookup for a set of TADIGs rather than querying
+   * per-row — listUnmapped() can return dozens of variants, each with its
+   * own affectedTadigs, so this keeps enrichment to a single query. */
+  private async mnoLookup(tadigs: string[]): Promise<Map<string, { operatorName: string; country: string }>> {
+    const distinct = Array.from(new Set(tadigs));
+    if (distinct.length === 0) return new Map();
+    const rows = await this.prisma.mnoMaster.findMany({
+      where: { tadigCode: { in: distinct } },
+      select: { tadigCode: true, operatorName: true, country: true },
+    });
+    return new Map(rows.map((r) => [r.tadigCode, { operatorName: r.operatorName, country: r.country }]));
   }
 
   /** Maps a pending variant to a canonical provider (existing or new),
@@ -72,7 +86,8 @@ export class ProviderAliasService {
       await this.backfillOccurrence(variant, tadig, providerId);
     }
 
-    return this.toRow(updated);
+    const mnoLookup = await this.mnoLookup(updated.affectedTadigs);
+    return this.toRow(updated, mnoLookup);
   }
 
   /** Repoints Ir21Connectivity for one already-known (tadig, service) pair
@@ -312,27 +327,37 @@ export class ProviderAliasService {
     return { deletedProviderId: providerId, deletedProviderName: provider.providerName };
   }
 
-  private toRow = (v: {
-    id: string;
-    rawCarrierName: string;
-    normalizedPattern: string;
-    detectedService: string;
-    affectedTadigs: string[];
-    occurrenceCount: number;
-    status: string;
-    resolvedProviderId: number | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): UnmappedProviderVariantRow => ({
-    id: v.id,
-    rawCarrierName: v.rawCarrierName,
-    normalizedPattern: v.normalizedPattern,
-    detectedService: v.detectedService as UnmappedProviderVariantRow["detectedService"],
-    affectedTadigs: v.affectedTadigs,
-    occurrenceCount: v.occurrenceCount,
-    status: v.status as UnmappedProviderVariantRow["status"],
-    resolvedProviderId: v.resolvedProviderId,
-    createdAt: v.createdAt.toISOString(),
-    updatedAt: v.updatedAt.toISOString(),
-  });
+  private toRow = (
+    v: {
+      id: string;
+      rawCarrierName: string;
+      normalizedPattern: string;
+      detectedService: string;
+      affectedTadigs: string[];
+      occurrenceCount: number;
+      status: string;
+      resolvedProviderId: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    mnoLookup: Map<string, { operatorName: string; country: string }>,
+  ): UnmappedProviderVariantRow => {
+    const affectedMnos = v.affectedTadigs.map((tadigCode) => {
+      const found = mnoLookup.get(tadigCode);
+      return { tadigCode, operatorName: found?.operatorName ?? tadigCode, country: found?.country ?? "" };
+    });
+    return {
+      id: v.id,
+      rawCarrierName: v.rawCarrierName,
+      normalizedPattern: v.normalizedPattern,
+      detectedService: v.detectedService as UnmappedProviderVariantRow["detectedService"],
+      affectedMnos,
+      affectedMnoCount: affectedMnos.length,
+      occurrenceCount: v.occurrenceCount,
+      status: v.status as UnmappedProviderVariantRow["status"],
+      resolvedProviderId: v.resolvedProviderId,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    };
+  };
 }

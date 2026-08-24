@@ -1,7 +1,12 @@
 # Builds and runs apps/api for Cloud Run. Lives at the repo root (not
 # apps/api/) because npm workspaces need the whole monorepo — root
 # package.json/lockfile plus packages/shared-types — to install and build.
-FROM node:20.17.0-slim
+#
+# Node 22, not 20: @supabase/supabase-js's client constructor always
+# initializes an internal Realtime WebSocket client (even though this app
+# only uses Storage), and that constructor throws immediately if there's no
+# native `WebSocket` global — which Node 20 doesn't have. Node 22 does.
+FROM node:22-slim
 
 # Prisma's query/schema engine needs libssl at runtime to detect the OpenSSL
 # version — the slim base image doesn't include it, which makes `prisma

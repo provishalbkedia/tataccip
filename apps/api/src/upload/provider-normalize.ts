@@ -31,17 +31,45 @@ export function normalizeCarrierName(raw: string): string {
   return cleaned.join(" ").trim();
 }
 
-// Placeholder text for "no provider declared here" rather than an actual
-// carrier name — seen verbatim in both IR.21 XML free-text fields and Reach
-// List Excel cells. Left unfiltered, each of these would otherwise resolve
-// to nothing, miss the alias cache, and get auto-created as its own bogus
-// ProviderMaster row (this is literally how "None"/"NA"/"Not applicable"
-// ended up as real rows in production).
-const JUNK_PROVIDER_NAMES = new Set(["none", "na", "n a", "not applicable", "not declared", "unknown", "tbd"]);
+// Placeholder text, protocol tokens, and other non-carrier strings — seen
+// verbatim in both IR.21 XML free-text fields and Reach List Excel cells.
+// Left unfiltered, each of these would otherwise resolve to nothing, miss
+// the alias cache, and get auto-created as its own bogus ProviderMaster row
+// (this is literally how "None"/"NA"/"Not applicable" ended up as real rows
+// in production). Callers route a junk match to the "Others / Unassigned"
+// system provider (see ProviderResolverService) rather than creating
+// anything or silently dropping the data point.
+const JUNK_PROVIDER_NAMES = new Set([
+  "none", "na", "n a", "not applicable", "not available", "not declared",
+  "unknown", "tbd", "3g", "3grx", "itu", "ansi",
+]);
 
-/** True if a *normalized* name is placeholder text, not a real carrier. */
+// Sentence-length protocol/boilerplate text rather than a carrier name —
+// checked as substrings of the *normalized* string (already lowercased,
+// punctuation stripped to spaces), so these patterns are written in that
+// same plain-word form.
+const JUNK_PHRASE_PATTERNS = [
+  /^international sccp gateway/,
+  /roaming with itu/,
+  /for ansi conversion/,
+  /for ansi networks/,
+  /for itu networks/,
+];
+
+/** True if a *normalized* name is placeholder text, a protocol token, a
+ * sentence-length boilerplate note, or a bare number/IP address — not a
+ * real carrier name. Numbers and dotted IPs both reduce, after
+ * normalization, to a name made entirely of all-digit words ("19440" stays
+ * one word; "0.0.0.0" becomes four "0" words since normalizeCarrierName
+ * turns "." into a space) — checking "every word is digits" catches both
+ * without needing the pre-normalization raw string. */
 export function isJunkProviderName(normalized: string): boolean {
-  return JUNK_PROVIDER_NAMES.has(normalized);
+  if (!normalized) return true;
+  if (JUNK_PROVIDER_NAMES.has(normalized)) return true;
+  if (JUNK_PHRASE_PATTERNS.some((re) => re.test(normalized))) return true;
+  const words = normalized.split(" ");
+  if (words.every((w) => /^\d+$/.test(w))) return true;
+  return false;
 }
 
 // Words that mark a parenthetical as descriptive annotation ("(for selected

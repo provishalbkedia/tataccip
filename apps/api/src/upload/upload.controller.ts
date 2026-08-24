@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Post,
@@ -72,6 +73,7 @@ export class UploadController {
   async uploadIr21XmlBatch(
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: { email: string },
+    @Body("replaceActiveDataset") replaceActiveDataset?: string,
   ) {
     if (!files || files.length === 0) throw new BadRequestException("No files uploaded");
     const invalid = files.find(
@@ -82,6 +84,7 @@ export class UploadController {
     return this.uploadService.uploadIr21XmlBatch(
       files.map((f) => ({ buffer: f.buffer, originalname: f.originalname })),
       user.email,
+      replaceActiveDataset === "true",
     );
   }
 
@@ -89,5 +92,11 @@ export class UploadController {
   @Roles(Role.ADMIN, Role.ANALYST)
   async history() {
     return this.uploadService.getHistory();
+  }
+
+  @Get("active-baseline")
+  @Roles(Role.ADMIN, Role.ANALYST)
+  async activeBaseline() {
+    return this.uploadService.getActiveBaseline();
   }
 }

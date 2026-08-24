@@ -50,6 +50,19 @@ const PROVIDERS = [
   { providerName: "Tele2", providerType: "IPX Provider", headquarters: "Stockholm, Sweden", website: "https://www.tele2.com" },
 ];
 
+// Permanent system catch-all — NOT a real carrier. Junk/placeholder/protocol
+// text encountered during ingestion (see isJunkProviderName in
+// provider-normalize.ts) routes here automatically instead of either
+// spawning a bogus ProviderMaster row or being silently dropped, so there's
+// still an auditable record of "this MNO declared something unusable for
+// this service" rather than a gap that looks like missing data.
+const OTHERS_PROVIDER = {
+  providerName: "Others / Unassigned",
+  providerType: "Generic / Protocol Note",
+  headquarters: "N/A",
+  website: null as string | null,
+};
+
 // Baseline Tier-1/Tier-2 carrier aliases for the IR.21 XML provider-
 // resolution engine — raw name variants actually seen in production source
 // data, mapped to the canonical ProviderMaster row they should resolve to.
@@ -252,7 +265,7 @@ async function main() {
 
   console.log("Seeding providers...");
   const providerRecords = new Map<string, { id: number }>();
-  for (const p of PROVIDERS) {
+  for (const p of [...PROVIDERS, OTHERS_PROVIDER]) {
     const rec = await prisma.providerMaster.upsert({
       where: { providerName: p.providerName },
       update: {},

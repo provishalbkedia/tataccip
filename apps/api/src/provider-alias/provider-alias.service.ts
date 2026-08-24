@@ -177,87 +177,104 @@ export class ProviderAliasService {
     return { normalizedPattern, targetProviderId: targetId, targetProviderName: targetName, affectedTadigs };
   }
 
-  /** Merges a duplicate ProviderMaster row into its correct canonical
-   * counterpart — e.g. a Reach List upload created "TATAComms" as its own
-   * provider instead of resolving to the existing "Tata Comm" row (Reach
-   * List ingestion isn't alias-aware the way XML ingestion is). Repoints
-   * every ProviderReachlist/Ir21Connectivity/ProviderAlias row from source
-   * to target, registers the source's normalized name as an alias so
-   * future uploads resolve directly, then deletes the source row. */
+  /** Merges one or more duplicate/junk ProviderMaster rows into their
+   * correct canonical counterpart — e.g. a Reach List upload created
+   * "TATAComms" as its own provider instead of resolving to the existing
+   * "Tata Comm" row, or several residual junk rows should all collapse
+   * into "Others / Unassigned". Repoints every ProviderReachlist/
+   * Ir21Connectivity/DataDiscrepancy/ProviderAlias row from each source to
+   * the target, registers each source's normalized name as an alias so
+   * future uploads resolve directly, then deletes the source rows. */
   async mergeProvider(req: MergeProviderRequest): Promise<MergeProviderResult> {
-    const { sourceProviderId: sourceId, targetProviderId: targetId } = req;
-    if (sourceId === targetId) {
-      throw new BadRequestException("sourceProviderId and targetProviderId must differ");
+    const { sourceProviderIds, targetProviderId: targetId } = req;
+    const sourceIds = Array.from(new Set(sourceProviderIds));
+    if (sourceIds.includes(targetId)) {
+      throw new BadRequestException("targetProviderId cannot also appear in sourceProviderIds");
     }
 
-    const [source, target] = await Promise.all([
-      this.prisma.providerMaster.findUnique({ where: { id: sourceId } }),
+    const [sources, target] = await Promise.all([
+      this.prisma.providerMaster.findMany({ where: { id: { in: sourceIds } } }),
       this.prisma.providerMaster.findUnique({ where: { id: targetId } }),
     ]);
-    if (!source) throw new NotFoundException(`Source provider ${sourceId} not found`);
     if (!target) throw new NotFoundException(`Target provider ${targetId} not found`);
+    const missing = sourceIds.filter((id) => !sources.some((s) => s.id === id));
+    if (missing.length > 0) throw new NotFoundException(`Source provider(s) not found: ${missing.join(", ")}`);
 
-    const normalizedPattern = normalizeCarrierName(source.providerName);
-
-    const { reachlistRowsMoved, ir21RowsMoved, aliasesMoved } = await this.prisma.$transaction(
+    const totals = await this.prisma.$transaction(
       async (tx) => {
-        // ProviderReachlist is unique per (mno, provider, service) —
-        // multiple providers can independently claim the same route, so
-        // the source's and target's rows for the same (mno, service) can
-        // collide; drop the source's row as a duplicate claim rather than
-        // erroring.
-        const reachRows = await tx.providerReachlist.findMany({ where: { providerId: sourceId } });
         let reachlistRowsMoved = 0;
-        for (const r of reachRows) {
-          const clash = await tx.providerReachlist.findUnique({
-            where: { mnoId_providerId_serviceId: { mnoId: r.mnoId, providerId: targetId, serviceId: r.serviceId } },
+        let ir21RowsMoved = 0;
+        let discrepancyRowsMoved = 0;
+        let aliasesMoved = 0;
+
+        for (const source of sources) {
+          const sourceId = source.id;
+
+          // ProviderReachlist is unique per (mno, provider, service) —
+          // multiple providers can independently claim the same route, so
+          // the source's and target's rows for the same (mno, service) can
+          // collide; drop the source's row as a duplicate claim rather
+          // than erroring.
+          const reachRows = await tx.providerReachlist.findMany({ where: { providerId: sourceId } });
+          for (const r of reachRows) {
+            const clash = await tx.providerReachlist.findUnique({
+              where: { mnoId_providerId_serviceId: { mnoId: r.mnoId, providerId: targetId, serviceId: r.serviceId } },
+            });
+            if (clash) {
+              await tx.providerReachlist.delete({ where: { id: r.id } });
+            } else {
+              await tx.providerReachlist.update({ where: { id: r.id }, data: { providerId: targetId } });
+              reachlistRowsMoved++;
+            }
+          }
+
+          // Ir21Connectivity is unique per (mno, service) with no
+          // providerId in the key — one declared provider per route,
+          // period — so there's never a clash to resolve here.
+          const ir21Result = await tx.ir21Connectivity.updateMany({
+            where: { providerId: sourceId },
+            data: { providerId: targetId },
           });
-          if (clash) {
-            await tx.providerReachlist.delete({ where: { id: r.id } });
-          } else {
-            await tx.providerReachlist.update({ where: { id: r.id }, data: { providerId: targetId } });
-            reachlistRowsMoved++;
+          ir21RowsMoved += ir21Result.count;
+
+          const discrepancyResult = await tx.dataDiscrepancy.updateMany({
+            where: { providerId: sourceId },
+            data: { providerId: targetId },
+          });
+          discrepancyRowsMoved += discrepancyResult.count;
+
+          const aliasResult = await tx.providerAlias.updateMany({
+            where: { providerId: sourceId },
+            data: { providerId: targetId },
+          });
+          aliasesMoved += aliasResult.count;
+
+          const normalizedPattern = normalizeCarrierName(source.providerName);
+          if (normalizedPattern) {
+            await tx.providerAlias.upsert({
+              where: { aliasPattern: normalizedPattern },
+              update: { providerId: targetId },
+              create: { aliasPattern: normalizedPattern, providerId: targetId },
+            });
           }
         }
 
-        // Ir21Connectivity is unique per (mno, service) with no providerId
-        // in the key — one declared provider per route, period — so there's
-        // never a clash to resolve here.
-        const { count: ir21RowsMoved } = await tx.ir21Connectivity.updateMany({
-          where: { providerId: sourceId },
-          data: { providerId: targetId },
-        });
+        await tx.providerMaster.deleteMany({ where: { id: { in: sourceIds } } });
 
-        const { count: aliasesMoved } = await tx.providerAlias.updateMany({
-          where: { providerId: sourceId },
-          data: { providerId: targetId },
-        });
-
-        if (normalizedPattern) {
-          await tx.providerAlias.upsert({
-            where: { aliasPattern: normalizedPattern },
-            update: { providerId: targetId },
-            create: { aliasPattern: normalizedPattern, providerId: targetId },
-          });
-        }
-
-        await tx.providerMaster.delete({ where: { id: sourceId } });
-
-        return { reachlistRowsMoved, ir21RowsMoved, aliasesMoved };
+        return { reachlistRowsMoved, ir21RowsMoved, discrepancyRowsMoved, aliasesMoved };
       },
-      { maxWait: 20000, timeout: 60000 },
+      { maxWait: 30000, timeout: 120000 },
     );
 
     await this.providerResolver.refreshCache();
 
     return {
-      sourceProviderId: sourceId,
-      sourceProviderName: source.providerName,
+      sourceProviderIds: sourceIds,
+      sourceProviderNames: sources.map((s) => s.providerName),
       targetProviderId: targetId,
       targetProviderName: target.providerName,
-      reachlistRowsMoved,
-      ir21RowsMoved,
-      aliasesMoved,
+      providersDeleted: sourceIds.length,
+      ...totals,
     };
   }
 

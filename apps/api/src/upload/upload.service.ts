@@ -8,7 +8,7 @@ import { isJunkProviderName, splitCompositeProviderNames } from "./provider-norm
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
-import { BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
+import { ActiveBaselineInfo, BulkXmlUploadResult, UploadResult } from "@ccip/shared-types";
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
@@ -28,6 +28,19 @@ export class UploadService {
 
   async getHistory() {
     return this.prisma.uploadHistory.findMany({ orderBy: { uploadTime: "desc" }, take: 100 });
+  }
+
+  /** Powers the Admin Menu/Dashboard "Active IR.21 Baseline" banner.
+   * currentMnoCount is a live count, not the `active` row's stored
+   * snapshot — a "Replace Active Dataset" upload split across several
+   * requests only flags its first request as isCurrentActive, so that
+   * row's own mnoCount can undercount the eventual total. */
+  async getActiveBaseline(): Promise<ActiveBaselineInfo> {
+    const [active, currentMnoCount] = await Promise.all([
+      this.prisma.uploadHistory.findFirst({ where: { isCurrentActive: true }, orderBy: { uploadTime: "desc" } }),
+      this.prisma.mnoMasterConnectivity.count(),
+    ]);
+    return { active: active ? this.toHistoryRow(active) : null, currentMnoCount };
   }
 
   async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string): Promise<UploadResult> {
@@ -158,11 +171,31 @@ export class UploadService {
    * up to ~1,000 XMLs, expanded here). Unlike the Excel path, unresolved
    * provider names are queued in UnmappedProviderVariant rather than
    * auto-created, so bulk XML ingestion can't flood ProviderMaster with
-   * unverified names — see ProviderResolverService. */
+   * unverified names — see ProviderResolverService.
+   *
+   * `replaceActiveDataset` is an explicit opt-in, off by default: normal
+   * uploads only touch the MNOs actually present in the batch (today's
+   * behavior). When true, every existing Ir21Connectivity and
+   * MnoMasterConnectivity row is purged *before* this batch is ingested, so
+   * the new ZIP becomes the sole active baseline — any MNO not present in
+   * it loses its XML-sourced connectivity entirely. A client uploading a
+   * large archive across several split requests (see splitZipForUpload on
+   * the frontend) must only pass true on the first request; the purge runs
+   * unconditionally whenever this flag is true, so passing it on every
+   * sub-batch would wipe out the batches ingested just before it. */
   async uploadIr21XmlBatch(
     files: { buffer: Buffer; originalname: string }[],
     uploadedBy: string,
+    replaceActiveDataset = false,
   ): Promise<BulkXmlUploadResult> {
+    if (replaceActiveDataset) {
+      await this.prisma.$transaction([
+        this.prisma.ir21Connectivity.deleteMany({}),
+        this.prisma.mnoMasterConnectivity.deleteMany({}),
+        this.prisma.uploadHistory.updateMany({ where: { isCurrentActive: true }, data: { isCurrentActive: false } }),
+      ]);
+    }
+
     const { xmlFiles, pdfFiles } = this.expandZips(files);
     const services = await this.serviceMap();
     const errors: string[] = [];
@@ -201,6 +234,13 @@ export class UploadService {
         recordsLoaded: filesProcessed,
         status,
         errorLog: errors.length ? errors.join("\n") : null,
+        isCurrentActive: replaceActiveDataset,
+        // Snapshots this request's own MNO count for the audit trail — a
+        // multi-batch replace upload only sets this flag on its first
+        // request, so this can undercount the eventual grand total; the
+        // admin banner reads a live MnoMasterConnectivity.count() instead
+        // of trusting this field for that reason.
+        mnoCount: replaceActiveDataset ? mnosUpdated : null,
       },
     });
 
@@ -392,6 +432,8 @@ export class UploadService {
     recordsLoaded: number;
     status: UploadStatus;
     errorLog: string | null;
+    isCurrentActive: boolean;
+    mnoCount: number | null;
   }) {
     return {
       id: h.id,
@@ -401,6 +443,8 @@ export class UploadService {
       recordsLoaded: h.recordsLoaded,
       status: h.status,
       errorLog: h.errorLog,
+      isCurrentActive: h.isCurrentActive,
+      mnoCount: h.mnoCount,
     };
   }
 

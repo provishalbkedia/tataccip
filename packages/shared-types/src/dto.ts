@@ -184,11 +184,20 @@ export interface UploadHistoryRow {
   recordsLoaded: number;
   status: UploadStatus;
   errorLog: string | null;
+  // Set only for an IR.21 XML batch uploaded with "Replace Active Dataset".
+  isCurrentActive: boolean;
+  mnoCount: number | null;
 }
 
 export interface UploadResult {
   uploadHistory: UploadHistoryRow;
   errors: string[];
+}
+
+// Powers the "Active IR.21 Baseline" banner on the Admin Menu/Dashboard.
+export interface ActiveBaselineInfo {
+  active: UploadHistoryRow | null;
+  currentMnoCount: number;
 }
 
 export interface BulkXmlUploadResult {
@@ -249,25 +258,29 @@ export interface RemapProviderResult {
   affectedTadigs: string[];
 }
 
-// Admin override: two ProviderMaster rows turned out to be the same
+// Admin override: one or more ProviderMaster rows turned out to be the same
 // real-world provider (e.g. a Reach List upload created "TATAComms" as its
-// own row instead of resolving to the existing "Tata Comm"). Repoints every
-// ProviderReachlist/Ir21Connectivity/ProviderAlias row from source to
-// target, registers the source's normalized name as an alias so future
-// uploads resolve directly, then deletes the source row.
+// own row instead of resolving to the existing "Tata Comm"), or are junk
+// that should collapse into the "Others / Unassigned" system catch-all.
+// Repoints every ProviderReachlist/Ir21Connectivity/DataDiscrepancy/
+// ProviderAlias row from each source to the target, registers each
+// source's normalized name as an alias so future uploads resolve directly,
+// then deletes the source rows.
 export interface MergeProviderRequest {
-  sourceProviderId: number;
+  sourceProviderIds: number[];
   targetProviderId: number;
 }
 
 export interface MergeProviderResult {
-  sourceProviderId: number;
-  sourceProviderName: string;
+  sourceProviderIds: number[];
+  sourceProviderNames: string[];
   targetProviderId: number;
   targetProviderName: string;
   reachlistRowsMoved: number;
   ir21RowsMoved: number;
+  discrepancyRowsMoved: number;
   aliasesMoved: number;
+  providersDeleted: number;
 }
 
 // Admin override: a ProviderMaster row is placeholder junk ("None", "N/A",

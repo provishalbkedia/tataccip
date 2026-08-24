@@ -248,4 +248,11 @@ model UploadHistory {
   recordsLoaded Int
   status        UploadStatus
   errorLog      String?
+
+  // Set only for an IR.21 XML batch uploaded with "Replace Active Dataset"
+  // — at most one row has isCurrentActive true at a time (the admin
+  // banner's source of truth for "what's the active baseline"). mnoCount
+  // snapshots how many MNOs the replacement covered, for that same banner.
+  isCurrentActive Boolean @default(false)
+  mnoCount        Int?
 }

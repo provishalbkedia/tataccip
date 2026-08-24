@@ -23,10 +23,14 @@ const fileUploadBody = {
 };
 
 // GSMA IR.21 XML batches: up to ~1,000 files (or one .zip containing that
-// many) per request. Files run a few KB-100KB each, so a generous per-file
-// cap still keeps a full batch well within a reasonable request size.
+// many) per request. Bare XML files run a few KB-100KB each, but a .zip
+// bundling XML + the official PDFs (see SupabaseStorageService) can run
+// 100-150MB — sized well above that. Cloud Run's own HTTP/1.1 request-body
+// cap (32 MiB) is actually the binding limit below this number; the
+// service must run with --use-http2 for uploads in this range to work at
+// all (see Dockerfile/deploy notes).
 const MAX_XML_BATCH_FILES = 1100;
-const MAX_XML_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_XML_FILE_BYTES = 250 * 1024 * 1024;
 
 const xmlBatchUploadBody = {
   schema: {

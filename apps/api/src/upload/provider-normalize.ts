@@ -72,21 +72,41 @@ export function isJunkProviderName(normalized: string): boolean {
   return false;
 }
 
-// A raw string like "SCCP Carrier" or "IPX Carrier" loses its only
-// distinguishing word here — "carrier" is a LEGAL_SUFFIXES filler word, so
-// normalizeCarrierName reduces it to a bare "sccp"/"ipx"/"dsx"/"grx" with no
-// brand content left at all. That residual isn't junk (it's exactly the
-// kind of placeholder ProviderResolverService.resolve() should still queue
-// for admin review — see ProviderOverrideService/"Map Per Operator"), but it
-// must never be treated as if it identified a real provider: fuzzy-matching
-// a bare service-type word against the alias cache would match ANY alias
-// that happens to contain it as a qualifier word (e.g. "belgacom sccp"),
-// silently misattributing every MNO using this placeholder to whichever
-// provider's alias happens to iterate first.
-const GENERIC_SERVICE_TOKENS = new Set(["sccp", "dsx", "ipx", "grx"]);
+// A raw string like "SCCP Carrier" or "Global Connect" loses its only
+// distinguishing word once a LEGAL_SUFFIXES filler word ("carrier",
+// "global", ...) is stripped, reducing to a bare service/role/commercial
+// descriptor with no brand content left at all — confirmed against real
+// production data via apps/api/audit-false-matches.js, which found this
+// same failure mode recurring across several unrelated word classes:
+//   - service/protocol names: "SCCP Carrier" -> "sccp"
+//   - connectivity role words: "Telstra Reach" partial "Reach" -> "reach"
+//   - commercial descriptors: "Global Connect" -> "connect"
+//   - priority qualifiers: a bare "Primary"/"Secondary" declaration
+// None of these residuals is junk (they're exactly the kind of placeholder
+// ProviderResolverService.resolve() should still queue for admin review —
+// see ProviderOverrideService/"Map Per Operator"), but none may be treated
+// as if it identified a real provider either: fuzzy-matching a bare generic
+// word against the alias cache matches ANY alias that happens to contain it
+// as a qualifier word (e.g. "sccp" inside "belgacom sccp", "connect" as its
+// own overly-broad alias, "reach" inside "telstra reach"), silently
+// misattributing every MNO using that placeholder to whichever provider's
+// alias happens to contain the word.
+const GENERIC_PLACEHOLDER_TOKENS = new Set([
+  // Service/protocol names.
+  "sccp", "dsx", "ipx", "grx", "gsm", "gprs", "epc", "lte",
+  // Connectivity role/topology descriptors.
+  "gateway", "hub", "interconnect", "roaming", "network", "signal",
+  "signalling", "signaling", "voice", "voices", "data",
+  // Commercial/business descriptors.
+  "wholesale", "connect", "reach",
+  // Priority/role qualifiers — normally stripped as a suffix phrase by
+  // splitCompositeProviderNames, but can still arrive as the *only* word
+  // when a file declares just "Primary"/"Secondary"/etc. on its own.
+  "primary", "secondary", "backup", "main",
+]);
 
-export function isGenericServiceToken(normalized: string): boolean {
-  return GENERIC_SERVICE_TOKENS.has(normalized);
+export function isGenericPlaceholderToken(normalized: string): boolean {
+  return GENERIC_PLACEHOLDER_TOKENS.has(normalized);
 }
 
 // Words that mark a parenthetical as descriptive annotation ("(for selected

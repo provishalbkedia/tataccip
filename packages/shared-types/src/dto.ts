@@ -507,3 +507,43 @@ export interface ProviderCompareMatrixItem {
     reachList: ServicePresence;
   }>;
 }
+
+// --- Multi-operator comparative connectivity matrix ----------------------
+
+// One row per selected operator's basic identity — the matrix's column
+// headers ("[ Operator Name (TADIG, Country) ]" per the spec).
+export interface OperatorCompareMatrixOperator {
+  id: number;
+  operatorName: string;
+  country: string;
+  tadigCode: string;
+  mccMncList: string[];
+  hasPdfDocument: boolean;
+}
+
+export interface OperatorCompareMatrixCell {
+  ir21Declared: boolean;
+  reachListClaimed: boolean;
+  rawDeclaredString?: string;
+}
+
+// One row per canonical provider connected to at least one selected
+// operator for this service — see MnoService.compareMatrix. ir21Declared
+// reflects EVERY resolved provider found among that operator's raw
+// declared strings for this service (not just the single one
+// Ir21Connectivity stores — same reasoning as Ir21DeclaredProvider/
+// resolveAllDeclaredProviders on the Operator Detail Comparison Grid).
+export interface OperatorCompareMatrixProviderRow {
+  providerId: number;
+  providerName: string;
+  operatorStatus: Record<number, OperatorCompareMatrixCell>;
+}
+
+export interface OperatorCompareMatrixResponse {
+  operators: OperatorCompareMatrixOperator[];
+  matrix: {
+    sccp: OperatorCompareMatrixProviderRow[];
+    dsx: OperatorCompareMatrixProviderRow[];
+    ipx: OperatorCompareMatrixProviderRow[];
+  };
+}

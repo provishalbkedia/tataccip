@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -23,10 +23,30 @@ export class MnoController {
   }
 
   // Must come before ":id" — otherwise Nest would route /mno/suggestions
-  // into detail() with id="suggestions" and fail ParseIntPipe.
+  // (and /mno/compare-matrix) into detail() with id="suggestions" and fail
+  // ParseIntPipe.
   @Get("suggestions")
   suggestions(@Query("q") q?: string) {
     return this.mnoService.suggestions(q ?? "");
+  }
+
+  @Get("compare-matrix")
+  compareMatrix(@Query("mnoIds") mnoIds?: string) {
+    const parsedIds = Array.from(
+      new Set(
+        (mnoIds ?? "")
+          .split(",")
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => !isNaN(n)),
+      ),
+    );
+    if (parsedIds.length < 2) {
+      throw new BadRequestException("Provide at least 2 operator IDs via ?mnoIds=1,2,3 (max 5)");
+    }
+    if (parsedIds.length > 5) {
+      throw new BadRequestException("Compare at most 5 operators at a time");
+    }
+    return this.mnoService.compareMatrix(parsedIds);
   }
 
   @Get(":id")

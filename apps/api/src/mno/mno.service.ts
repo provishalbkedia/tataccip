@@ -10,6 +10,8 @@ import {
   MnoDetail,
   MnoSuggestion,
   MnoSummary,
+  OperatorCompareMatrixProviderRow,
+  OperatorCompareMatrixResponse,
   ProviderResolutionInfo,
 } from "@ccip/shared-types";
 
@@ -231,6 +233,89 @@ export class MnoService {
             lastParsedAt: mno.connectivity.lastParsedAt.toISOString(),
           }
         : null,
+    };
+  }
+
+  /** Multi-operator side-by-side connectivity comparison (2-5 operators) —
+   * one row per canonical provider connected to ANY selected operator, per
+   * service, with each operator's IR.21-declared / Reach-List-claimed
+   * status nested under its id. Reuses resolveAllDeclaredProviders so a
+   * provider shows up here even when it's not the single one
+   * Ir21Connectivity happens to store for that (MNO, service) — same fix
+   * as the Operator Detail Comparison Grid, applied here too so this new
+   * matrix doesn't reintroduce that bug. Powers /search/mno/compare. */
+  async compareMatrix(mnoIds: number[]): Promise<OperatorCompareMatrixResponse> {
+    const mnos = await this.prisma.mnoMaster.findMany({
+      where: { id: { in: mnoIds } },
+      include: { connectivity: true, ir21Entries: { include: { service: true } } },
+    });
+
+    const reachRows = await this.prisma.providerReachlist.findMany({
+      where: { mnoId: { in: mnoIds } },
+      include: { provider: true, service: true },
+    });
+
+    type RowAcc = {
+      providerName: string;
+      operatorStatus: Map<number, { ir21Declared: boolean; reachListClaimed: boolean; rawDeclaredString?: string }>;
+    };
+    const byService: Record<ServiceName, Map<number, RowAcc>> = { SCCP: new Map(), DSX: new Map(), IPX: new Map() };
+
+    const touch = (
+      service: ServiceName,
+      providerId: number,
+      providerName: string,
+      mnoId: number,
+      patch: Partial<{ ir21Declared: boolean; reachListClaimed: boolean; rawDeclaredString: string }>,
+    ) => {
+      const rows = byService[service];
+      let row = rows.get(providerId);
+      if (!row) {
+        row = { providerName, operatorStatus: new Map() };
+        rows.set(providerId, row);
+      }
+      const existing = row.operatorStatus.get(mnoId) ?? { ir21Declared: false, reachListClaimed: false };
+      row.operatorStatus.set(mnoId, { ...existing, ...patch });
+    };
+
+    for (const service of SERVICE_ORDER) {
+      for (const mno of mnos) {
+        const ir21Entry = mno.ir21Entries.find((e) => e.service.serviceName === service);
+        const candidates = this.rawCandidatesFor(service, mno.connectivity);
+        const declared = await this.resolveAllDeclaredProviders(candidates, ir21Entry?.providerId ?? null);
+        for (const d of declared) {
+          touch(service, d.id, d.name, mno.id, { ir21Declared: true, rawDeclaredString: d.rawDeclaredString || undefined });
+        }
+      }
+    }
+
+    for (const r of reachRows) {
+      touch(r.service.serviceName, r.providerId, r.provider.providerName, r.mnoId, { reachListClaimed: true });
+    }
+
+    const toArray = (rows: Map<number, RowAcc>): OperatorCompareMatrixProviderRow[] =>
+      Array.from(rows.entries())
+        .map(([providerId, row]) => ({
+          providerId,
+          providerName: row.providerName,
+          operatorStatus: Object.fromEntries(row.operatorStatus),
+        }))
+        .sort((a, b) => a.providerName.localeCompare(b.providerName));
+
+    return {
+      operators: mnos.map((m) => ({
+        id: m.id,
+        operatorName: m.operatorName,
+        country: m.country,
+        tadigCode: m.tadigCode,
+        mccMncList: m.connectivity?.mccMncList ?? [],
+        hasPdfDocument: m.connectivity?.hasPdfDocument ?? false,
+      })),
+      matrix: {
+        sccp: toArray(byService.SCCP),
+        dsx: toArray(byService.DSX),
+        ipx: toArray(byService.IPX),
+      },
     };
   }
 

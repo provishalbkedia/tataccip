@@ -27,6 +27,7 @@ export default function DataGrid<T>({
   onSelectionChanged,
   showTopPagination = false,
   suppressRowClickSelection,
+  clearSelectionSignal,
 }: {
   rowData: T[];
   // Column groups (ColGroupDef, with nested `children`) are accepted too —
@@ -47,6 +48,12 @@ export default function DataGrid<T>({
   // row toggles its checkbox too, fighting with the click-to-navigate
   // handler. Only the checkbox cell itself should select in that case.
   suppressRowClickSelection?: boolean;
+  // Bump this (e.g. a counter incremented on each click) to imperatively
+  // clear the grid's actual checkbox selection from outside — needed
+  // because onSelectionChanged only flows grid-state -> React state, not
+  // the reverse; resetting the caller's own `selected` array to [] alone
+  // leaves AG Grid's checkboxes still visually checked.
+  clearSelectionSignal?: number;
   // Mirrors AG Grid's own bottom pagination bar above the table too — for
   // long lists (300+ rows, e.g. a Tier-1 provider's full MNO footprint)
   // that would otherwise need scrolling all the way down just to change
@@ -99,6 +106,11 @@ export default function DataGrid<T>({
     const timer = setTimeout(forceLayout, 400);
     return () => clearTimeout(timer);
   }, [rowData, columnDefs, forceLayout]);
+
+  React.useEffect(() => {
+    if (clearSelectionSignal !== undefined) gridRef.current?.api?.deselectAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearSelectionSignal]);
 
   function handlePageSizeChange(value: number) {
     const api = gridRef.current?.api;

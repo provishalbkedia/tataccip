@@ -6,6 +6,8 @@ import type { ICellRendererParams } from "ag-grid-community";
 import { Box, Button, Grid, IconButton, Paper, TextField, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import ClearIcon from "@mui/icons-material/Clear";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -63,6 +65,8 @@ function MnoSearchPageInner() {
   const [mcc, setMcc] = React.useState("");
   const [mnc, setMnc] = React.useState("");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
+  const [selected, setSelected] = React.useState<MnoSummary[]>([]);
+  const [clearSignal, setClearSignal] = React.useState(0);
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — this fires on initial load, on an explicit Search
@@ -178,8 +182,56 @@ function MnoSearchPageInner() {
             },
             { field: "status", headerName: "Status" },
           ]}
+          rowSelection="multiRow"
+          suppressRowClickSelection
+          onSelectionChanged={setSelected}
+          clearSelectionSignal={clearSignal}
           onRowClicked={(row) => router.push(`/search/mno/${row.id}`)}
         />
+
+        {selected.length >= 2 && (
+          <Paper
+            elevation={4}
+            sx={{
+              position: "fixed",
+              bottom: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              px: 3,
+              py: 1.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              zIndex: 1200,
+              borderRadius: 999,
+              maxWidth: "90vw",
+            }}
+          >
+            <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
+              {selected.length} Operator(s) Selected: {selected.map((m) => m.operatorName).join(", ")}
+              {selected.length > 5 && " — max 5, deselect some to compare"}
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CompareArrowsIcon />}
+              disabled={selected.length > 5}
+              onClick={() => router.push(`/search/mno/compare?ids=${selected.map((m) => m.id).join(",")}`)}
+            >
+              Compare Selected Operators (Matrix)
+            </Button>
+            <Button
+              size="small"
+              startIcon={<ClearIcon />}
+              onClick={() => {
+                setSelected([]);
+                setClearSignal((n) => n + 1);
+              }}
+            >
+              Clear Selection
+            </Button>
+          </Paper>
+        )}
       </AppShell>
     </RequireAuth>
   );

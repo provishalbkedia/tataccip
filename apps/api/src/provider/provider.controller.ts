@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { ServiceName } from "@prisma/client";
 import { ProviderStatsSource } from "@ccip/shared-types";
@@ -28,14 +28,35 @@ export class ProviderController {
   }
 
   // Must come before ":id" — otherwise Nest would route /provider/suggestions
-  // into detail() with id="suggestions" and fail ParseIntPipe.
+  // (and /provider/compare-matrix) into detail() with id="suggestions" and
+  // fail ParseIntPipe.
   @Get("suggestions")
   suggestions(@Query("q") q?: string) {
     return this.providerService.suggestions(q ?? "");
   }
 
+  @Get("compare-matrix")
+  compareMatrix(@Query("ids") ids?: string) {
+    const providerIds = Array.from(
+      new Set(
+        (ids ?? "")
+          .split(",")
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => !isNaN(n)),
+      ),
+    );
+    if (providerIds.length < 2) {
+      throw new BadRequestException("Provide at least 2 provider IDs via ?ids=1,2,3 (max 5)");
+    }
+    if (providerIds.length > 5) {
+      throw new BadRequestException("Compare at most 5 providers at a time");
+    }
+    return this.providerService.compareMatrix(providerIds);
+  }
+
   @Get(":id")
-  detail(@Param("id", ParseIntPipe) id: number) {
-    return this.providerService.detail(id);
+  detail(@Param("id", ParseIntPipe) id: number, @Query("source") source?: string) {
+    const parsedSource = source && VALID_SOURCES.includes(source) ? (source as ProviderStatsSource) : ProviderStatsSource.BOTH;
+    return this.providerService.detail(id, parsedSource);
   }
 }

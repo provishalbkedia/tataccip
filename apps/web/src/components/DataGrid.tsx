@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef, RowSelectionOptions } from "ag-grid-community";
+import type { ColDef, ColGroupDef, RowSelectionOptions } from "ag-grid-community";
 import { Box, Button, IconButton, MenuItem, Select, Typography } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
@@ -26,9 +26,13 @@ export default function DataGrid<T>({
   rowSelection,
   onSelectionChanged,
   showTopPagination = false,
+  suppressRowClickSelection,
 }: {
   rowData: T[];
-  columnDefs: ColDef<T>[];
+  // Column groups (ColGroupDef, with nested `children`) are accepted too —
+  // needed by the multi-provider comparison matrix's "[ Provider ] -> IR.21
+  // (SCCP|DSX|IPX) | Reach List (SCCP|DSX|IPX)" grouped headers.
+  columnDefs: (ColDef<T> | ColGroupDef<T>)[];
   height?: number;
   onRowClicked?: (row: T) => void;
   exportFileName?: string;
@@ -36,6 +40,11 @@ export default function DataGrid<T>({
   // columnDef `checkboxSelection: true` to render checkboxes.
   rowSelection?: RowSelectionOptions<T>["mode"];
   onSelectionChanged?: (rows: T[]) => void;
+  // Set true when the grid also has onRowClicked (e.g. navigate-to-detail)
+  // alongside checkbox rowSelection — otherwise clicking anywhere on the
+  // row toggles its checkbox too, fighting with the click-to-navigate
+  // handler. Only the checkbox cell itself should select in that case.
+  suppressRowClickSelection?: boolean;
   // Mirrors AG Grid's own bottom pagination bar above the table too — for
   // long lists (300+ rows, e.g. a Tier-1 provider's full MNO footprint)
   // that would otherwise need scrolling all the way down just to change
@@ -180,7 +189,7 @@ export default function DataGrid<T>({
           animateRows
           rowStyle={onRowClicked ? { cursor: "pointer" } : undefined}
           onRowClicked={onRowClicked ? (e) => e.data && onRowClicked(e.data) : undefined}
-          rowSelection={rowSelection ? { mode: rowSelection } : undefined}
+          rowSelection={rowSelection ? { mode: rowSelection, enableClickSelection: !suppressRowClickSelection } : undefined}
           onSelectionChanged={
             onSelectionChanged ? (e) => onSelectionChanged(e.api.getSelectedRows()) : undefined
           }

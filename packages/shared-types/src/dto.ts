@@ -171,17 +171,31 @@ export interface ProviderSummary {
   source?: ProviderStatsSource;
 }
 
+export interface ServicePresence {
+  sccp: boolean;
+  dsx: boolean;
+  ipx: boolean;
+}
+
 export interface OnNetMnoRow {
   mnoId: number;
   country: string;
   operatorName: string;
   tadigCode: string;
+  // Merged presence — true if the service is declared/claimed by EITHER
+  // source when source=BOTH, or by the single requested source otherwise.
   sccp: boolean;
   dsx: boolean;
   ipx: boolean;
   // From MnoMasterConnectivity — lets Provider Detail's On-Net MNO List
   // link straight to GET /mno/:mnoId/pdf per row, same as Operator Search.
   hasPdfDocument: boolean;
+  // Only populated when ProviderService.detail() was requested with
+  // source=BOTH — per-source presence for each service, so the UI can show
+  // side-by-side "IR.21 ✓ / Reach List ✓" indicators instead of a single
+  // merged flag that hides which source actually declared it.
+  ir21?: ServicePresence;
+  reachList?: ServicePresence;
 }
 
 export interface ProviderDetail extends ProviderSummary {
@@ -425,4 +439,21 @@ export interface AddAliasRequest {
 export interface ReassignAliasRequest {
   targetProviderId?: number;
   newProviderName?: string;
+}
+
+// --- Multi-provider comparative footprint matrix ------------------------
+
+// One row per MNO covered by at least one of the compared providers, with
+// a per-provider breakdown split by source (IR.21 vs Reach List) — powers
+// /search/provider/compare's grouped-column matrix (2-5 providers).
+export interface ProviderCompareMatrixItem {
+  mnoId: number;
+  operatorName: string;
+  country: string;
+  tadigCode: string;
+  providers: Record<number, {
+    providerName: string;
+    ir21: ServicePresence;
+    reachList: ServicePresence;
+  }>;
 }

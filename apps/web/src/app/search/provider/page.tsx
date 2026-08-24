@@ -6,6 +6,7 @@ import type { ColDef } from "ag-grid-community";
 import { Box, Button, Chip, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -48,6 +49,7 @@ function ProviderSearchPageInner() {
   const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.IR21);
   const [service, setService] = React.useState<ServiceFilter | null>(null);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
+  const [selected, setSelected] = React.useState<ProviderSummary[]>([]);
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — fires on initial load, on an explicit Search/toggle
@@ -90,9 +92,18 @@ function ProviderSearchPageInner() {
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
 
+  // BOTH mode returns two rows per provider (IR21-only + REACH_LIST-only) —
+  // dedupe by id so selecting both of one provider's rows still counts as
+  // one provider toward the 2-5 compare limit.
+  const uniqueSelected = React.useMemo(() => {
+    const seen = new Map<number, ProviderSummary>();
+    for (const s of selected) if (!seen.has(s.id)) seen.set(s.id, s);
+    return Array.from(seen.values());
+  }, [selected]);
+
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
     const cols: ColDef<ProviderSummary>[] = [
-      { field: "providerName", headerName: "Provider Name", flex: 1.5 },
+      { field: "providerName", headerName: "Provider Name", flex: 1.5, checkboxSelection: true, headerCheckboxSelection: true },
       { field: "providerType", headerName: "Type" },
       { field: "headquarters", headerName: "Headquarters" },
       { field: "website", headerName: "Website", flex: 1.2 },
@@ -180,8 +191,46 @@ function ProviderSearchPageInner() {
         <DataGrid<ProviderSummary>
           rowData={results}
           columnDefs={columnDefs}
-          onRowClicked={(row) => router.push(`/search/provider/${row.id}`)}
+          rowSelection="multiRow"
+          suppressRowClickSelection
+          onSelectionChanged={setSelected}
+          onRowClicked={(row) => router.push(`/search/provider/${row.id}?source=${row.source ?? source}`)}
         />
+
+        {uniqueSelected.length >= 2 && (
+          <Paper
+            elevation={4}
+            sx={{
+              position: "fixed",
+              bottom: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              px: 3,
+              py: 1.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              zIndex: 1200,
+              borderRadius: 999,
+            }}
+          >
+            <Typography variant="body2">
+              {uniqueSelected.length} Provider(s) Selected: {uniqueSelected.map((p) => p.providerName).join(", ")}
+              {uniqueSelected.length > 5 && " — max 5, deselect some to compare"}
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CompareArrowsIcon />}
+              disabled={uniqueSelected.length > 5}
+              onClick={() =>
+                router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)
+              }
+            >
+              Compare Selected Providers (Matrix)
+            </Button>
+          </Paper>
+        )}
       </AppShell>
     </RequireAuth>
   );

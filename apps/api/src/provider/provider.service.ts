@@ -4,11 +4,13 @@ import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
 import {
   OnNetMnoRow,
+  ProviderCompareMatrixItem,
   ProviderCoverageStats,
   ProviderDetail,
   ProviderStatsSource,
   ProviderSuggestion,
   ProviderSummary,
+  ServicePresence,
 } from "@ccip/shared-types";
 
 const EMPTY_STATS: ProviderCoverageStats = { totalCountries: 0, totalMnos: 0, sccpCount: 0, dsxCount: 0, ipxCount: 0 };
@@ -140,7 +142,13 @@ export class ProviderService {
     return results;
   }
 
-  async detail(id: number): Promise<ProviderDetail> {
+  /** `source` controls both which declarations count toward presence/stats
+   * and what gets exposed per row: IR21/REACH_LIST restrict onNetMnos to
+   * MNOs that source actually declares, using only that source's flags;
+   * BOTH (default) keeps the historical merged (OR'd) sccp/dsx/ipx flags
+   * for backward compatibility, plus attaches the per-source ir21/reachList
+   * breakdown so the UI can show both side by side. */
+  async detail(id: number, source: ProviderStatsSource = ProviderStatsSource.BOTH): Promise<ProviderDetail> {
     const provider = await this.prisma.providerMaster.findUnique({ where: { id } });
     if (!provider) throw new NotFoundException("Provider not found");
 
@@ -155,28 +163,30 @@ export class ProviderService {
       }),
     ]);
 
-    const byMno = new Map<
-      number,
-      { country: string; operatorName: string; tadigCode: string; sccp: boolean; dsx: boolean; ipx: boolean }
-    >();
+    type Bucket = { country: string; operatorName: string; tadigCode: string; ir21: ServicePresence; reachList: ServicePresence };
+    const byMno = new Map<number, Bucket>();
 
-    const touch = (mnoId: number, mno: { country: string; operatorName: string; tadigCode: string }, service: string) => {
+    const touch = (
+      mnoId: number,
+      mno: { country: string; operatorName: string; tadigCode: string },
+      service: string,
+      key: "ir21" | "reachList",
+    ) => {
       const row = byMno.get(mnoId) ?? {
         country: mno.country,
         operatorName: mno.operatorName,
         tadigCode: mno.tadigCode,
-        sccp: false,
-        dsx: false,
-        ipx: false,
+        ir21: { sccp: false, dsx: false, ipx: false },
+        reachList: { sccp: false, dsx: false, ipx: false },
       };
-      if (service === "SCCP") row.sccp = true;
-      if (service === "DSX") row.dsx = true;
-      if (service === "IPX") row.ipx = true;
+      if (service === "SCCP") row[key].sccp = true;
+      if (service === "DSX") row[key].dsx = true;
+      if (service === "IPX") row[key].ipx = true;
       byMno.set(mnoId, row);
     };
 
-    for (const r of ir21Rows) touch(r.mnoId, r.mno, r.service.serviceName);
-    for (const r of reachRows) touch(r.mnoId, r.mno, r.service.serviceName);
+    for (const r of ir21Rows) touch(r.mnoId, r.mno, r.service.serviceName, "ir21");
+    for (const r of reachRows) touch(r.mnoId, r.mno, r.service.serviceName, "reachList");
 
     const pdfFlags = await this.prisma.mnoMasterConnectivity.findMany({
       where: { mnoId: { in: Array.from(byMno.keys()) } },
@@ -184,17 +194,29 @@ export class ProviderService {
     });
     const hasPdfByMno = new Map(pdfFlags.map((p) => [p.mnoId, p.hasPdfDocument]));
 
+    const includeIr21 = source !== ProviderStatsSource.REACH_LIST;
+    const includeReach = source !== ProviderStatsSource.IR21;
+    const hasAny = (p: ServicePresence) => p.sccp || p.dsx || p.ipx;
+
     const onNetMnos: OnNetMnoRow[] = Array.from(byMno.entries())
-      .map(([mnoId, r]) => ({
-        mnoId,
-        country: r.country,
-        operatorName: r.operatorName,
-        tadigCode: r.tadigCode,
-        sccp: r.sccp,
-        dsx: r.dsx,
-        ipx: r.ipx,
-        hasPdfDocument: hasPdfByMno.get(mnoId) ?? false,
-      }))
+      .filter(([, r]) => (includeIr21 && hasAny(r.ir21)) || (includeReach && hasAny(r.reachList)))
+      .map(([mnoId, r]) => {
+        const row: OnNetMnoRow = {
+          mnoId,
+          country: r.country,
+          operatorName: r.operatorName,
+          tadigCode: r.tadigCode,
+          sccp: (includeIr21 && r.ir21.sccp) || (includeReach && r.reachList.sccp),
+          dsx: (includeIr21 && r.ir21.dsx) || (includeReach && r.reachList.dsx),
+          ipx: (includeIr21 && r.ir21.ipx) || (includeReach && r.reachList.ipx),
+          hasPdfDocument: hasPdfByMno.get(mnoId) ?? false,
+        };
+        if (source === ProviderStatsSource.BOTH) {
+          row.ir21 = r.ir21;
+          row.reachList = r.reachList;
+        }
+        return row;
+      })
       .sort((a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName));
 
     const { aliases, observedRawStrings } = await this.provenance(provider.id, provider.providerName);
@@ -205,6 +227,7 @@ export class ProviderService {
       providerType: provider.providerType,
       headquarters: provider.headquarters,
       website: provider.website,
+      source,
       stats: {
         totalCountries: new Set(onNetMnos.map((m) => m.country)).size,
         totalMnos: onNetMnos.length,
@@ -216,6 +239,60 @@ export class ProviderService {
       aliases,
       observedRawStrings,
     };
+  }
+
+  /** Multi-provider side-by-side footprint comparison (2-5 providers) —
+   * one row per MNO covered by ANY selected provider, with each provider's
+   * own IR.21/Reach List service breakdown nested under its id. Powers
+   * /search/provider/compare's grouped-column matrix. */
+  async compareMatrix(providerIds: number[]): Promise<ProviderCompareMatrixItem[]> {
+    const providers = await this.prisma.providerMaster.findMany({ where: { id: { in: providerIds } } });
+    const providerNameById = new Map(providers.map((p) => [p.id, p.providerName]));
+
+    const [ir21Rows, reachRows] = await Promise.all([
+      this.prisma.ir21Connectivity.findMany({
+        where: { providerId: { in: providerIds } },
+        include: { mno: true, service: true },
+      }),
+      this.prisma.providerReachlist.findMany({
+        where: { providerId: { in: providerIds } },
+        include: { mno: true, service: true },
+      }),
+    ]);
+
+    const byMno = new Map<number, ProviderCompareMatrixItem>();
+    const touch = (
+      mnoId: number,
+      mno: { operatorName: string; country: string; tadigCode: string },
+      providerId: number,
+      service: string,
+      key: "ir21" | "reachList",
+    ) => {
+      let item = byMno.get(mnoId);
+      if (!item) {
+        item = { mnoId, operatorName: mno.operatorName, country: mno.country, tadigCode: mno.tadigCode, providers: {} };
+        byMno.set(mnoId, item);
+      }
+      let p = item.providers[providerId];
+      if (!p) {
+        p = {
+          providerName: providerNameById.get(providerId) ?? String(providerId),
+          ir21: { sccp: false, dsx: false, ipx: false },
+          reachList: { sccp: false, dsx: false, ipx: false },
+        };
+        item.providers[providerId] = p;
+      }
+      if (service === "SCCP") p[key].sccp = true;
+      if (service === "DSX") p[key].dsx = true;
+      if (service === "IPX") p[key].ipx = true;
+    };
+
+    for (const r of ir21Rows) touch(r.mnoId, r.mno, r.providerId, r.service.serviceName, "ir21");
+    for (const r of reachRows) touch(r.mnoId, r.mno, r.providerId, r.service.serviceName, "reachList");
+
+    return Array.from(byMno.values()).sort(
+      (a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName),
+    );
   }
 
   /** All known alias patterns for this provider, plus every distinct raw

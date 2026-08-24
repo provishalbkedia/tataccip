@@ -5,8 +5,6 @@ import { ProviderResolverService } from "../upload/provider-resolver.service";
 import { normalizeCarrierName, splitCompositeProviderNames } from "../upload/provider-normalize";
 import {
   DeleteProviderResult,
-  MergeProviderRequest,
-  MergeProviderResult,
   ProviderAliasEntry,
   ProviderNormalizationCard,
   ReassignAliasRequest,
@@ -195,111 +193,10 @@ export class ProviderAliasService {
     return { normalizedPattern, targetProviderId: targetId, targetProviderName: targetName, affectedTadigs };
   }
 
-  /** Merges one or more duplicate/junk ProviderMaster rows into their
-   * correct canonical counterpart — e.g. a Reach List upload created
-   * "TATAComms" as its own provider instead of resolving to the existing
-   * "Tata Comm" row, or several residual junk rows should all collapse
-   * into "Others / Unassigned". Repoints every ProviderReachlist/
-   * Ir21Connectivity/DataDiscrepancy/ProviderAlias row from each source to
-   * the target, registers each source's normalized name as an alias so
-   * future uploads resolve directly, then deletes the source rows. */
-  async mergeProvider(req: MergeProviderRequest): Promise<MergeProviderResult> {
-    const { sourceProviderIds, targetProviderId: targetId } = req;
-    const sourceIds = Array.from(new Set(sourceProviderIds));
-    if (sourceIds.includes(targetId)) {
-      throw new BadRequestException("targetProviderId cannot also appear in sourceProviderIds");
-    }
-
-    const [sources, target] = await Promise.all([
-      this.prisma.providerMaster.findMany({ where: { id: { in: sourceIds } } }),
-      this.prisma.providerMaster.findUnique({ where: { id: targetId } }),
-    ]);
-    if (!target) throw new NotFoundException(`Target provider ${targetId} not found`);
-    const missing = sourceIds.filter((id) => !sources.some((s) => s.id === id));
-    if (missing.length > 0) throw new NotFoundException(`Source provider(s) not found: ${missing.join(", ")}`);
-
-    const totals = await this.prisma.$transaction(
-      async (tx) => {
-        let reachlistRowsMoved = 0;
-        let ir21RowsMoved = 0;
-        let discrepancyRowsMoved = 0;
-        let aliasesMoved = 0;
-
-        for (const source of sources) {
-          const sourceId = source.id;
-
-          // ProviderReachlist is unique per (mno, provider, service) —
-          // multiple providers can independently claim the same route, so
-          // the source's and target's rows for the same (mno, service) can
-          // collide; drop the source's row as a duplicate claim rather
-          // than erroring.
-          const reachRows = await tx.providerReachlist.findMany({ where: { providerId: sourceId } });
-          for (const r of reachRows) {
-            const clash = await tx.providerReachlist.findUnique({
-              where: { mnoId_providerId_serviceId: { mnoId: r.mnoId, providerId: targetId, serviceId: r.serviceId } },
-            });
-            if (clash) {
-              await tx.providerReachlist.delete({ where: { id: r.id } });
-            } else {
-              await tx.providerReachlist.update({ where: { id: r.id }, data: { providerId: targetId } });
-              reachlistRowsMoved++;
-            }
-          }
-
-          // Ir21Connectivity is unique per (mno, service) with no
-          // providerId in the key — one declared provider per route,
-          // period — so there's never a clash to resolve here.
-          const ir21Result = await tx.ir21Connectivity.updateMany({
-            where: { providerId: sourceId },
-            data: { providerId: targetId },
-          });
-          ir21RowsMoved += ir21Result.count;
-
-          const discrepancyResult = await tx.dataDiscrepancy.updateMany({
-            where: { providerId: sourceId },
-            data: { providerId: targetId },
-          });
-          discrepancyRowsMoved += discrepancyResult.count;
-
-          const aliasResult = await tx.providerAlias.updateMany({
-            where: { providerId: sourceId },
-            data: { providerId: targetId },
-          });
-          aliasesMoved += aliasResult.count;
-
-          const normalizedPattern = normalizeCarrierName(source.providerName);
-          if (normalizedPattern) {
-            await tx.providerAlias.upsert({
-              where: { aliasPattern: normalizedPattern },
-              update: { providerId: targetId },
-              create: { aliasPattern: normalizedPattern, providerId: targetId },
-            });
-          }
-        }
-
-        await tx.providerMaster.deleteMany({ where: { id: { in: sourceIds } } });
-
-        return { reachlistRowsMoved, ir21RowsMoved, discrepancyRowsMoved, aliasesMoved };
-      },
-      { maxWait: 30000, timeout: 120000 },
-    );
-
-    await this.providerResolver.refreshCache();
-
-    return {
-      sourceProviderIds: sourceIds,
-      sourceProviderNames: sources.map((s) => s.providerName),
-      targetProviderId: targetId,
-      targetProviderName: target.providerName,
-      providersDeleted: sourceIds.length,
-      ...totals,
-    };
-  }
-
   /** Deletes a placeholder/junk ProviderMaster row outright ("None", "N/A",
    * a bare "0.0.0.0"). Refuses if it has any real Ir21Connectivity or
-   * ProviderReachlist rows attached — normally that means it's an actual
-   * duplicate provider needing mergeProvider() instead, not deletion. The
+   * ProviderReachlist rows attached — that usually means it's an actual
+   * duplicate provider that needs its data repointed first, not deletion. The
    * one exception `force` covers: an MNO's IR.21 literally declared "None"/
    * "N/A" as its provider for a service, so that connectivity row doesn't
    * represent a real provider claim either — force also deletes those

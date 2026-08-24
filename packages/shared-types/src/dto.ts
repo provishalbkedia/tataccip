@@ -104,7 +104,6 @@ export interface DashboardMetrics {
   sccpCount: number;
   dsxCount: number;
   ipxCount: number;
-  discrepancyCount: number;
 }
 
 export interface MnoSummary {
@@ -257,31 +256,6 @@ export interface ProviderDetail extends ProviderSummary {
   observedRawStrings: string[];
 }
 
-export interface DiscrepancyRow {
-  id: number;
-  mnoId: number;
-  operatorName: string;
-  country: string;
-  tadigCode: string;
-  providerId: number | null;
-  providerName: string | null;
-  service: ServiceName;
-  ir21Status: string;
-  reachlistStatus: string;
-  discrepancyType: DiscrepancyType;
-  computedAt: string;
-}
-
-export interface ComparisonFilters {
-  country?: string;
-  // Free-text match against operator name or TADIG code.
-  operator?: string;
-  mnoId?: number;
-  providerId?: number;
-  service?: ServiceName;
-  discrepancyType?: DiscrepancyType;
-}
-
 export interface UploadHistoryRow {
   id: number;
   filename: string;
@@ -390,35 +364,10 @@ export interface RemapProviderResult {
   affectedTadigs: string[];
 }
 
-// Admin override: one or more ProviderMaster rows turned out to be the same
-// real-world provider (e.g. a Reach List upload created "TATAComms" as its
-// own row instead of resolving to the existing "Tata Comm"), or are junk
-// that should collapse into the "Others / Unassigned" system catch-all.
-// Repoints every ProviderReachlist/Ir21Connectivity/DataDiscrepancy/
-// ProviderAlias row from each source to the target, registers each
-// source's normalized name as an alias so future uploads resolve directly,
-// then deletes the source rows.
-export interface MergeProviderRequest {
-  sourceProviderIds: number[];
-  targetProviderId: number;
-}
-
-export interface MergeProviderResult {
-  sourceProviderIds: number[];
-  sourceProviderNames: string[];
-  targetProviderId: number;
-  targetProviderName: string;
-  reachlistRowsMoved: number;
-  ir21RowsMoved: number;
-  discrepancyRowsMoved: number;
-  aliasesMoved: number;
-  providersDeleted: number;
-}
-
 // Admin override: a ProviderMaster row is placeholder junk ("None", "N/A",
 // "Not Applicable", a bare "0.0.0.0", etc.) with no real data behind it —
-// not a duplicate of a real provider (that's MergeProviderRequest), just
-// noise to remove outright. Refused if the row has any Ir21Connectivity or
+// not a duplicate of a real provider, just noise to remove outright.
+// Refused if the row has any Ir21Connectivity or
 // ProviderReachlist rows attached — that's real data, and means this should
 // be a merge instead.
 export interface DeleteProviderResult {

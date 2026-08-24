@@ -9,7 +9,6 @@ import HubIcon from "@mui/icons-material/Hub";
 import RouterIcon from "@mui/icons-material/Router";
 import LanIcon from "@mui/icons-material/Lan";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
@@ -94,7 +93,6 @@ export default function DashboardPage() {
             { label: "SCCP Relationships", key: "sccpCount" as const, icon: <RouterIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=SCCP&source=IR21" },
             { label: "DSX Relationships", key: "dsxCount" as const, icon: <LanIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=DSX&source=IR21" },
             { label: "IPX Relationships", key: "ipxCount" as const, icon: <SwapHorizIcon fontSize="large" />, color: "#0B6FBF", href: "/search/provider?service=IPX&source=IR21" },
-            { label: "Discrepancies Found", key: "discrepancyCount" as const, icon: <WarningAmberIcon fontSize="large" />, color: "#C62828", href: "/comparison" },
           ].map((tile) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={tile.key}>
               {metrics ? (

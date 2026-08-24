@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { Box, Card, CardActionArea, CardContent, Grid, Typography } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import MergeTypeIcon from "@mui/icons-material/MergeType";
 import RuleIcon from "@mui/icons-material/Rule";
 import TuneIcon from "@mui/icons-material/Tune";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
@@ -19,12 +18,6 @@ const SECTIONS = [
     title: "IR.21 & Reach List Uploads",
     description: "Bulk-ingest GSMA IR.21 XML/ZIP archives (with paired PDFs) and Reach List Excel files.",
     icon: <UploadFileIcon fontSize="large" color="primary" />,
-  },
-  {
-    href: "/admin/provider-merge",
-    title: "Provider Mappings & Merge Tool",
-    description: "Merge duplicate or junk provider records into a canonical provider, or into Others / Unassigned.",
-    icon: <MergeTypeIcon fontSize="large" color="primary" />,
   },
   {
     href: "/admin/provider-aliases",
@@ -56,7 +49,7 @@ export default function AdminMenuPage() {
         <ActiveBaselineBanner />
         <Grid container spacing={2}>
           {SECTIONS.map((s) => (
-            <Grid item xs={12} md={4} key={s.href}>
+            <Grid item xs={12} sm={6} key={s.href}>
               <Card sx={{ height: "100%" }}>
                 <CardActionArea component={Link} href={s.href} sx={{ height: "100%" }}>
                   <CardContent>

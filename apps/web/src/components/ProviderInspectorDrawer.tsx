@@ -111,26 +111,11 @@ export default function ProviderInspectorDrawer({
   const { user } = useAuth();
   const [remappingRaw, setRemappingRaw] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<RemapProviderResult | null>(null);
-  const [comparisonBusy, setComparisonBusy] = React.useState(false);
-  const [comparisonMessage, setComparisonMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setRemappingRaw(null);
     setResult(null);
-    setComparisonMessage(null);
   }, [data]);
-
-  async function runComparison() {
-    setComparisonBusy(true);
-    try {
-      const res = await api.post<{ discrepancyCount: number }>("/comparison/run");
-      setComparisonMessage(`Comparison recomputed — ${res.discrepancyCount} discrepancies found.`);
-    } catch (err) {
-      setComparisonMessage(err instanceof ApiError ? err.message : "Comparison run failed");
-    } finally {
-      setComparisonBusy(false);
-    }
-  }
 
   return (
     <Drawer anchor="right" open={!!data} onClose={onClose}>
@@ -219,14 +204,8 @@ export default function ProviderInspectorDrawer({
               <Alert severity="success">
                 Remapped to &quot;{result.targetProviderName}&quot; — {result.affectedTadigs.length} MNO(s) affected
                 (Ir21Connectivity only; Reach List data isn&apos;t traceable to a specific raw string).
-                <Box sx={{ mt: 1 }}>
-                  <Button size="small" variant="outlined" onClick={runComparison} disabled={comparisonBusy}>
-                    {comparisonBusy ? "Running..." : "Recompute Comparison"}
-                  </Button>
-                </Box>
               </Alert>
             )}
-            {comparisonMessage && <Alert severity="info">{comparisonMessage}</Alert>}
           </Stack>
         )}
       </Box>

@@ -19,7 +19,6 @@ import {
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
@@ -32,7 +31,6 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
   { href: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
   { href: "/search/mno", label: "Operator Search", icon: <CellTowerIcon /> },
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
-  { href: "/comparison", label: "Comparison", icon: <CompareArrowsIcon /> },
   { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon />, roles: [Role.ADMIN] },
 ];
 

@@ -7,7 +7,6 @@ import { Roles } from "../auth/roles.decorator";
 import { ProviderAliasService } from "./provider-alias.service";
 import { ResolveProviderAliasDto } from "./dto/resolve-provider-alias.dto";
 import { RemapProviderDto } from "./dto/remap-provider.dto";
-import { MergeProviderDto } from "./dto/merge-provider.dto";
 import { AddAliasDto } from "./dto/add-alias.dto";
 import { ReassignAliasDto } from "./dto/reassign-alias.dto";
 
@@ -34,12 +33,6 @@ export class ProviderAliasController {
   @Roles(Role.ADMIN)
   remap(@Body() dto: RemapProviderDto) {
     return this.providerAliasService.remap(dto);
-  }
-
-  @Post("merge")
-  @Roles(Role.ADMIN)
-  merge(@Body() dto: MergeProviderDto) {
-    return this.providerAliasService.mergeProvider(dto);
   }
 
   @Delete("provider/:id")

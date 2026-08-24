@@ -89,6 +89,15 @@ function firstText(root: unknown, patterns: RegExp[]): string | null {
   return all.length > 0 ? all[0] : null;
 }
 
+/** Some IR.21 XML exports leave <NetworkName> as an unfilled MCC-MNC
+ * placeholder (e.g. "(440-50)") instead of the operator's actual trade
+ * name, while a real name sits in <OrganisationName>. Recognizing and
+ * skipping this placeholder pattern stops it from winning over the real
+ * name below. */
+function looksLikeMccMncPlaceholder(value: string): boolean {
+  return /^\(?\d{3}[- ]?\d{1,3}\)?$/.test(value.trim());
+}
+
 /** Like collectTexts, but for fields known to hold carrier/provider names —
  * splits any composite value (e.g. one <ProviderName> element containing
  * "BICS, Orange") into individual candidate names before returning, so a
@@ -150,7 +159,7 @@ export class Ir21XmlParserService {
       senderTadig: senderTadig.trim().toUpperCase(),
       schemaVersion: firstText(doc, [/tadigraexir21schemaversion/i, /^schemaversion$/i]),
       fileCreationTimestamp: firstText(doc, [/filecreationtimestamp/i]),
-      organisationName: firstText(doc, [/^networkname$/i]) ?? firstText(doc, [/^organisationname$/i]),
+      organisationName: this.resolveOrganisationName(doc),
       countryInitials: firstText(doc, [/^countryinitials$/i]),
       networkType: firstText(doc, [/^networktype$/i]),
       mccMncPairs: this.extractMccMncPairs(doc),
@@ -296,5 +305,15 @@ export class Ir21XmlParserService {
   private tadigFromFilename(filename: string): string | null {
     const match = filename.match(/IR21_([A-Z0-9]{5})_/i) ?? filename.match(/[A-Z0-9]{5}/i);
     return match ? match[1] ?? match[0] : null;
+  }
+
+  /** <NetworkName> is preferred over <OrganisationName> when both are
+   * present (it's usually the commercial brand vs. a legal-entity name),
+   * but some exports leave NetworkName as an unfilled MCC-MNC placeholder
+   * (e.g. "(440-50)") — in that case OrganisationName is the real name. */
+  private resolveOrganisationName(doc: unknown): string | null {
+    const networkName = firstText(doc, [/^networkname$/i]);
+    if (networkName && !looksLikeMccMncPlaceholder(networkName)) return networkName;
+    return firstText(doc, [/^organisationname$/i]) ?? networkName;
   }
 }

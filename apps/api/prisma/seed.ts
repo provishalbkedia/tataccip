@@ -352,19 +352,19 @@ async function main() {
   await prisma.user.upsert({
     where: { email: adminEmail },
     update: { passwordHash: adminPasswordHash, role: Role.ADMIN },
-    create: { email: adminEmail, passwordHash: adminPasswordHash, role: Role.ADMIN },
+    create: { email: adminEmail, passwordHash: adminPasswordHash, role: Role.ADMIN, name: "Admin (Local)" },
   });
   const analystPasswordHash = await bcrypt.hash("Analyst@12345", 10);
   await prisma.user.upsert({
     where: { email: "analyst@ccip.local" },
     update: { passwordHash: analystPasswordHash, role: Role.ANALYST },
-    create: { email: "analyst@ccip.local", passwordHash: analystPasswordHash, role: Role.ANALYST },
+    create: { email: "analyst@ccip.local", passwordHash: analystPasswordHash, role: Role.ANALYST, name: "Analyst (Local)" },
   });
   const viewerPasswordHash = await bcrypt.hash("Viewer@12345", 10);
   await prisma.user.upsert({
     where: { email: "viewer@ccip.local" },
     update: { passwordHash: viewerPasswordHash, role: Role.VIEWER },
-    create: { email: "viewer@ccip.local", passwordHash: viewerPasswordHash, role: Role.VIEWER },
+    create: { email: "viewer@ccip.local", passwordHash: viewerPasswordHash, role: Role.VIEWER, name: "Viewer (Local)" },
   });
 
   console.log("Seed complete.");

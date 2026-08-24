@@ -9,12 +9,14 @@ interface AuthUser {
   id: number;
   email: string;
   role: Role;
+  name?: string | null;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithMicrosoft: () => Promise<void>;
   logout: () => void;
 }
 
@@ -34,12 +36,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = React.useCallback(async (email: string, password: string) => {
-    const res = await api.post<LoginResponse>("/auth/login", { email, password });
+  const applySession = React.useCallback((res: LoginResponse) => {
     window.localStorage.setItem("ccip_token", res.accessToken);
     window.localStorage.setItem("ccip_user", JSON.stringify(res.user));
     setUser(res.user);
   }, []);
+
+  const login = React.useCallback(
+    async (email: string, password: string) => {
+      applySession(await api.post<LoginResponse>("/auth/login", { email, password }));
+    },
+    [applySession],
+  );
+
+  const loginWithMicrosoft = React.useCallback(async () => {
+    // Dynamically imported — @azure/msal-browser is a sizeable dependency
+    // that only the login page's Microsoft button ever needs; a static
+    // import here would pull it into every page's bundle via AuthProvider
+    // wrapping the whole app.
+    const { signInWithMicrosoft } = await import("./msal");
+    const idToken = await signInWithMicrosoft();
+    applySession(await api.post<LoginResponse>("/auth/microsoft", { idToken }));
+  }, [applySession]);
 
   const logout = React.useCallback(() => {
     window.localStorage.removeItem("ccip_token");
@@ -48,7 +66,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, loading, login, loginWithMicrosoft, logout }}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

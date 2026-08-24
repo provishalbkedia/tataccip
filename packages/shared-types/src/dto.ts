@@ -1,4 +1,4 @@
-import { DiscrepancyType, ProviderStatsSource, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
+import { AuthProvider, DiscrepancyType, ProviderStatsSource, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
 
 export interface LoginRequest {
   email: string;
@@ -11,7 +11,39 @@ export interface LoginResponse {
     id: number;
     email: string;
     role: Role;
+    name?: string | null;
   };
+}
+
+// POST /auth/microsoft — idToken is the raw Microsoft-issued OpenID Connect
+// ID token from MSAL's loginPopup(), verified server-side against
+// Microsoft's JWKS before any claim in it is trusted.
+export interface MicrosoftLoginRequest {
+  idToken: string;
+}
+
+// --- User & Role Management (Admin) -------------------------------------
+
+export interface UserRow {
+  id: number;
+  email: string;
+  name: string | null;
+  role: Role;
+  isActive: boolean;
+  authProvider: AuthProvider;
+  createdAt: string;
+  // Most recent LoginHistory entry for this user — null if they've never
+  // actually logged in (e.g. provisioned but not yet signed in, shouldn't
+  // normally happen since provisioning only happens on first sign-in).
+  lastLoginAt: string | null;
+}
+
+export interface UpdateUserRoleRequest {
+  role: Role;
+}
+
+export interface UpdateUserStatusRequest {
+  isActive: boolean;
 }
 
 // A browser never exposes the client's actual machine name to a web app —

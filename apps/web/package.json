@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.19.0",
     "@ccip/shared-types": "*",
     "@emotion/cache": "^11.13.1",
     "@emotion/react": "^11.13.3",

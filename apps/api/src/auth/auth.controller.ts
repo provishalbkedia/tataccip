@@ -2,6 +2,7 @@ import { Body, Controller, Get, Headers, Ip, Post, Req, UseGuards } from "@nestj
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
+import { MicrosoftLoginDto } from "./dto/microsoft-login.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 
 @ApiTags("auth")
@@ -12,6 +13,11 @@ export class AuthController {
   @Post("login")
   login(@Body() dto: LoginDto, @Ip() ip: string, @Headers("user-agent") userAgent?: string) {
     return this.authService.login(dto.email, dto.password, ip, userAgent);
+  }
+
+  @Post("microsoft")
+  microsoftLogin(@Body() dto: MicrosoftLoginDto, @Ip() ip: string, @Headers("user-agent") userAgent?: string) {
+    return this.authService.microsoftLogin(dto.idToken, ip, userAgent);
   }
 
   @Get("login-history")

@@ -9,6 +9,12 @@ export const Role = {
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
 
+export const AuthProvider = {
+  LOCAL: "LOCAL",
+  MICROSOFT: "MICROSOFT",
+} as const;
+export type AuthProvider = (typeof AuthProvider)[keyof typeof AuthProvider];
+
 export const ServiceName = {
   SCCP: "SCCP",
   DSX: "DSX",

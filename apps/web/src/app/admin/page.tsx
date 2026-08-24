@@ -7,6 +7,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import MergeTypeIcon from "@mui/icons-material/MergeType";
 import RuleIcon from "@mui/icons-material/Rule";
 import TuneIcon from "@mui/icons-material/Tune";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
@@ -36,6 +37,12 @@ const SECTIONS = [
     title: "Provider Overrides & Normalization Audit",
     description: "Per-operator provider overrides, and a full audit of how raw carrier-name variants consolidate into canonical providers.",
     icon: <TuneIcon fontSize="large" color="primary" />,
+  },
+  {
+    href: "/admin/users",
+    title: "User Access & Roles",
+    description: "Promote or reassign signed-in users to VIEWER, ANALYST, or ADMIN, and suspend access when needed.",
+    icon: <ManageAccountsIcon fontSize="large" color="primary" />,
   },
 ];
 

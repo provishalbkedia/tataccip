@@ -13,6 +13,11 @@ enum Role {
   VIEWER
 }
 
+enum AuthProvider {
+  LOCAL
+  MICROSOFT
+}
+
 enum ServiceName {
   SCCP
   DSX
@@ -40,8 +45,19 @@ enum VariantStatus {
 model User {
   id           Int       @id @default(autoincrement())
   email        String    @unique
+  // Sentinel "SSO_MANAGED_MICROSOFT" for authProvider=MICROSOFT accounts —
+  // never a real bcrypt hash, and POST /auth/login's bcrypt.compare against
+  // it will simply never match, so a Microsoft-provisioned account can't
+  // accidentally be signed into via the local password form.
   passwordHash String
   role         Role      @default(VIEWER)
+  name         String?
+  // Toggled off by an admin (PUT /users/:id/status) to suspend access
+  // without deleting the account — enforced in JwtStrategy.validate() on
+  // every request, not just at login, so revocation takes effect
+  // immediately rather than waiting for the JWT to expire.
+  isActive     Boolean      @default(true)
+  authProvider AuthProvider @default(LOCAL)
   createdAt    DateTime  @default(now())
   // Updated (fire-and-forget, not awaited) on every authenticated request
   // by JwtStrategy — powers the "N Online" header badge. Stored on User

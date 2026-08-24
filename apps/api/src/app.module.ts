@@ -9,6 +9,7 @@ import { ProviderModule } from "./provider/provider.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
 import { ProviderOverrideModule } from "./provider-override/provider-override.module";
+import { UserModule } from "./user/user.module";
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ProviderOverrideModule } from "./provider-override/provider-override.mo
     DashboardModule,
     ProviderAliasModule,
     ProviderOverrideModule,
+    UserModule,
   ],
 })
 export class AppModule {}

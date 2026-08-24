@@ -108,7 +108,7 @@ function MnoSearchPageInner() {
                 value={q}
                 onValueChange={setQ}
                 fetchSuggestions={fetchSuggestions}
-                getOptionLabel={(o) => `${o.operatorName} (${o.tadigCode})`}
+                getOptionLabel={(o) => o.operatorName}
                 onEnter={runSearch}
               />
             </Grid>

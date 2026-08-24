@@ -24,6 +24,7 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
 import LoginHistoryChip from "./LoginHistoryChip";
+import OnlineUsersBadge from "./OnlineUsersBadge";
 
 const DRAWER_WIDTH = 240;
 
@@ -51,6 +52,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {user && (
             <>
               <Chip label={`${user.email} · ${user.role}`} size="small" sx={{ color: "white", borderColor: "white" }} variant="outlined" />
+              <OnlineUsersBadge />
               <LoginHistoryChip />
               <Button color="inherit" onClick={logout}>
                 Logout

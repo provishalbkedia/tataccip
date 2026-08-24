@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ICellRendererParams } from "ag-grid-community";
 import { Box, Button, Grid, IconButton, Paper, TextField, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -9,9 +9,10 @@ import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
-import { MnoSummary } from "@ccip/shared-types";
+import { MnoSuggestion, MnoSummary } from "@ccip/shared-types";
 
 /** stopPropagation so clicking the PDF icon doesn't also trigger the row's
  * own onRowClicked navigation to the detail page. */
@@ -45,13 +46,38 @@ function joinOrDash(params: { value: unknown }): string {
 }
 
 export default function MnoSearchPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <MnoSearchPageInner />
+    </React.Suspense>
+  );
+}
+
+function MnoSearchPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [q, setQ] = React.useState("");
   const [tadig, setTadig] = React.useState("");
   const [country, setCountry] = React.useState("");
   const [mcc, setMcc] = React.useState("");
   const [mnc, setMnc] = React.useState("");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
+
+  // The URL query string is the single source of truth for "what did we
+  // last search for" — this fires on initial load, on an explicit Search
+  // (via the router.push below), and when the browser Back/Forward button
+  // restores a prior query, syncing the input fields and refetching in all
+  // three cases without needing separate logic for each.
+  React.useEffect(() => {
+    setQ(searchParams.get("q") ?? "");
+    setTadig(searchParams.get("tadig") ?? "");
+    setCountry(searchParams.get("country") ?? "");
+    setMcc(searchParams.get("mcc") ?? "");
+    setMnc(searchParams.get("mnc") ?? "");
+    api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const runSearch = React.useCallback(() => {
     const params = new URLSearchParams();
@@ -60,13 +86,13 @@ export default function MnoSearchPage() {
     if (country) params.set("country", country);
     if (mcc) params.set("mcc", mcc);
     if (mnc) params.set("mnc", mnc);
-    api.get<MnoSummary[]>(`/mno/search?${params.toString()}`).then(setResults);
-  }, [q, tadig, country, mcc, mnc]);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [q, tadig, country, mcc, mnc, pathname, router]);
 
-  React.useEffect(() => {
-    runSearch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const fetchSuggestions = React.useCallback(
+    (query: string) => api.get<MnoSuggestion[]>(`/mno/suggestions?q=${encodeURIComponent(query)}`),
+    [],
+  );
 
   return (
     <RequireAuth>
@@ -77,12 +103,13 @@ export default function MnoSearchPage() {
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
+              <SuggestionAutocomplete<MnoSuggestion>
                 label="Search by Operator, TADIG, Country, MCC/MNC, or Carrier..."
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                onValueChange={setQ}
+                fetchSuggestions={fetchSuggestions}
+                getOptionLabel={(o) => `${o.operatorName} (${o.tadigCode})`}
+                onEnter={runSearch}
               />
             </Grid>
             <Grid item xs={6} sm={2}>

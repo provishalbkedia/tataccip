@@ -1,15 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
-import { Box, Button, Grid, Paper, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, Button, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import { api } from "@/lib/api";
-import { ProviderStatsSource, ProviderSummary } from "@ccip/shared-types";
+import { ProviderStatsSource, ProviderSuggestion, ProviderSummary } from "@ccip/shared-types";
 
 const SOURCE_LABEL: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.IR21]: "IR.21",
@@ -23,23 +24,60 @@ const SOURCE_HELPER_TEXT: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.BOTH]: "Showing one row per source per provider — compare the IR.21 footprint against the Reach List footprint directly.",
 };
 
+const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
+
 export default function ProviderSearchPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <ProviderSearchPageInner />
+    </React.Suspense>
+  );
+}
+
+function ProviderSearchPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [q, setQ] = React.useState("");
-  const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.BOTH);
+  // Default is "As per IR.21 Data", not the combined view — only overridden
+  // when the URL explicitly carries a different source (e.g. restored via
+  // Back navigation, or a shared link).
+  const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.IR21);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
 
-  const runSearch = React.useCallback(() => {
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    params.set("source", source);
-    api.get<ProviderSummary[]>(`/provider/search?${params.toString()}`).then(setResults);
-  }, [q, source]);
-
+  // The URL query string is the single source of truth for "what did we
+  // last search for" — fires on initial load, on an explicit Search/toggle
+  // change (via the router.push calls below), and when the browser Back/
+  // Forward button restores a prior query.
   React.useEffect(() => {
-    runSearch();
+    const urlSource = searchParams.get("source");
+    const effectiveSource =
+      urlSource && VALID_SOURCES.includes(urlSource) ? (urlSource as ProviderStatsSource) : ProviderStatsSource.IR21;
+    setQ(searchParams.get("q") ?? "");
+    setSource(effectiveSource);
+
+    const params = new URLSearchParams(searchParams);
+    params.set("source", effectiveSource);
+    api.get<ProviderSummary[]>(`/provider/search?${params.toString()}`).then(setResults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
+  }, [searchParams]);
+
+  const pushParams = React.useCallback(
+    (nextQ: string, nextSource: ProviderStatsSource) => {
+      const params = new URLSearchParams();
+      if (nextQ) params.set("q", nextQ);
+      params.set("source", nextSource);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const runSearch = React.useCallback(() => pushParams(q, source), [pushParams, q, source]);
+
+  const fetchSuggestions = React.useCallback(
+    (query: string) => api.get<ProviderSuggestion[]>(`/provider/suggestions?q=${encodeURIComponent(query)}`),
+    [],
+  );
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
 
@@ -76,12 +114,13 @@ export default function ProviderSearchPage() {
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={9}>
-              <TextField
-                fullWidth
+              <SuggestionAutocomplete<ProviderSuggestion>
                 label="Provider Name (e.g. Tata Comm, Syniverse, BICS)"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                onValueChange={setQ}
+                fetchSuggestions={fetchSuggestions}
+                getOptionLabel={(o) => (o.matchedAlias ? `${o.providerName} (alias: ${o.matchedAlias})` : o.providerName)}
+                onEnter={runSearch}
               />
             </Grid>
             <Grid item xs={12} sm={3}>
@@ -95,7 +134,7 @@ export default function ProviderSearchPage() {
                 size="small"
                 color="primary"
                 value={source}
-                onChange={(_, value) => value && setSource(value)}
+                onChange={(_, value) => value && pushParams(q, value)}
                 sx={{
                   "& .MuiToggleButton-root": {
                     borderRadius: "999px !important",

@@ -214,6 +214,8 @@ function ProviderSearchPageInner() {
           suppressRowClickSelection
           onSelectionChanged={setSelected}
           onRowClicked={(row) => router.push(`/search/provider/${row.id}?source=${row.source ?? source}`)}
+          showTopPagination
+          exportFileName="provider-search-results"
         />
 
         {selfCompareTarget && (

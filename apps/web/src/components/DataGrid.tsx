@@ -18,6 +18,84 @@ import "ag-grid-community/styles/ag-theme-quartz.css";
 // "unlimited" pagination mode.
 const ALL_SENTINEL = -1;
 
+interface PageInfo {
+  page: number;
+  totalPages: number;
+  pageSize: number;
+  rowCount: number;
+}
+
+/** Our own pagination bar, rendered above AND below the grid (mirroring
+ * both bars against the same grid API keeps them in sync automatically).
+ * AG Grid's own built-in bottom panel is suppressed via CSS in favor of
+ * this — its native panel isn't responsive and wraps/overflows badly
+ * below ~400px viewports (empty-looking page-size <select>, "of NNN"
+ * text wrapping mid-number). */
+function PaginationBar({
+  pageInfo,
+  onFirst,
+  onPrev,
+  onNext,
+  onLast,
+  onPageSizeChange,
+  isAllSelected,
+}: {
+  pageInfo: PageInfo;
+  onFirst: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onLast: () => void;
+  onPageSizeChange: (value: number) => void;
+  isAllSelected: boolean;
+}) {
+  const from = pageInfo.rowCount === 0 ? 0 : pageInfo.page * pageInfo.pageSize + 1;
+  const to = Math.min((pageInfo.page + 1) * pageInfo.pageSize, pageInfo.rowCount);
+
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+      <Typography variant="body2" color="text.secondary">
+        Showing {from}–{to} of {pageInfo.rowCount}
+      </Typography>
+      <Select
+        size="small"
+        value={isAllSelected ? ALL_SENTINEL : pageInfo.pageSize}
+        onChange={(e) => onPageSizeChange(Number(e.target.value))}
+        sx={{ minHeight: 44 }}
+      >
+        <MenuItem value={20}>20</MenuItem>
+        <MenuItem value={50}>50</MenuItem>
+        <MenuItem value={100}>100</MenuItem>
+        <MenuItem value={ALL_SENTINEL}>All</MenuItem>
+      </Select>
+      <IconButton title="First page" onClick={onFirst} disabled={pageInfo.page === 0} sx={{ minWidth: 44, minHeight: 44 }}>
+        <FirstPageIcon fontSize="small" />
+      </IconButton>
+      <IconButton title="Previous page" onClick={onPrev} disabled={pageInfo.page === 0} sx={{ minWidth: 44, minHeight: 44 }}>
+        <NavigateBeforeIcon fontSize="small" />
+      </IconButton>
+      <Typography variant="body2" sx={{ minWidth: 90, textAlign: "center" }}>
+        Page {pageInfo.totalPages === 0 ? 0 : pageInfo.page + 1} of {pageInfo.totalPages}
+      </Typography>
+      <IconButton
+        title="Next page"
+        onClick={onNext}
+        disabled={pageInfo.page >= pageInfo.totalPages - 1}
+        sx={{ minWidth: 44, minHeight: 44 }}
+      >
+        <NavigateNextIcon fontSize="small" />
+      </IconButton>
+      <IconButton
+        title="Last page"
+        onClick={onLast}
+        disabled={pageInfo.page >= pageInfo.totalPages - 1}
+        sx={{ minWidth: 44, minHeight: 44 }}
+      >
+        <LastPageIcon fontSize="small" />
+      </IconButton>
+    </Box>
+  );
+}
+
 export default function DataGrid<T>({
   rowData,
   columnDefs,
@@ -55,15 +133,16 @@ export default function DataGrid<T>({
   // the reverse; resetting the caller's own `selected` array to [] alone
   // leaves AG Grid's checkboxes still visually checked.
   clearSelectionSignal?: number;
-  // Mirrors AG Grid's own bottom pagination bar above the table too — for
+  // Also renders the pagination bar above the grid, not just below — for
   // long lists (300+ rows, e.g. a Tier-1 provider's full MNO footprint)
   // that would otherwise need scrolling all the way down just to change
   // page. Both bars drive the same grid API, so acting on either stays in
-  // sync with the other automatically.
+  // sync with the other automatically. The bottom bar (our own, replacing
+  // AG Grid's native one) always renders regardless of this flag.
   showTopPagination?: boolean;
 }) {
   const gridRef = React.useRef<AgGridReact<T>>(null);
-  const [pageInfo, setPageInfo] = React.useState({ page: 0, totalPages: 1, pageSize: 20, rowCount: 0 });
+  const [pageInfo, setPageInfo] = React.useState<PageInfo>({ page: 0, totalPages: 1, pageSize: 20, rowCount: 0 });
   const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
 
   const defaultColDef = React.useMemo<ColDef>(
@@ -75,13 +154,14 @@ export default function DataGrid<T>({
   // etc., always listed first by every caller — on mobile, so it stays in
   // view while the rest of a wide grid scrolls horizontally underneath it.
   // AG Grid doesn't support flex on pinned columns, so it's swapped for a
-  // fixed width here.
+  // fixed width here — wide enough for the header text plus its sort/
+  // filter icons to avoid clipping/overlap.
   const effectiveColumnDefs = React.useMemo(() => {
     if (!isMobile || columnDefs.length === 0) return columnDefs;
     const [first, ...rest] = columnDefs;
     if ("children" in first || first.pinned) return columnDefs;
     const { flex: _flex, ...pinnedFirst } = first;
-    return [{ ...pinnedFirst, pinned: "left" as const, width: 160 }, ...rest];
+    return [{ ...pinnedFirst, pinned: "left" as const, width: 170 }, ...rest];
   }, [columnDefs, isMobile]);
 
   const syncPageInfo = React.useCallback(() => {
@@ -101,8 +181,8 @@ export default function DataGrid<T>({
 
   const onGridReady = React.useCallback(() => {
     forceLayout();
-    if (showTopPagination) syncPageInfo();
-  }, [forceLayout, showTopPagination, syncPageInfo]);
+    syncPageInfo();
+  }, [forceLayout, syncPageInfo]);
 
   // AG Grid occasionally finishes its very first flex-width layout pass one
   // column short on a production (non-Strict-Mode) mount — observed on
@@ -110,7 +190,7 @@ export default function DataGrid<T>({
   // column's header cell never mounts even though the grid's own column
   // model and total layout width both account for it. Calling
   // sizeColumnsToFit() from onGridReady/onFirstDataRendered wasn't enough —
-  // showTopPagination's own onGridReady-triggered setPageInfo() re-renders
+  // the pagination bar's own onGridReady-triggered setPageInfo() re-renders
   // DataGrid with a fresh columnDefs array reference, and ag-grid-react
   // reapplies it (re-triggering the same drop) shortly after. A delayed
   // effect, run once React/AG Grid have both settled, reliably outlasts
@@ -133,9 +213,17 @@ export default function DataGrid<T>({
     api.setGridOption("paginationPageSize", value === ALL_SENTINEL ? Math.max(rowData.length, 1) : value);
   }
 
-  const from = pageInfo.rowCount === 0 ? 0 : pageInfo.page * pageInfo.pageSize + 1;
-  const to = Math.min((pageInfo.page + 1) * pageInfo.pageSize, pageInfo.rowCount);
   const isAllSelected = rowData.length > 0 && pageInfo.pageSize >= rowData.length;
+
+  const paginationBarProps = {
+    pageInfo,
+    isAllSelected,
+    onFirst: () => gridRef.current?.api.paginationGoToFirstPage(),
+    onPrev: () => gridRef.current?.api.paginationGoToPreviousPage(),
+    onNext: () => gridRef.current?.api.paginationGoToNextPage(),
+    onLast: () => gridRef.current?.api.paginationGoToLastPage(),
+    onPageSizeChange: handlePageSizeChange,
+  };
 
   return (
     <Box>
@@ -151,61 +239,7 @@ export default function DataGrid<T>({
             gap: 1,
           }}
         >
-          {showTopPagination ? (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-              <Typography variant="body2" color="text.secondary">
-                Showing {from}–{to} of {pageInfo.rowCount}
-              </Typography>
-              <Select
-                size="small"
-                value={isAllSelected ? ALL_SENTINEL : pageInfo.pageSize}
-                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                sx={{ minHeight: 44 }}
-              >
-                <MenuItem value={20}>20</MenuItem>
-                <MenuItem value={50}>50</MenuItem>
-                <MenuItem value={100}>100</MenuItem>
-                <MenuItem value={ALL_SENTINEL}>All</MenuItem>
-              </Select>
-              <IconButton
-                title="First page"
-                onClick={() => gridRef.current?.api.paginationGoToFirstPage()}
-                disabled={pageInfo.page === 0}
-                sx={{ minWidth: 44, minHeight: 44 }}
-              >
-                <FirstPageIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                title="Previous page"
-                onClick={() => gridRef.current?.api.paginationGoToPreviousPage()}
-                disabled={pageInfo.page === 0}
-                sx={{ minWidth: 44, minHeight: 44 }}
-              >
-                <NavigateBeforeIcon fontSize="small" />
-              </IconButton>
-              <Typography variant="body2" sx={{ minWidth: 90, textAlign: "center" }}>
-                Page {pageInfo.totalPages === 0 ? 0 : pageInfo.page + 1} of {pageInfo.totalPages}
-              </Typography>
-              <IconButton
-                title="Next page"
-                onClick={() => gridRef.current?.api.paginationGoToNextPage()}
-                disabled={pageInfo.page >= pageInfo.totalPages - 1}
-                sx={{ minWidth: 44, minHeight: 44 }}
-              >
-                <NavigateNextIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                title="Last page"
-                onClick={() => gridRef.current?.api.paginationGoToLastPage()}
-                disabled={pageInfo.page >= pageInfo.totalPages - 1}
-                sx={{ minWidth: 44, minHeight: 44 }}
-              >
-                <LastPageIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          ) : (
-            <Box />
-          )}
+          {showTopPagination ? <PaginationBar {...paginationBarProps} /> : <Box />}
           {exportFileName && (
             <Button
               size="small"
@@ -218,35 +252,40 @@ export default function DataGrid<T>({
           )}
         </Box>
       )}
-      <div
-        className="ag-theme-quartz"
-        style={{
-          height: `clamp(400px, calc(100vh - 280px), ${height}px)`,
-          width: "100%",
-          overflowX: "auto",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        <AgGridReact
-          ref={gridRef}
-          rowData={rowData}
-          columnDefs={effectiveColumnDefs}
-          defaultColDef={defaultColDef}
-          pagination
-          paginationPageSize={20}
-          paginationPageSizeSelector={[20, 50, 100]}
-          animateRows
-          rowStyle={onRowClicked ? { cursor: "pointer" } : undefined}
-          onRowClicked={onRowClicked ? (e) => e.data && onRowClicked(e.data) : undefined}
-          rowSelection={rowSelection ? { mode: rowSelection, enableClickSelection: !suppressRowClickSelection } : undefined}
-          onSelectionChanged={
-            onSelectionChanged ? (e) => onSelectionChanged(e.api.getSelectedRows()) : undefined
-          }
-          onPaginationChanged={showTopPagination ? syncPageInfo : undefined}
-          onGridReady={onGridReady}
-          onFirstDataRendered={forceLayout}
-        />
-      </div>
+      <Box sx={{ "& .ag-paging-panel": { display: "none" } }}>
+        <div
+          className="ag-theme-quartz"
+          style={{
+            height: `clamp(400px, calc(100vh - 280px), ${height}px)`,
+            width: "100%",
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          <AgGridReact
+            ref={gridRef}
+            rowData={rowData}
+            columnDefs={effectiveColumnDefs}
+            defaultColDef={defaultColDef}
+            pagination
+            paginationPageSize={20}
+            paginationPageSizeSelector={[20, 50, 100]}
+            animateRows
+            rowStyle={onRowClicked ? { cursor: "pointer" } : undefined}
+            onRowClicked={onRowClicked ? (e) => e.data && onRowClicked(e.data) : undefined}
+            rowSelection={rowSelection ? { mode: rowSelection, enableClickSelection: !suppressRowClickSelection } : undefined}
+            onSelectionChanged={
+              onSelectionChanged ? (e) => onSelectionChanged(e.api.getSelectedRows()) : undefined
+            }
+            onPaginationChanged={syncPageInfo}
+            onGridReady={onGridReady}
+            onFirstDataRendered={forceLayout}
+          />
+        </div>
+      </Box>
+      <Box sx={{ display: "flex", justifyContent: "center", mt: 1 }}>
+        <PaginationBar {...paginationBarProps} />
+      </Box>
     </Box>
   );
 }

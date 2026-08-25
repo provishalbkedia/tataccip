@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
 import { ProviderResolverService } from "../upload/provider-resolver.service";
 import { SupabaseStorageService } from "../upload/supabase-storage.service";
+import { ALL_REGIONS, getRegionByCountry } from "../common/utils/region-mapper";
 import {
   ConnectivityMatrixRow,
   Ir21DeclaredProvider,
@@ -75,9 +76,15 @@ export class MnoService {
    * free-text matches across TADIG/operator/country plus the XML-sourced
    * networkType, primarySccpCarrier, backupSccpCarriers, and the GRX/IPX/
    * LTE provider name arrays (via a raw substring-on-array-element query —
-   * Prisma's array filters only support exact-element matches). */
-  async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string }): Promise<MnoSummary[]> {
-    const { q, tadig, country, mcc, mnc } = params;
+   * Prisma's array filters only support exact-element matches). `region`
+   * (comma-separated, e.g. "Americas,Europe") filters by the derived
+   * region — see region-mapper.ts — applied in JS after the fetch since
+   * it's computed from `country`, not a stored column. */
+  async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string; region?: string }): Promise<MnoSummary[]> {
+    const { q, tadig, country, mcc, mnc, region } = params;
+    const requestedRegions = region
+      ? new Set(region.split(",").map((r) => r.trim()).filter((r) => (ALL_REGIONS as string[]).includes(r)))
+      : null;
 
     let arrayMatchMnoIds: number[] = [];
     if (q) {
@@ -116,18 +123,26 @@ export class MnoService {
       orderBy: { operatorName: "asc" },
     });
 
+    const regionFilteredRows =
+      requestedRegions && requestedRegions.size > 0
+        ? rows.filter((r) => {
+            const rowRegion = getRegionByCountry(r.country);
+            return rowRegion !== null && requestedRegions.has(rowRegion);
+          })
+        : rows;
+
     // Relevance-ranked when there's a free-text query — the alphabetical
     // DB order above stays as-is otherwise (and doubles as the tie-breaker
     // within a rank tier here, since Array.sort is stable).
     const orderedRows = q
-      ? [...rows].sort(
+      ? [...regionFilteredRows].sort(
           (a, b) =>
             operatorMatchRank(q, { operatorName: a.operatorName, tadigCode: a.tadigCode, country: a.country, mccMncList: a.connectivity?.mccMncList }) -
             operatorMatchRank(q, { operatorName: b.operatorName, tadigCode: b.tadigCode, country: b.country, mccMncList: b.connectivity?.mccMncList }),
         )
-      : rows;
+      : regionFilteredRows;
 
-    const mnoIds = rows.map((r) => r.id);
+    const mnoIds = regionFilteredRows.map((r) => r.id);
     const providersByMno = await this.resolvedProvidersByMno(mnoIds);
 
     return orderedRows.map((r) => {
@@ -136,6 +151,7 @@ export class MnoService {
         id: r.id,
         operatorName: r.operatorName,
         country: r.country,
+        region: getRegionByCountry(r.country),
         tadigCode: r.tadigCode,
         mcc: r.mcc,
         mnc: r.mnc,
@@ -239,6 +255,7 @@ export class MnoService {
       id: mno.id,
       operatorName: mno.operatorName,
       country: mno.country,
+      region: getRegionByCountry(mno.country),
       tadigCode: mno.tadigCode,
       mcc: mno.mcc,
       mnc: mno.mnc,

@@ -110,6 +110,10 @@ export interface MnoSummary {
   id: number;
   operatorName: string;
   country: string;
+  // Americas / MEA / Europe / APAC / Non-Terrestrial, derived from `country`
+  // — see apps/api/src/common/utils/region-mapper.ts. Null for the rare
+  // unclassifiable country value (e.g. "UNKNOWN").
+  region: string | null;
   tadigCode: string;
   mcc: string;
   mnc: string;

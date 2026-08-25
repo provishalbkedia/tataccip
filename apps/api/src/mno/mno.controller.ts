@@ -18,8 +18,9 @@ export class MnoController {
     @Query("country") country?: string,
     @Query("mcc") mcc?: string,
     @Query("mnc") mnc?: string,
+    @Query("region") region?: string,
   ) {
-    return this.mnoService.search({ q, tadig, country, mcc, mnc });
+    return this.mnoService.search({ q, tadig, country, mcc, mnc, region });
   }
 
   // Must come before ":id" — otherwise Nest would route /mno/suggestions

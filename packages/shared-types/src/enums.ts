@@ -58,3 +58,15 @@ export const ProviderStatsSource = {
   BOTH: "BOTH",
 } as const;
 export type ProviderStatsSource = (typeof ProviderStatsSource)[keyof typeof ProviderStatsSource];
+
+// The platform's 4-region + Non-Terrestrial grouping for Operator Search —
+// see apps/api/src/common/utils/region-mapper.ts for the country->region
+// mapping this classifies MnoMaster.country into.
+export const Region = {
+  AMERICAS: "Americas",
+  MEA: "MEA",
+  EUROPE: "Europe",
+  APAC: "APAC",
+  NON_TERRESTRIAL: "Non-Terrestrial",
+} as const;
+export type Region = (typeof Region)[keyof typeof Region];

@@ -252,7 +252,7 @@ export default function DataGrid<T>({
           )}
         </Box>
       )}
-      <Box sx={{ "& .ag-paging-panel": { display: "none" } }}>
+      <Box sx={{ "& .ag-paging-panel": { display: "none !important" } }}>
         <div
           className="ag-theme-quartz"
           style={{

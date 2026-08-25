@@ -161,7 +161,12 @@ export default function DataGrid<T>({
     const [first, ...rest] = columnDefs;
     if ("children" in first || first.pinned) return columnDefs;
     const { flex: _flex, ...pinnedFirst } = first;
-    return [{ ...pinnedFirst, pinned: "left" as const, width: 170 }, ...rest];
+    // suppressSizeToFit is required here — without it, sizeColumnsToFit()
+    // (called on every layout pass, see the effect below) redistributes
+    // width across ALL columns including pinned ones, shrinking this back
+    // down to defaultColDef's 110px minWidth floor regardless of the
+    // explicit width set here.
+    return [{ ...pinnedFirst, pinned: "left" as const, width: 170, suppressSizeToFit: true }, ...rest];
   }, [columnDefs, isMobile]);
 
   const syncPageInfo = React.useCallback(() => {

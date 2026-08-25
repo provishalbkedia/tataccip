@@ -16,6 +16,12 @@ import {
 } from "@ccip/shared-types";
 
 const SUGGESTION_LIMIT = 10;
+// Suggestions are re-ranked by relevance in JS (see operatorMatchRank), not
+// by the DB's alphabetical order — so a plain `take: SUGGESTION_LIMIT` at
+// the query level would risk cutting off a highly-relevant match (e.g.
+// "Etisalat Egypt") in favor of an earlier-alphabetically but less relevant
+// one. Over-fetch this many candidates first, rank, then slice down.
+const SUGGESTION_CANDIDATE_POOL = 50;
 
 const SERVICE_ORDER: ServiceName[] = ["SCCP", "DSX", "IPX"];
 
@@ -23,6 +29,26 @@ type ProvidersByService = { SCCP: Set<string>; DSX: Set<string>; IPX: Set<string
 
 function newProvidersByService(): ProvidersByService {
   return { SCCP: new Set(), DSX: new Set(), IPX: new Set() };
+}
+
+/** Ranks how a row matched a free-text search term, lowest number wins —
+ * operator identity (name, then TADIG, then name-substring, then country/
+ * MCC-MNC) always outranks a match that only came from connected-carrier
+ * text (SCCP/GRX-IPX/LTE-Diameter provider names) or anything else, so
+ * e.g. searching "etis" surfaces Etisalat's own MNOs before operators that
+ * merely list Etisalat as a transit carrier. */
+function operatorMatchRank(
+  query: string,
+  row: { operatorName: string; tadigCode: string; country: string; mccMncList?: string[] },
+): number {
+  const q = query.toLowerCase();
+  const name = row.operatorName.toLowerCase();
+  if (name.startsWith(q)) return 1;
+  if (row.tadigCode.toLowerCase().startsWith(q)) return 2;
+  if (name.includes(q)) return 3;
+  const mccMncHit = row.mccMncList?.some((m) => m.toLowerCase().startsWith(q)) ?? false;
+  if (row.country.toLowerCase().startsWith(q) || mccMncHit) return 4;
+  return 5;
 }
 
 @Injectable()
@@ -90,10 +116,21 @@ export class MnoService {
       orderBy: { operatorName: "asc" },
     });
 
+    // Relevance-ranked when there's a free-text query — the alphabetical
+    // DB order above stays as-is otherwise (and doubles as the tie-breaker
+    // within a rank tier here, since Array.sort is stable).
+    const orderedRows = q
+      ? [...rows].sort(
+          (a, b) =>
+            operatorMatchRank(q, { operatorName: a.operatorName, tadigCode: a.tadigCode, country: a.country, mccMncList: a.connectivity?.mccMncList }) -
+            operatorMatchRank(q, { operatorName: b.operatorName, tadigCode: b.tadigCode, country: b.country, mccMncList: b.connectivity?.mccMncList }),
+        )
+      : rows;
+
     const mnoIds = rows.map((r) => r.id);
     const providersByMno = await this.resolvedProvidersByMno(mnoIds);
 
-    return rows.map((r) => {
+    return orderedRows.map((r) => {
       const p = providersByMno.get(r.id);
       return {
         id: r.id,
@@ -128,9 +165,11 @@ export class MnoService {
       },
       select: { id: true, operatorName: true, tadigCode: true, country: true },
       orderBy: { operatorName: "asc" },
-      take: SUGGESTION_LIMIT,
+      take: SUGGESTION_CANDIDATE_POOL,
     });
-    return rows;
+    return [...rows]
+      .sort((a, b) => operatorMatchRank(q, a) - operatorMatchRank(q, b))
+      .slice(0, SUGGESTION_LIMIT);
   }
 
   /** Canonical (resolved) provider names per service for a batch of MNOs,

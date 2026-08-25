@@ -170,13 +170,17 @@ function ProviderSearchPageInner() {
                 value={source}
                 onChange={(_, value) => value && pushParams(q, value, service)}
                 sx={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 1,
                   "& .MuiToggleButton-root": {
                     borderRadius: "999px !important",
                     textTransform: "none",
                     px: 2,
-                    mr: 1,
                     border: "1px solid",
                     borderColor: "divider",
+                    minHeight: 44,
+                    flex: { xs: "1 1 100%", sm: "0 1 auto" },
                   },
                 }}
               >
@@ -220,16 +224,18 @@ function ProviderSearchPageInner() {
               bottom: 16,
               left: "50%",
               transform: "translateX(-50%)",
-              px: 3,
+              px: { xs: 2, sm: 3 },
               py: 1.5,
               display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
               alignItems: "center",
-              gap: 2,
+              gap: { xs: 1, sm: 2 },
               zIndex: 1200,
-              borderRadius: 999,
+              borderRadius: { xs: 3, sm: 999 },
+              maxWidth: "94vw",
             }}
           >
-            <Typography variant="body2">
+            <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
               {selfCompareTarget.providerName}: IR.21 row + Reach List row selected
             </Typography>
             <Button
@@ -237,6 +243,7 @@ function ProviderSearchPageInner() {
               size="small"
               startIcon={<CompareArrowsIcon />}
               onClick={() => router.push(`/search/provider/${selfCompareTarget.id}?source=BOTH`)}
+              sx={{ width: { xs: "100%", sm: "auto" } }}
             >
               View IR.21 vs Reach List for {selfCompareTarget.providerName}
             </Button>
@@ -251,16 +258,18 @@ function ProviderSearchPageInner() {
               bottom: 16,
               left: "50%",
               transform: "translateX(-50%)",
-              px: 3,
+              px: { xs: 2, sm: 3 },
               py: 1.5,
               display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
               alignItems: "center",
-              gap: 2,
+              gap: { xs: 1, sm: 2 },
               zIndex: 1200,
-              borderRadius: 999,
+              borderRadius: { xs: 3, sm: 999 },
+              maxWidth: "94vw",
             }}
           >
-            <Typography variant="body2">
+            <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
               {uniqueSelected.length} Provider(s) Selected: {uniqueSelected.map((p) => p.providerName).join(", ")}
               {uniqueSelected.length > 5 && " — max 5, deselect some to compare"}
             </Typography>
@@ -272,6 +281,7 @@ function ProviderSearchPageInner() {
               onClick={() =>
                 router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)
               }
+              sx={{ width: { xs: "100%", sm: "auto" } }}
             >
               Compare Selected Providers (Matrix)
             </Button>

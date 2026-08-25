@@ -119,7 +119,7 @@ export default function ProviderInspectorDrawer({
 
   return (
     <Drawer anchor="right" open={!!data} onClose={onClose}>
-      <Box sx={{ width: 380, p: 3 }}>
+      <Box sx={{ width: { xs: "100vw", sm: 480 }, maxWidth: "100vw", p: { xs: 2, sm: 3 } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
           <Typography variant="h6" fontWeight={700}>
             Provider Resolution

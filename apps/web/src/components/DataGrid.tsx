@@ -3,7 +3,8 @@
 import * as React from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ColGroupDef, RowSelectionOptions } from "ag-grid-community";
-import { Box, Button, IconButton, MenuItem, Select, Typography } from "@mui/material";
+import { Box, Button, IconButton, MenuItem, Select, Typography, useMediaQuery } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import DownloadIcon from "@mui/icons-material/Download";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
 import LastPageIcon from "@mui/icons-material/LastPage";
@@ -63,11 +64,25 @@ export default function DataGrid<T>({
 }) {
   const gridRef = React.useRef<AgGridReact<T>>(null);
   const [pageInfo, setPageInfo] = React.useState({ page: 0, totalPages: 1, pageSize: 20, rowCount: 0 });
+  const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
 
   const defaultColDef = React.useMemo<ColDef>(
     () => ({ sortable: true, filter: true, resizable: true, flex: 1, minWidth: 110 }),
     [],
   );
+
+  // Pins the first (identifying) column — Operator Name, Provider Name,
+  // etc., always listed first by every caller — on mobile, so it stays in
+  // view while the rest of a wide grid scrolls horizontally underneath it.
+  // AG Grid doesn't support flex on pinned columns, so it's swapped for a
+  // fixed width here.
+  const effectiveColumnDefs = React.useMemo(() => {
+    if (!isMobile || columnDefs.length === 0) return columnDefs;
+    const [first, ...rest] = columnDefs;
+    if ("children" in first || first.pinned) return columnDefs;
+    const { flex: _flex, ...pinnedFirst } = first;
+    return [{ ...pinnedFirst, pinned: "left" as const, width: 160 }, ...rest];
+  }, [columnDefs, isMobile]);
 
   const syncPageInfo = React.useCallback(() => {
     const api = gridRef.current?.api;
@@ -105,7 +120,7 @@ export default function DataGrid<T>({
   React.useEffect(() => {
     const timer = setTimeout(forceLayout, 400);
     return () => clearTimeout(timer);
-  }, [rowData, columnDefs, forceLayout]);
+  }, [rowData, effectiveColumnDefs, forceLayout]);
 
   React.useEffect(() => {
     if (clearSelectionSignal !== undefined) gridRef.current?.api?.deselectAll();
@@ -125,9 +140,19 @@ export default function DataGrid<T>({
   return (
     <Box>
       {(exportFileName || showTopPagination) && (
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1, flexWrap: "wrap", gap: 1 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            justifyContent: "space-between",
+            alignItems: { xs: "stretch", sm: "center" },
+            mb: 1,
+            flexWrap: "wrap",
+            gap: 1,
+          }}
+        >
           {showTopPagination ? (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
               <Typography variant="body2" color="text.secondary">
                 Showing {from}–{to} of {pageInfo.rowCount}
               </Typography>
@@ -135,6 +160,7 @@ export default function DataGrid<T>({
                 size="small"
                 value={isAllSelected ? ALL_SENTINEL : pageInfo.pageSize}
                 onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                sx={{ minHeight: 44 }}
               >
                 <MenuItem value={20}>20</MenuItem>
                 <MenuItem value={50}>50</MenuItem>
@@ -142,18 +168,18 @@ export default function DataGrid<T>({
                 <MenuItem value={ALL_SENTINEL}>All</MenuItem>
               </Select>
               <IconButton
-                size="small"
                 title="First page"
                 onClick={() => gridRef.current?.api.paginationGoToFirstPage()}
                 disabled={pageInfo.page === 0}
+                sx={{ minWidth: 44, minHeight: 44 }}
               >
                 <FirstPageIcon fontSize="small" />
               </IconButton>
               <IconButton
-                size="small"
                 title="Previous page"
                 onClick={() => gridRef.current?.api.paginationGoToPreviousPage()}
                 disabled={pageInfo.page === 0}
+                sx={{ minWidth: 44, minHeight: 44 }}
               >
                 <NavigateBeforeIcon fontSize="small" />
               </IconButton>
@@ -161,18 +187,18 @@ export default function DataGrid<T>({
                 Page {pageInfo.totalPages === 0 ? 0 : pageInfo.page + 1} of {pageInfo.totalPages}
               </Typography>
               <IconButton
-                size="small"
                 title="Next page"
                 onClick={() => gridRef.current?.api.paginationGoToNextPage()}
                 disabled={pageInfo.page >= pageInfo.totalPages - 1}
+                sx={{ minWidth: 44, minHeight: 44 }}
               >
                 <NavigateNextIcon fontSize="small" />
               </IconButton>
               <IconButton
-                size="small"
                 title="Last page"
                 onClick={() => gridRef.current?.api.paginationGoToLastPage()}
                 disabled={pageInfo.page >= pageInfo.totalPages - 1}
+                sx={{ minWidth: 44, minHeight: 44 }}
               >
                 <LastPageIcon fontSize="small" />
               </IconButton>
@@ -185,17 +211,26 @@ export default function DataGrid<T>({
               size="small"
               startIcon={<DownloadIcon />}
               onClick={() => gridRef.current?.api.exportDataAsCsv({ fileName: exportFileName })}
+              sx={{ minHeight: 44 }}
             >
               Export CSV
             </Button>
           )}
         </Box>
       )}
-      <div className="ag-theme-quartz" style={{ height, width: "100%" }}>
+      <div
+        className="ag-theme-quartz"
+        style={{
+          height: `clamp(400px, calc(100vh - 280px), ${height}px)`,
+          width: "100%",
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
         <AgGridReact
           ref={gridRef}
           rowData={rowData}
-          columnDefs={columnDefs}
+          columnDefs={effectiveColumnDefs}
           defaultColDef={defaultColDef}
           pagination
           paginationPageSize={20}

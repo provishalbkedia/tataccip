@@ -147,7 +147,11 @@ function ProviderDetailPageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ mb: 2 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => router.back()}
+          sx={{ mb: 2, width: { xs: "100%", sm: "auto" } }}
+        >
           Back to search
         </Button>
         {provider && (
@@ -168,6 +172,7 @@ function ProviderDetailPageInner() {
                     allAliases: provider.aliases,
                   })
                 }
+                sx={{ minHeight: 44 }}
               >
                 Alias &amp; Raw String Details
               </Button>

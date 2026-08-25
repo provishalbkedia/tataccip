@@ -103,8 +103,17 @@ export default function MnoDetailPage() {
   return (
     <RequireAuth>
       <AppShell>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            justifyContent: "space-between",
+            alignItems: { xs: "stretch", sm: "center" },
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ width: { xs: "100%", sm: "auto" } }}>
             Back to search
           </Button>
           {mno?.hasPdfDocument && (
@@ -114,6 +123,7 @@ export default function MnoDetailPage() {
               startIcon={<PictureAsPdfIcon />}
               onClick={togglePdf}
               disabled={pdfLoading}
+              sx={{ width: { xs: "100%", sm: "auto" } }}
             >
               {pdfLoading ? "Loading…" : pdfOpen ? "Hide Original IR.21 PDF" : "View Original IR.21 PDF"}
             </Button>

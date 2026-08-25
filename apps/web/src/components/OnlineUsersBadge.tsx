@@ -13,7 +13,7 @@ const POLL_MS = 30_000;
  * presence/session system; JWT auth has no server-side session to query
  * directly. Distinct from LoginHistoryChip, which shows the *current
  * user's own* login count, not the platform-wide total. */
-export default function OnlineUsersBadge() {
+export default function OnlineUsersBadge({ dark = true }: { dark?: boolean }) {
   const [info, setInfo] = React.useState<ActiveUsersInfo | null>(null);
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
 
@@ -33,7 +33,7 @@ export default function OnlineUsersBadge() {
         label={`${info.onlineUsersCount} Online | ${info.totalLoginsCount} Total Logins`}
         size="small"
         onClick={(e) => setAnchorEl(e.currentTarget)}
-        sx={{ color: "white", borderColor: "white", cursor: "pointer" }}
+        sx={dark ? { color: "white", borderColor: "white", cursor: "pointer" } : { cursor: "pointer" }}
         variant="outlined"
       />
       <Popover

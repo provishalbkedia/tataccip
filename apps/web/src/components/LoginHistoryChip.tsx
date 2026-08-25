@@ -20,7 +20,7 @@ import { LoginHistorySummary } from "@ccip/shared-types";
  * this is purely a visibility feature. IP + browser/OS is the closest real
  * substitute for "which machine" — a web app can't see the client's actual
  * machine name, browsers don't expose that. */
-export default function LoginHistoryChip() {
+export default function LoginHistoryChip({ dark = true }: { dark?: boolean }) {
   const [summary, setSummary] = React.useState<LoginHistorySummary | null>(null);
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
 
@@ -33,11 +33,11 @@ export default function LoginHistoryChip() {
   return (
     <>
       <Chip
-        icon={<LoginIcon sx={{ color: "white !important" }} />}
+        icon={<LoginIcon sx={dark ? { color: "white !important" } : undefined} />}
         label={`${summary.totalLogins} login${summary.totalLogins === 1 ? "" : "s"}`}
         size="small"
         onClick={(e) => setAnchorEl(e.currentTarget)}
-        sx={{ color: "white", borderColor: "white", cursor: "pointer" }}
+        sx={dark ? { color: "white", borderColor: "white", cursor: "pointer" } : { cursor: "pointer" }}
         variant="outlined"
       />
       <Popover

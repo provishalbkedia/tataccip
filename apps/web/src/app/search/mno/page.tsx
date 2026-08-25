@@ -200,39 +200,44 @@ function MnoSearchPageInner() {
               bottom: 16,
               left: "50%",
               transform: "translateX(-50%)",
-              px: 3,
+              px: { xs: 2, sm: 3 },
               py: 1.5,
               display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
               alignItems: "center",
-              gap: 2,
+              gap: { xs: 1, sm: 2 },
               zIndex: 1200,
-              borderRadius: 999,
-              maxWidth: "90vw",
+              borderRadius: { xs: 3, sm: 999 },
+              maxWidth: "94vw",
             }}
           >
             <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
               {selected.length} Operator(s) Selected: {selected.map((m) => m.operatorName).join(", ")}
               {selected.length > 5 && " — max 5, deselect some to compare"}
             </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<CompareArrowsIcon />}
-              disabled={selected.length > 5}
-              onClick={() => router.push(`/search/mno/compare?ids=${selected.map((m) => m.id).join(",")}`)}
-            >
-              Compare Selected Operators (Matrix)
-            </Button>
-            <Button
-              size="small"
-              startIcon={<ClearIcon />}
-              onClick={() => {
-                setSelected([]);
-                setClearSignal((n) => n + 1);
-              }}
-            >
-              Clear Selection
-            </Button>
+            <Box sx={{ display: "flex", gap: 1, width: { xs: "100%", sm: "auto" } }}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<CompareArrowsIcon />}
+                disabled={selected.length > 5}
+                onClick={() => router.push(`/search/mno/compare?ids=${selected.map((m) => m.id).join(",")}`)}
+                sx={{ flex: { xs: 1, sm: "0 0 auto" } }}
+              >
+                Compare Selected Operators (Matrix)
+              </Button>
+              <Button
+                size="small"
+                startIcon={<ClearIcon />}
+                onClick={() => {
+                  setSelected([]);
+                  setClearSignal((n) => n + 1);
+                }}
+                sx={{ flex: { xs: "0 0 auto", sm: "0 0 auto" } }}
+              >
+                Clear Selection
+              </Button>
+            </Box>
           </Paper>
         )}
       </AppShell>

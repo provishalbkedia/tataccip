@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
+import { ProviderResolverService } from "../upload/provider-resolver.service";
 import {
   OnNetMnoRow,
   ProviderCompareMatrixItem,
@@ -16,9 +17,14 @@ import {
 const EMPTY_STATS: ProviderCoverageStats = { totalCountries: 0, totalMnos: 0, sccpCount: 0, dsxCount: 0, ipxCount: 0 };
 const SUGGESTION_LIMIT = 10;
 
+type MultiHomedProviderIndex = Map<number, Map<ServiceName, Map<number, { operatorName: string; country: string; tadigCode: string }>>>;
+
 @Injectable()
 export class ProviderService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private providerResolver: ProviderResolverService,
+  ) {}
 
   /** Matches `q` against the canonical ProviderMaster.providerName as well
    * as every known alias in ProviderAlias — e.g. searching "Belgacom"
@@ -152,7 +158,7 @@ export class ProviderService {
     const provider = await this.prisma.providerMaster.findUnique({ where: { id } });
     if (!provider) throw new NotFoundException("Provider not found");
 
-    const [ir21Rows, reachRows] = await Promise.all([
+    const [ir21Rows, reachRows, multiHomedIndex] = await Promise.all([
       this.prisma.ir21Connectivity.findMany({
         where: { providerId: id },
         include: { mno: true, service: true },
@@ -161,6 +167,9 @@ export class ProviderService {
         where: { providerId: id },
         include: { mno: true, service: true },
       }),
+      source !== ProviderStatsSource.REACH_LIST
+        ? this.buildMultiHomedProviderIndex([id])
+        : Promise.resolve<MultiHomedProviderIndex>(new Map()),
     ]);
 
     type Bucket = { country: string; operatorName: string; tadigCode: string; ir21: ServicePresence; reachList: ServicePresence };
@@ -187,6 +196,10 @@ export class ProviderService {
 
     for (const r of ir21Rows) touch(r.mnoId, r.mno, r.service.serviceName, "ir21");
     for (const r of reachRows) touch(r.mnoId, r.mno, r.service.serviceName, "reachList");
+    // Multi-homed catch-up — see buildMultiHomedProviderIndex.
+    for (const [service, byMno] of multiHomedIndex.get(id) ?? []) {
+      for (const [mnoId, mno] of byMno) touch(mnoId, mno, service, "ir21");
+    }
 
     const pdfFlags = await this.prisma.mnoMasterConnectivity.findMany({
       where: { mnoId: { in: Array.from(byMno.keys()) } },
@@ -249,7 +262,7 @@ export class ProviderService {
     const providers = await this.prisma.providerMaster.findMany({ where: { id: { in: providerIds } } });
     const providerNameById = new Map(providers.map((p) => [p.id, p.providerName]));
 
-    const [ir21Rows, reachRows] = await Promise.all([
+    const [ir21Rows, reachRows, multiHomedIndex] = await Promise.all([
       this.prisma.ir21Connectivity.findMany({
         where: { providerId: { in: providerIds } },
         include: { mno: true, service: true },
@@ -258,6 +271,7 @@ export class ProviderService {
         where: { providerId: { in: providerIds } },
         include: { mno: true, service: true },
       }),
+      this.buildMultiHomedProviderIndex(providerIds),
     ]);
 
     const byMno = new Map<number, ProviderCompareMatrixItem>();
@@ -289,6 +303,12 @@ export class ProviderService {
 
     for (const r of ir21Rows) touch(r.mnoId, r.mno, r.providerId, r.service.serviceName, "ir21");
     for (const r of reachRows) touch(r.mnoId, r.mno, r.providerId, r.service.serviceName, "reachList");
+    // Multi-homed catch-up — see buildMultiHomedProviderIndex.
+    for (const [providerId, byService] of multiHomedIndex) {
+      for (const [service, mnosForService] of byService) {
+        for (const [mnoId, mno] of mnosForService) touch(mnoId, mno, providerId, service, "ir21");
+      }
+    }
 
     return Array.from(byMno.values()).sort(
       (a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName),
@@ -326,6 +346,75 @@ export class ProviderService {
     return { aliases, observedRawStrings: Array.from(observed) };
   }
 
+  /** Ir21Connectivity stores exactly one resolved provider per (mnoId,
+   * serviceId) — the MNO's single declared *primary* carrier — even when
+   * its source XML lists several (a backup SCCP carrier, or anything past
+   * index [0] of the GRX/IPX or LTE/Diameter arrays). A provider that's
+   * only ever secondary for every MNO it touches would then never appear
+   * in its own On-Net MNO Footprint, even though the Operator Detail page
+   * (MnoService.resolveAllDeclaredProviders) correctly shows it in that
+   * MNO's Comparison Grid — that mismatch is the bug this closes.
+   *
+   * Re-resolves every raw carrier string in MnoMasterConnectivity (primary
+   * + backup SCCP, full GRX/IPX and LTE/Diameter arrays) against the same
+   * alias cache ingestion uses, once, for every provider in a single pass —
+   * the reverse of resolveAllDeclaredProviders (which starts from one MNO
+   * and finds its providers; this starts from providers and finds their
+   * MNOs), batched so computing this for many providers at once (e.g. the
+   * whole Provider Search result list) still costs one table scan, not one
+   * per provider. `providerIds`, when given, only narrows which providers'
+   * results are kept — the scan itself is unavoidably full since any raw
+   * string could resolve to any provider. Read-only, no side effects. */
+  private async buildMultiHomedProviderIndex(providerIds?: number[]): Promise<MultiHomedProviderIndex> {
+    const rows = await this.prisma.mnoMasterConnectivity.findMany({
+      select: {
+        mnoId: true,
+        primarySccpCarrier: true,
+        backupSccpCarriers: true,
+        grxIpxProviders: true,
+        lteIpxProviders: true,
+        mno: { select: { operatorName: true, country: true, tadigCode: true } },
+      },
+    });
+
+    const wanted = providerIds ? new Set(providerIds) : null;
+    const index: MultiHomedProviderIndex = new Map();
+
+    const mark = (providerId: number, service: ServiceName, mnoId: number, mno: { operatorName: string; country: string; tadigCode: string }) => {
+      if (wanted && !wanted.has(providerId)) return;
+      let byService = index.get(providerId);
+      if (!byService) {
+        byService = new Map();
+        index.set(providerId, byService);
+      }
+      let byMno = byService.get(service);
+      if (!byMno) {
+        byMno = new Map();
+        byService.set(service, byMno);
+      }
+      byMno.set(mnoId, mno);
+    };
+
+    for (const c of rows) {
+      const checks: [ServiceName, (string | null)[]][] = [
+        ["SCCP", [c.primarySccpCarrier, ...c.backupSccpCarriers]],
+        ["DSX", c.lteIpxProviders],
+        ["IPX", c.grxIpxProviders],
+      ];
+      for (const [service, candidates] of checks) {
+        for (const raw of candidates) {
+          if (!raw) continue;
+          const normalized = this.providerResolver.normalize(raw);
+          if (!normalized) continue;
+          const providerId = this.providerResolver.matchAlias(normalized);
+          if (providerId) mark(providerId, service, c.mnoId, c.mno);
+        }
+      }
+    }
+
+    return index;
+  }
+
   /** Batch version of detail()'s stats computation, for the search list —
    * counts distinct MNOs (and countries/services among them) per provider
    * across Ir21Connectivity and/or ProviderReachlist (per `source`) in up
@@ -339,7 +428,7 @@ export class ProviderService {
     const includeIr21 = source !== ProviderStatsSource.REACH_LIST;
     const includeReachList = source !== ProviderStatsSource.IR21;
 
-    const [ir21Rows, reachRows] = await Promise.all([
+    const [ir21Rows, reachRows, multiHomedIndex] = await Promise.all([
       includeIr21
         ? this.prisma.ir21Connectivity.findMany({
             where: { providerId: { in: providerIds } },
@@ -352,6 +441,9 @@ export class ProviderService {
             select: { providerId: true, mnoId: true, mno: { select: { country: true } }, service: { select: { serviceName: true } } },
           })
         : Promise.resolve([]),
+      includeIr21
+        ? this.buildMultiHomedProviderIndex(providerIds)
+        : Promise.resolve<MultiHomedProviderIndex>(new Map()),
     ]);
 
     type Acc = { mnos: Set<number>; countries: Set<string>; sccp: Set<number>; dsx: Set<number>; ipx: Set<number> };
@@ -371,6 +463,12 @@ export class ProviderService {
 
     for (const r of ir21Rows) touch(r.providerId, r.mnoId, r.mno.country, r.service.serviceName);
     for (const r of reachRows) touch(r.providerId, r.mnoId, r.mno.country, r.service.serviceName);
+    // Multi-homed catch-up — see buildMultiHomedProviderIndex.
+    for (const [providerId, byService] of multiHomedIndex) {
+      for (const [service, mnosForService] of byService) {
+        for (const [mnoId, mno] of mnosForService) touch(providerId, mnoId, mno.country, service);
+      }
+    }
 
     const out = new Map<number, ProviderCoverageStats>();
     for (const [providerId, a] of acc) {

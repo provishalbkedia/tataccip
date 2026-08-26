@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -18,6 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import { Role } from "@ccip/shared-types";
@@ -58,7 +60,7 @@ function SubHead({ children }: { children: React.ReactNode }) {
 
 function DiagramFrame({ children, caption }: { children: React.ReactNode; caption: string }) {
   return (
-    <Box component="figure" sx={{ m: "20px 0 8px", bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2.5, boxShadow: 1 }}>
+    <Box component="figure" className="arch-section" sx={{ m: "20px 0 8px", bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2.5, boxShadow: 1 }}>
       <Box sx={{ overflowX: "auto" }}>{children}</Box>
       <Typography
         component="figcaption"
@@ -230,11 +232,33 @@ export default function ArchitectureReferencePage() {
   return (
     <RequireAuth roles={[Role.ADMIN]}>
       <AppShell>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 0.5 }}>
-          <LockIcon color="secondary" fontSize="small" />
-          <Typography variant="overline" color="text.secondary" fontWeight={700} letterSpacing={1}>
-            Admin Reference &middot; Not visible to other roles
-          </Typography>
+        {/* Print-only styling, same approach as the Help page's "Download
+           Platform Guide (PDF)": native browser print-to-PDF gives real,
+           selectable text and clean pagination for a text-heavy document
+           like this, at zero added bundle weight (no jsPDF/html2canvas). */}
+        <style>{`
+          @media print {
+            .MuiDrawer-root, .MuiAppBar-root, .no-print { display: none !important; }
+            main { padding: 0 !important; }
+            .arch-section { break-inside: avoid; page-break-inside: avoid; }
+          }
+        `}</style>
+
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 2, mb: 0.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <LockIcon color="secondary" fontSize="small" />
+            <Typography variant="overline" color="text.secondary" fontWeight={700} letterSpacing={1}>
+              Admin Reference &middot; Not visible to other roles
+            </Typography>
+          </Box>
+          <Button
+            className="no-print"
+            variant="contained"
+            startIcon={<PictureAsPdfIcon />}
+            onClick={() => window.print()}
+          >
+            Download PDF
+          </Button>
         </Box>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
           Microsoft Entra ID Single Sign-On &mdash; HLD &amp; LLD
@@ -554,14 +578,9 @@ export default function ArchitectureReferencePage() {
         </Box>
 
         <Divider sx={{ mb: 2 }} />
-        <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 2 }}>
-          <Typography variant="caption" color="text.secondary">
-            CCIP · Tata Communications · Prepared for IT Security review
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Next step: schedule a call with the Tata Communications Security Team and register the app per §3.5
-          </Typography>
-        </Box>
+        <Typography variant="caption" color="text.secondary" display="block">
+          CCIP · Tata Communications · Prepared for IT Security review
+        </Typography>
       </AppShell>
     </RequireAuth>
   );

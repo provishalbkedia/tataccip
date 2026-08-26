@@ -7,6 +7,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RuleIcon from "@mui/icons-material/Rule";
 import TuneIcon from "@mui/icons-material/Tune";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
@@ -36,6 +37,12 @@ const SECTIONS = [
     title: "User Access & Roles",
     description: "Promote or reassign signed-in users to VIEWER, ANALYST, or ADMIN, and suspend access when needed.",
     icon: <ManageAccountsIcon fontSize="large" color="primary" />,
+  },
+  {
+    href: "/admin/architecture",
+    title: "Platform Architecture (HLD & LLD)",
+    description: "Microsoft Entra ID SSO integration design — system architecture, auth sequence, and security controls, for IT Security review reference.",
+    icon: <AccountTreeIcon fontSize="large" color="primary" />,
   },
 ];
 

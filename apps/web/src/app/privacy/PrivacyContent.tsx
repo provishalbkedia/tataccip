@@ -210,7 +210,7 @@ export default function PrivacyContent() {
           <P>
             If you have questions about this Privacy Policy or how your information is handled, please contact
             your Tata Communications account administrator, or reach the platform team at{" "}
-            <MuiLink href="mailto:privacy@tatacommunications.com">privacy@tatacommunications.com</MuiLink>.
+            <MuiLink href="mailto:vishal.kedia@tatacommunications.com">vishal.kedia@tatacommunications.com</MuiLink>.
           </P>
         </Section>
 

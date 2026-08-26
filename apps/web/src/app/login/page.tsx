@@ -140,8 +140,7 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
-      <Typography variant="caption" sx={{ mt: 3, color: "rgba(255,255,255,0.75)" }}>
-        © {new Date().getFullYear()} Tata Communications ·{" "}
+      <Typography variant="caption" sx={{ mt: 3 }}>
         <MuiLink component={Link} href="/privacy" sx={{ color: "rgba(255,255,255,0.9)" }}>
           Privacy Policy
         </MuiLink>

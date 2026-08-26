@@ -88,9 +88,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // authenticated page without cluttering the AppBar.
   const drawerFooter = (
     <Box sx={{ mt: "auto", px: 2, py: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
-      <Typography variant="caption" color="text.secondary" display="block">
-        © {new Date().getFullYear()} Tata Communications
-      </Typography>
       <MuiLink component={Link} href="/privacy" variant="caption" onClick={() => setMobileOpen(false)}>
         Privacy Policy
       </MuiLink>

@@ -216,6 +216,11 @@ export default function HelpPage() {
           <SectionCard key={section.route} section={section} />
         ))}
 
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 3, mb: 1 }}>
+          Notice: Exported from CCIP for intelligence analysis. Sourced from declared IR.21 &amp; Reach List
+          archives without operational warranty.
+        </Typography>
+
         <Alert severity="info" className="no-print" sx={{ mt: 2 }}>
           Clicking &quot;Download Platform Guide (PDF)&quot; opens your browser&apos;s print dialog — choose
           &quot;Save as PDF&quot; as the destination for a clean, text-searchable copy of this guide.

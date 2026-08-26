@@ -220,6 +220,22 @@ export default function DataGrid<T>({
 
   const isAllSelected = rowData.length > 0 && pageInfo.pageSize >= rowData.length;
 
+  const handleExport = React.useCallback(() => {
+    const api = gridRef.current?.api;
+    if (!api || !exportFileName) return;
+    const csv = api.getDataAsCsv();
+    if (csv === undefined) return;
+    const footer =
+      "\nNotice: Exported from CCIP for intelligence analysis. Sourced from declared IR.21 & Reach List archives without operational warranty.\n";
+    const blob = new Blob([csv + footer], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = exportFileName.endsWith(".csv") ? exportFileName : `${exportFileName}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [exportFileName]);
+
   const paginationBarProps = {
     pageInfo,
     isAllSelected,
@@ -249,7 +265,7 @@ export default function DataGrid<T>({
             <Button
               size="small"
               startIcon={<DownloadIcon />}
-              onClick={() => gridRef.current?.api.exportDataAsCsv({ fileName: exportFileName })}
+              onClick={handleExport}
               sx={{ minHeight: 44 }}
             >
               Export CSV

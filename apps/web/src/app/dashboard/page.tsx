@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Alert, Box, Card, CardContent, Grid, Skeleton, Typography } from "@mui/material";
+import { Alert, Box, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
 import HubIcon from "@mui/icons-material/Hub";
@@ -84,6 +85,15 @@ export default function DashboardPage() {
           Dashboard
         </Typography>
         <ActiveBaselineBanner />
+        {metrics && (
+          <Chip
+            icon={<InfoOutlinedIcon fontSize="small" />}
+            label={`Derived from ${metrics.totalMnos.toLocaleString()} ingested IR.21 operator records. Informational use only.`}
+            size="small"
+            variant="outlined"
+            sx={{ mb: 3, color: "text.secondary", borderColor: "divider" }}
+          />
+        )}
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2}>
           {[

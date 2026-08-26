@@ -35,6 +35,7 @@ import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import LoginHistoryChip from "./LoginHistoryChip";
 import OnlineUsersBadge from "./OnlineUsersBadge";
+import DisclaimerModal from "./DisclaimerModal";
 
 const DRAWER_WIDTH = 240;
 
@@ -52,6 +53,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountAnchor, setAccountAnchor] = React.useState<HTMLElement | null>(null);
   const [warmingUp, setWarmingUp] = React.useState(false);
+  const [disclaimerOpen, setDisclaimerOpen] = React.useState(false);
 
   const handleWarmUp = React.useCallback(async () => {
     setWarmingUp(true);
@@ -224,7 +226,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <Toolbar />
         <Box sx={{ p: { xs: 1.5, sm: 3 } }}>{children}</Box>
+        <Box
+          component="footer"
+          sx={{
+            px: { xs: 1.5, sm: 3 },
+            py: 2,
+            borderTop: "1px solid",
+            borderColor: "divider",
+            textAlign: "center",
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            © CCIP Intelligence Platform · For Internal Analytical Use Only ·{" "}
+            <MuiLink component="button" variant="caption" onClick={() => setDisclaimerOpen(true)} sx={{ verticalAlign: "baseline" }}>
+              View Disclaimer &amp; Terms
+            </MuiLink>
+          </Typography>
+        </Box>
       </Box>
+
+      <DisclaimerModal open={disclaimerOpen} onClose={() => setDisclaimerOpen(false)} />
     </Box>
   );
 }

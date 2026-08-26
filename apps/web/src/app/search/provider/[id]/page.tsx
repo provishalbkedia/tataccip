@@ -3,10 +3,12 @@
 import * as React from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import { Box, Button, Card, CardContent, Chip, Grid, IconButton, Typography } from "@mui/material";
+import { Box, Button, Card, CardContent, Chip, Grid, IconButton, InputAdornment, TextField, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import FindInPageIcon from "@mui/icons-material/FindInPage";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import SearchIcon from "@mui/icons-material/Search";
+import ClearIcon from "@mui/icons-material/Clear";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -25,13 +27,15 @@ const SOURCE_CONTEXT: Record<
     heading: "On-Net MNO Footprint (As per GSMA IR.21 Database)",
     chipLabel: "GSMA IR.21 Declared",
     chipColor: "primary",
-    subtitle: "Showing MNOs that officially declared this carrier in their GSMA IR.21 XML documents.",
+    subtitle:
+      "Showing MNOs that officially declared this carrier in their GSMA IR.21 XML documents. Click any operator row to view full MNO connectivity details.",
   },
   [ProviderStatsSource.REACH_LIST]: {
     heading: "Claimed MNO Footprint (As per Published Reach Lists)",
     chipLabel: "Reach List Claimed",
     chipColor: "secondary",
-    subtitle: "Showing MNOs claimed by this carrier in their published commercial reach lists.",
+    subtitle:
+      "Showing MNOs claimed by this carrier in their published commercial reach lists. Click any operator row to view full MNO connectivity details.",
   },
   [ProviderStatsSource.BOTH]: {
     heading: "Consolidated Footprint (IR.21 vs Reach List Combined)",
@@ -41,9 +45,8 @@ const SOURCE_CONTEXT: Record<
   },
 };
 
-/** stopPropagation so clicking the PDF icon doesn't also trigger any
- * row-click handler on the grid (none is wired here today, but this
- * matches the same pattern used in Operator Search's PDF column). */
+/** stopPropagation so clicking the PDF icon opens the PDF without also
+ * triggering the row's own onRowClicked navigation to the MNO detail page. */
 function PdfCell(params: ICellRendererParams<OnNetMnoRow>) {
   if (!params.data?.hasPdfDocument) {
     return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
@@ -61,6 +64,12 @@ function PdfCell(params: ICellRendererParams<OnNetMnoRow>) {
       <PictureAsPdfIcon fontSize="small" />
     </IconButton>
   );
+}
+
+/** Bold MNO name — the row-hover CSS below shifts it to the link color so
+ * it reads as clickable, matching the row's own onRowClicked navigation. */
+function MnoNameCell(params: ICellRendererParams<OnNetMnoRow>) {
+  return <span className="mno-cell-link">{params.value}</span>;
 }
 
 function checkOrDash(p: { value: boolean }) {
@@ -98,6 +107,7 @@ function ProviderDetailPageInner() {
   const searchParams = useSearchParams();
   const [provider, setProvider] = React.useState<ProviderDetail | null>(null);
   const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
+  const [mnoQuery, setMnoQuery] = React.useState("");
 
   const urlSource = searchParams.get("source");
   const source: ProviderStatsSource =
@@ -105,15 +115,29 @@ function ProviderDetailPageInner() {
 
   React.useEffect(() => {
     setProvider(null);
+    setMnoQuery("");
     api.get<ProviderDetail>(`/provider/${params.id}?source=${source}`).then(setProvider);
   }, [params.id, source]);
 
   const context = SOURCE_CONTEXT[provider?.source ?? source];
 
+  // Client-side — the full footprint (even BICS's 247 MNOs) is already
+  // fetched in one shot, so there's no round-trip win to filtering
+  // server-side, and this keeps the grid's own "Showing X-Y of Z"
+  // pagination footer accurate for free (it counts whatever rowData it's
+  // handed).
+  const filteredMnos = React.useMemo(() => {
+    const q = mnoQuery.trim().toLowerCase();
+    if (!q || !provider) return provider?.onNetMnos ?? [];
+    return provider.onNetMnos.filter(
+      (m) => m.operatorName.toLowerCase().includes(q) || m.country.toLowerCase().includes(q) || m.tadigCode.toLowerCase().includes(q),
+    );
+  }, [provider, mnoQuery]);
+
   const columnDefs = React.useMemo<ColDef<OnNetMnoRow>[]>(() => {
     const cols: ColDef<OnNetMnoRow>[] = [
       { field: "country", headerName: "Country" },
-      { field: "operatorName", headerName: "MNO", flex: 1.5 },
+      { field: "operatorName", headerName: "MNO", flex: 1.5, cellRenderer: MnoNameCell },
       { field: "tadigCode", headerName: "TADIG" },
     ];
     if (source === ProviderStatsSource.BOTH) {
@@ -198,12 +222,52 @@ function ProviderDetailPageInner() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {context.subtitle}
             </Typography>
-            <DataGrid<OnNetMnoRow>
-              rowData={provider.onNetMnos}
-              exportFileName={`${provider.providerName}-on-net-mnos.csv`}
-              showTopPagination
-              columnDefs={columnDefs}
-            />
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 1.5 }}>
+              <TextField
+                size="small"
+                placeholder="Search served MNO, Country, or TADIG..."
+                value={mnoQuery}
+                onChange={(e) => setMnoQuery(e.target.value)}
+                sx={{ minWidth: 280 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: mnoQuery && (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={() => setMnoQuery("")} title="Clear search">
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              {mnoQuery && (
+                <Typography variant="body2" color="text.secondary">
+                  Showing {filteredMnos.length} filtered MNO{filteredMnos.length === 1 ? "" : "s"} (out of{" "}
+                  {provider.onNetMnos.length} total)
+                </Typography>
+              )}
+            </Box>
+
+            <Box
+              sx={{
+                "& .mno-cell-link": { fontWeight: 600 },
+                "& .ag-row-hover": { backgroundColor: "#f1f5f9 !important", transition: "background-color 0.15s ease-in-out" },
+                "& .ag-row-hover .mno-cell-link": { color: "secondary.main" },
+              }}
+            >
+              <DataGrid<OnNetMnoRow>
+                rowData={filteredMnos}
+                exportFileName={`${provider.providerName}-on-net-mnos.csv`}
+                showTopPagination
+                columnDefs={columnDefs}
+                onRowClicked={(row) => router.push(`/search/mno/${row.mnoId}`)}
+              />
+            </Box>
           </>
         )}
         <ProviderInspectorDrawer data={inspector} onClose={() => setInspector(null)} />

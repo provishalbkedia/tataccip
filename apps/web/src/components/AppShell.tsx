@@ -17,11 +17,13 @@ import {
   Menu,
   MenuItem,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import LogoutIcon from "@mui/icons-material/Logout";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
@@ -29,6 +31,7 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
 import LoginHistoryChip from "./LoginHistoryChip";
 import OnlineUsersBadge from "./OnlineUsersBadge";
 
@@ -47,6 +50,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountAnchor, setAccountAnchor] = React.useState<HTMLElement | null>(null);
+  const [warmingUp, setWarmingUp] = React.useState(false);
+
+  const handleWarmUp = React.useCallback(async () => {
+    setWarmingUp(true);
+    try {
+      await api.ping();
+    } finally {
+      setWarmingUp(false);
+    }
+  }, []);
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
 
@@ -89,6 +102,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               CCIP
             </Box>
           </Typography>
+          <Tooltip title="Refresh data / Warm up server">
+            <IconButton
+              color="inherit"
+              onClick={handleWarmUp}
+              disabled={warmingUp}
+              aria-label="Refresh data / Warm up server"
+              sx={{ minWidth: 44, minHeight: 44 }}
+            >
+              <RefreshIcon
+                fontSize="small"
+                sx={warmingUp ? { animation: "spin 1s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } } : undefined}
+              />
+            </IconButton>
+          </Tooltip>
           {user && (
             <>
               {/* Full badge row — desktop/tablet only */}

@@ -142,6 +142,27 @@ export class AuthService {
     };
   }
 
+  /** Re-issues a fresh access token for the currently-authenticated user —
+   * the sliding-session half of the token-expiry fix (see auth.module.ts):
+   * the frontend calls this periodically while a tab stays open so an
+   * active session never actually hits its 24h expiry. Requires a still-
+   * valid token to call (guarded the same as any other endpoint), unlike
+   * login() — this isn't a new "login" (no LoginHistory row, no re-auth),
+   * just re-signs the same claims with a fresh expiry after re-checking
+   * isActive/role, consistent with JwtStrategy's real-time enforcement. */
+  async refresh(userId: number): Promise<LoginResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException("Account is inactive or no longer exists");
+    }
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, email: user.email, role: user.role });
+    this.prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } }).catch(() => {});
+    return {
+      accessToken,
+      user: { id: user.id, email: user.email, role: user.role as LoginResponse["user"]["role"], name: user.name },
+    };
+  }
+
   async loginHistory(userId: number): Promise<LoginHistorySummary> {
     const [totalLogins, rows] = await Promise.all([
       this.prisma.loginHistory.count({ where: { userId } }),

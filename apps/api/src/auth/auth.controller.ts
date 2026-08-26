@@ -20,6 +20,13 @@ export class AuthController {
     return this.authService.microsoftLogin(dto.idToken, ip, userAgent);
   }
 
+  @Post("refresh")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  refresh(@Req() req: { user: { userId: number } }) {
+    return this.authService.refresh(req.user.userId);
+  }
+
   @Get("login-history")
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

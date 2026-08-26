@@ -22,10 +22,23 @@ interface AuthContextValue {
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
 
+// How often to silently re-sign the access token while a tab stays open —
+// comfortably inside the 24h expiry (see apps/api/src/auth/auth.module.ts)
+// so an active session never actually reaches it. POST /auth/refresh only
+// succeeds with a still-valid token, so this is a sliding-session renewal,
+// not a way to resurrect an already-dead one.
+const SILENT_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<AuthUser | null>(null);
   const [loading, setLoading] = React.useState(true);
   const router = useRouter();
+
+  const applySession = React.useCallback((res: LoginResponse) => {
+    window.localStorage.setItem("ccip_token", res.accessToken);
+    window.localStorage.setItem("ccip_user", JSON.stringify(res.user));
+    setUser(res.user);
+  }, []);
 
   React.useEffect(() => {
     const storedUser = window.localStorage.getItem("ccip_user");
@@ -34,13 +47,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(JSON.parse(storedUser));
     }
     setLoading(false);
+    // Warms an idle Cloud Run instance up before the user's first real
+    // request hits it — a plain ping, doesn't need a session to exist.
+    api.ping();
   }, []);
 
-  const applySession = React.useCallback((res: LoginResponse) => {
-    window.localStorage.setItem("ccip_token", res.accessToken);
-    window.localStorage.setItem("ccip_user", JSON.stringify(res.user));
-    setUser(res.user);
-  }, []);
+  React.useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      api.post<LoginResponse>("/auth/refresh").then(applySession).catch(() => {
+        // A failed refresh means the token is already dead (expired,
+        // deactivated, role changed) — api.ts's own 401 handling has
+        // already cleared the session and redirected by the time this
+        // runs, so there's nothing further to do here.
+      });
+    }, SILENT_REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [user, applySession]);
 
   const login = React.useCallback(
     async (email: string, password: string) => {

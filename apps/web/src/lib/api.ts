@@ -14,6 +14,23 @@ function getToken(): string | null {
   return window.localStorage.getItem("ccip_token");
 }
 
+// A 401 here always means the token itself is dead (expired past its 24h
+// lifetime, or the account was deactivated/its role changed — see
+// JwtStrategy) — there's no separate refresh token to fall back to (see
+// auth-context.tsx's sliding periodic refresh for the mechanism that's
+// supposed to prevent this while a session is active). Requests made with
+// no token at all (`getToken()` returned null) skip this — that's a normal
+// logged-out state the caller already expects, not a session dropping out
+// from under the user, so it shouldn't force a redirect.
+function handleUnauthorized(hadToken: boolean) {
+  if (typeof window === "undefined" || !hadToken) return;
+  window.localStorage.removeItem("ccip_token");
+  window.localStorage.removeItem("ccip_user");
+  if (window.location.pathname !== "/login") {
+    window.location.href = "/login";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers = new Headers(init?.headers);
@@ -26,6 +43,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!res.ok) {
+    if (res.status === 401) handleUnauthorized(!!token);
     let message = res.statusText;
     try {
       const body = await res.json();
@@ -37,6 +55,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+/** Fire-and-forget ping to /health — wakes an idle Cloud Run instance up
+ * before the user's first real request hits it. No auth header (the
+ * endpoint doesn't need one), and failures are swallowed since this is
+ * purely a warm-up nicety, not something the caller should have to handle. */
+async function ping(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** Same as api.postForm but reports upload progress (0-1) via XHR — plain
@@ -98,4 +129,5 @@ export const api = {
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
   postFormWithProgress,
   getBlob,
+  ping,
 };

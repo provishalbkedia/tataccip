@@ -14,9 +14,11 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import ClearIcon from "@mui/icons-material/Clear";
@@ -99,6 +101,7 @@ function MnoSearchPageInner() {
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
+  const [warmingUp, setWarmingUp] = React.useState(false);
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — this fires on initial load, on an explicit Search
@@ -139,6 +142,19 @@ function MnoSearchPageInner() {
     [],
   );
 
+  // Pings the API to wake an idle Cloud Run instance, then re-runs the
+  // current search so the (now-warm) results actually refresh — a bare
+  // health ping alone would leave stale/empty results on screen.
+  const handleWarmUp = React.useCallback(async () => {
+    setWarmingUp(true);
+    try {
+      await api.ping();
+      await api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
+    } finally {
+      setWarmingUp(false);
+    }
+  }, [searchParams]);
+
   return (
     <RequireAuth>
       <AppShell>
@@ -158,10 +174,22 @@ function MnoSearchPageInner() {
               />
             </Grid>
             <Grid item xs={6} sm={1.5}>
-              <TextField fullWidth label="TADIG" value={tadig} onChange={(e) => setTadig(e.target.value)} />
+              <TextField
+                fullWidth
+                label="TADIG"
+                value={tadig}
+                onChange={(e) => setTadig(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              />
             </Grid>
             <Grid item xs={6} sm={1.5}>
-              <TextField fullWidth label="Country" value={country} onChange={(e) => setCountry(e.target.value)} />
+              <TextField
+                fullWidth
+                label="Country"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              />
             </Grid>
             <Grid item xs={6} sm={2}>
               <TextField
@@ -170,6 +198,7 @@ function MnoSearchPageInner() {
                 label="Region"
                 value={region}
                 onChange={(e) => setRegion(e.target.value as Region | "")}
+                onKeyDown={(e) => e.key === "Enter" && runSearch()}
               >
                 <MenuItem value="">All Regions</MenuItem>
                 {REGION_OPTIONS.map((r) => (
@@ -180,15 +209,41 @@ function MnoSearchPageInner() {
               </TextField>
             </Grid>
             <Grid item xs={6} sm={1}>
-              <TextField fullWidth label="MCC" value={mcc} onChange={(e) => setMcc(e.target.value)} />
+              <TextField
+                fullWidth
+                label="MCC"
+                value={mcc}
+                onChange={(e) => setMcc(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              />
             </Grid>
             <Grid item xs={6} sm={1}>
-              <TextField fullWidth label="MNC" value={mnc} onChange={(e) => setMnc(e.target.value)} />
+              <TextField
+                fullWidth
+                label="MNC"
+                value={mnc}
+                onChange={(e) => setMnc(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              />
             </Grid>
-            <Grid item xs={12} sm={2}>
+            <Grid item xs={9} sm={1.5}>
               <Button fullWidth variant="contained" startIcon={<SearchIcon />} onClick={runSearch}>
                 Search
               </Button>
+            </Grid>
+            <Grid item xs={3} sm={0.5}>
+              <Tooltip title="Refresh data / Warm up server">
+                <IconButton
+                  onClick={handleWarmUp}
+                  disabled={warmingUp}
+                  sx={{ minWidth: 44, minHeight: 44, border: "1px solid", borderColor: "divider" }}
+                >
+                  <RefreshIcon
+                    fontSize="small"
+                    sx={warmingUp ? { animation: "spin 1s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } } : undefined}
+                  />
+                </IconButton>
+              </Tooltip>
             </Grid>
           </Grid>
         </Paper>
@@ -240,8 +295,6 @@ function MnoSearchPageInner() {
             { field: "operatorName", headerName: "Operator Name", flex: 1.5 },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
             { field: "country", headerName: "Country" },
-            { field: "tadigCode", headerName: "TADIG" },
-            { field: "networkType", headerName: "Network Type" },
             {
               field: "sccpProviders",
               headerName: "SCCP Provider(s)",
@@ -261,11 +314,6 @@ function MnoSearchPageInner() {
               valueFormatter: joinOrDash,
             },
             {
-              field: "lastEffectiveDate",
-              headerName: "Last Effective Date",
-              valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : ""),
-            },
-            {
               field: "hasPdfDocument",
               headerName: "IR.21 PDF",
               cellRenderer: PdfCell,
@@ -273,6 +321,13 @@ function MnoSearchPageInner() {
               filter: false,
               minWidth: 100,
               flex: 0.6,
+            },
+            { field: "tadigCode", headerName: "TADIG" },
+            { field: "networkType", headerName: "Network Type" },
+            {
+              field: "lastEffectiveDate",
+              headerName: "Last Effective Date",
+              valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : ""),
             },
             { field: "status", headerName: "Status" },
           ]}

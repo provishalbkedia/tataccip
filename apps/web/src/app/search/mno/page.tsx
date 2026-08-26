@@ -163,9 +163,12 @@ function MnoSearchPageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-          Operator Search
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 3 }}>
+          <Typography variant="h5" fontWeight={700}>
+            Operator Search
+          </Typography>
+          <Chip size="small" color="primary" label="GSMA IR.21 Declared" />
+        </Box>
         <Paper sx={{ p: 2, mb: 2 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}>
@@ -290,8 +293,9 @@ function MnoSearchPageInner() {
 
         <Box sx={{ mb: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — click a row for the connectivity matrix, or check the box on 2-5 rows to
-            compare selected operators side by side.
+            {results.length} result(s) — Showing operator connectivity footprint strictly as declared in official
+            GSMA IR.21 documents. Click a row for connectivity details, or check the box on 2–5 rows to compare
+            selected operators side by side.
           </Typography>
         </Box>
         <DataGrid<MnoSummary>
@@ -302,19 +306,19 @@ function MnoSearchPageInner() {
             { field: "country", headerName: "Country" },
             {
               field: "sccpProviders",
-              headerName: "SCCP Provider(s)",
+              headerName: "SCCP Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
             },
             {
               field: "dsxProviders",
-              headerName: "DSX Provider(s)",
+              headerName: "DSX / LTE Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
             },
             {
               field: "ipxProviders",
-              headerName: "IPX Provider(s)",
+              headerName: "IPX Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
             },

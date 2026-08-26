@@ -189,60 +189,10 @@ export default function MnoDetailPage() {
               </CardContent>
             </Card>
 
-            {snap && (
-              <>
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
-                  Roaming Signaling
-                </Typography>
-                <Card sx={{ mb: 3 }}>
-                  <CardContent>
-                    <Grid container spacing={3}>
-                      <Field label="Primary SCCP Carrier" value={snap.primarySccpCarrier} />
-                      <ChipListField label="Backup SCCP Carriers" values={snap.backupSccpCarriers} />
-                      <ChipListField label="Point Codes (DPC)" values={snap.sccpPointCodes} />
-                    </Grid>
-                  </CardContent>
-                </Card>
-
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
-                  Data &amp; LTE Roaming
-                </Typography>
-                <Card sx={{ mb: 3 }}>
-                  <CardContent>
-                    <Grid container spacing={3}>
-                      <ChipListField label="GRX/IPX Providers" values={snap.grxIpxProviders} />
-                      <ChipListField label="LTE IPX / Diameter Providers" values={snap.lteIpxProviders} />
-                      <Field label="Diameter Edge Agent FQDN" value={snap.diameterEdgeAgentFqdn} />
-                      <ChipListField label="Authoritative DNS IPs" values={snap.authoritativeDnsIps} />
-                      <ChipListField label="Inter-PMN Backbone IP Ranges" values={snap.interPmnIpRanges} />
-                      <ChipListField label="EPC Realms" values={snap.epcRealms} />
-                    </Grid>
-                  </CardContent>
-                </Card>
-
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
-                  Operational Contacts
-                </Typography>
-                <Card sx={{ mb: 3 }}>
-                  <CardContent>
-                    <Grid container spacing={3}>
-                      <Field label="Roaming Coordinator" value={snap.roamingCoordinatorEmail} />
-                      <Field label="24x7 Team Email" value={snap.ts24x7Email} />
-                      <Field label="Distribution Email" value={snap.distributionEmail} />
-                      <Field
-                        label="Source File Version / Parsed"
-                        value={`${snap.xmlFileVersion ?? "—"} · last parsed ${new Date(snap.lastParsedAt).toLocaleString()}`}
-                      />
-                    </Grid>
-                  </CardContent>
-                </Card>
-              </>
-            )}
-
             <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
-              Comparison Grid
+              Interconnect Comparison (IR.21 Declared vs Reach List Claimed)
             </Typography>
-            <TableContainer component={Paper}>
+            <TableContainer component={Paper} sx={{ mb: 3 }}>
               <Table>
                 <TableHead>
                   <TableRow>
@@ -320,6 +270,56 @@ export default function MnoDetailPage() {
                 </TableBody>
               </Table>
             </TableContainer>
+
+            {snap && (
+              <>
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+                  Roaming Signaling
+                </Typography>
+                <Card sx={{ mb: 3 }}>
+                  <CardContent>
+                    <Grid container spacing={3}>
+                      <Field label="Primary SCCP Carrier" value={snap.primarySccpCarrier} />
+                      <ChipListField label="Backup SCCP Carriers" values={snap.backupSccpCarriers} />
+                      <ChipListField label="Point Codes (DPC)" values={snap.sccpPointCodes} />
+                    </Grid>
+                  </CardContent>
+                </Card>
+
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+                  Data &amp; LTE Roaming
+                </Typography>
+                <Card sx={{ mb: 3 }}>
+                  <CardContent>
+                    <Grid container spacing={3}>
+                      <ChipListField label="GRX/IPX Providers" values={snap.grxIpxProviders} />
+                      <ChipListField label="LTE IPX / Diameter Providers" values={snap.lteIpxProviders} />
+                      <Field label="Diameter Edge Agent FQDN" value={snap.diameterEdgeAgentFqdn} />
+                      <ChipListField label="Authoritative DNS IPs" values={snap.authoritativeDnsIps} />
+                      <ChipListField label="Inter-PMN Backbone IP Ranges" values={snap.interPmnIpRanges} />
+                      <ChipListField label="EPC Realms" values={snap.epcRealms} />
+                    </Grid>
+                  </CardContent>
+                </Card>
+
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+                  Operational Contacts
+                </Typography>
+                <Card sx={{ mb: 3 }}>
+                  <CardContent>
+                    <Grid container spacing={3}>
+                      <Field label="Roaming Coordinator" value={snap.roamingCoordinatorEmail} />
+                      <Field label="24x7 Team Email" value={snap.ts24x7Email} />
+                      <Field label="Distribution Email" value={snap.distributionEmail} />
+                      <Field
+                        label="Source File Version / Parsed"
+                        value={`${snap.xmlFileVersion ?? "—"} · last parsed ${new Date(snap.lastParsedAt).toLocaleString()}`}
+                      />
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </>
         )}
         <ProviderInspectorDrawer data={inspector} onClose={() => setInspector(null)} />

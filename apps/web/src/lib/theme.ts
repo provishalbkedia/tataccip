@@ -28,5 +28,34 @@ export const theme = createTheme({
         root: { backgroundColor: "#0A2540" },
       },
     },
+    // MUI's default Button height (~37px) and a size="small" IconButton
+    // both fall under the 44x44px minimum touch target on mobile — bumped
+    // here at the theme level instead of patching every instance. Skips
+    // size="small" IconButtons since those live inside dense AG Grid cells
+    // (e.g. the PDF icon column) and Table rows, where forcing 44px would
+    // blow out the row height instead of just being a bigger tap target.
+    MuiButton: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          [theme.breakpoints.down("sm")]: { minHeight: 44 },
+        }),
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: ({ theme, ownerState }) => ({
+          ...(ownerState.size !== "small" && {
+            [theme.breakpoints.down("sm")]: { minWidth: 44, minHeight: 44 },
+          }),
+        }),
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          [theme.breakpoints.down("sm")]: { minHeight: 44 },
+        }),
+      },
+    },
   },
 });

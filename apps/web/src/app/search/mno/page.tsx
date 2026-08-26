@@ -16,7 +16,9 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
@@ -92,6 +94,9 @@ function MnoSearchPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // The full label overflows its own floating-label box below ~400px —
+  // shortened there rather than left to clip.
+  const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
   const [q, setQ] = React.useState("");
   const [tadig, setTadig] = React.useState("");
   const [country, setCountry] = React.useState("");
@@ -165,7 +170,7 @@ function MnoSearchPageInner() {
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}>
               <SuggestionAutocomplete<MnoSuggestion>
-                label="Search by Operator, TADIG, Country, MCC/MNC, or Carrier..."
+                label={isMobile ? "Search Operator, TADIG, Country..." : "Search by Operator, TADIG, Country, MCC/MNC, or Carrier..."}
                 value={q}
                 onValueChange={setQ}
                 fetchSuggestions={fetchSuggestions}

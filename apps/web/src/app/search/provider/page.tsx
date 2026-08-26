@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
-import { Box, Button, Chip, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, Button, Chip, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
@@ -42,6 +43,7 @@ function ProviderSearchPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
   const [q, setQ] = React.useState("");
   // Default is "As per IR.21 Data", not the combined view — only overridden
   // when the URL explicitly carries a different source (e.g. restored via
@@ -149,7 +151,7 @@ function ProviderSearchPageInner() {
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={9}>
               <SuggestionAutocomplete<ProviderSuggestion>
-                label="Provider Name (e.g. Tata Comm, Syniverse, BICS)"
+                label={isMobile ? "Provider Name..." : "Provider Name (e.g. Tata Comm, Syniverse, BICS)"}
                 value={q}
                 onValueChange={setQ}
                 fetchSuggestions={fetchSuggestions}

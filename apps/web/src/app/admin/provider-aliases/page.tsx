@@ -25,7 +25,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import CallSplitIcon from "@mui/icons-material/CallSplit";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
@@ -131,6 +133,10 @@ function OperatorOverrideModal({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<SaveOverridesBatchResult | null>(null);
+  // Full-screen on mobile — this dialog's 5-column table (TADIG/Operator/
+  // Country/Provider/Note) needs real width; squeezed into a ~310px
+  // centered dialog it's a scroll-within-a-scroll.
+  const fullScreen = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
 
   React.useEffect(() => {
     if (open) {
@@ -177,7 +183,7 @@ function OperatorOverrideModal({
   const assignedCount = Object.values(assignments).filter((v) => v.providerId != null).length;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen}>
       <DialogTitle>Map Per Operator — &quot;{variant.rawCarrierName}&quot;</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

@@ -61,7 +61,7 @@ function SubHead({ children }: { children: React.ReactNode }) {
 function DiagramFrame({ children, caption }: { children: React.ReactNode; caption: string }) {
   return (
     <Box component="figure" className="arch-section" sx={{ m: "20px 0 8px", bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2.5, boxShadow: 1 }}>
-      <Box sx={{ overflowX: "auto" }}>{children}</Box>
+      <Box className="frame-scroll" sx={{ overflowX: "auto" }}>{children}</Box>
       <Typography
         component="figcaption"
         variant="caption"
@@ -228,37 +228,62 @@ function SequenceDiagram() {
   );
 }
 
+const DOC_TITLE = "CCIP - Entra ID SSO - HLD-LLD Architecture";
+
 export default function ArchitectureReferencePage() {
+  // Swap the tab title while this page is mounted so "Save as PDF" offers a
+  // meaningful default filename instead of the app's generic tab title.
+  React.useEffect(() => {
+    const prevTitle = document.title;
+    document.title = DOC_TITLE;
+    return () => {
+      document.title = prevTitle;
+    };
+  }, []);
+
   return (
     <RequireAuth roles={[Role.ADMIN]}>
       <AppShell>
         {/* Print-only styling, same approach as the Help page's "Download
            Platform Guide (PDF)": native browser print-to-PDF gives real,
            selectable text and clean pagination for a text-heavy document
-           like this, at zero added bundle weight (no jsPDF/html2canvas). */}
+           like this, at zero added bundle weight (no jsPDF/html2canvas).
+           Beyond hiding chrome, this also strips the fixed-AppBar spacer
+           and the global footer (both app navigation, not document
+           content), forces background colors to survive Chrome's
+           "Background graphics" toggle being off by default, and lets
+           diagrams shrink to the page width instead of clipping. */}
         <style>{`
           @media print {
             .MuiDrawer-root, .MuiAppBar-root, .no-print { display: none !important; }
             main { padding: 0 !important; }
-            .arch-section { break-inside: avoid; page-break-inside: avoid; }
+            main > .MuiToolbar-root { display: none !important; }
+            main > footer { display: none !important; }
+            .arch-section { break-inside: avoid; page-break-inside: avoid; overflow: visible !important; }
+            .arch-section .frame-scroll { overflow: visible !important; }
+            .arch-page * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; }
+            thead { display: table-header-group; }
+            @page { margin: 16mm 14mm; }
           }
         `}</style>
 
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 2, mb: 0.5 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <LockIcon color="secondary" fontSize="small" />
-            <Typography variant="overline" color="text.secondary" fontWeight={700} letterSpacing={1}>
-              Admin Reference &middot; Not visible to other roles
-            </Typography>
-          </Box>
+        <Box className="arch-page">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }} className="no-print">
           <Button
-            className="no-print"
             variant="contained"
             startIcon={<PictureAsPdfIcon />}
             onClick={() => window.print()}
           >
             Download PDF
           </Button>
+        </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 0.5 }} className="no-print">
+          <LockIcon color="secondary" fontSize="small" />
+          <Typography variant="overline" color="text.secondary" fontWeight={700} letterSpacing={1}>
+            Admin Reference &middot; Not visible to other roles
+          </Typography>
         </Box>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
           Microsoft Entra ID Single Sign-On &mdash; HLD &amp; LLD
@@ -581,6 +606,7 @@ export default function ArchitectureReferencePage() {
         <Typography variant="caption" color="text.secondary" display="block">
           CCIP · Tata Communications · Prepared for IT Security review
         </Typography>
+        </Box>
       </AppShell>
     </RequireAuth>
   );

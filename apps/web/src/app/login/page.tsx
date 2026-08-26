@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, CardContent, Divider, Stack, TextField, Typography } from "@mui/material";
+import Link from "next/link";
+import { Alert, Box, Button, Card, CardContent, Divider, Link as MuiLink, Stack, TextField, Typography } from "@mui/material";
 import CellTowerIcon from "@mui/icons-material/CellTower";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
@@ -72,6 +73,7 @@ export default function LoginPage() {
         background: "linear-gradient(135deg, #0A2540 0%, #0B6FBF 100%)",
       }}
     >
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <Card sx={{ width: 400, borderRadius: 3 }}>
         <CardContent sx={{ p: 4 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -138,6 +140,13 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+      <Typography variant="caption" sx={{ mt: 3, color: "rgba(255,255,255,0.75)" }}>
+        © {new Date().getFullYear()} Tata Communications ·{" "}
+        <MuiLink component={Link} href="/privacy" sx={{ color: "rgba(255,255,255,0.9)" }}>
+          Privacy Policy
+        </MuiLink>
+      </Typography>
+      </Box>
     </Box>
   );
 }

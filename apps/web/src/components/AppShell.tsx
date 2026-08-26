@@ -10,6 +10,7 @@ import {
   Divider,
   Drawer,
   IconButton,
+  Link as MuiLink,
   List,
   ListItemButton,
   ListItemIcon,
@@ -79,6 +80,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </ListItemButton>
       ))}
     </List>
+  );
+
+  // Pinned to the bottom of the sidebar (both permanent and temporary
+  // variants) via the paper's flex column layout below — the standard
+  // placement for legal links in an app nav, visible from every
+  // authenticated page without cluttering the AppBar.
+  const drawerFooter = (
+    <Box sx={{ mt: "auto", px: 2, py: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
+      <Typography variant="caption" color="text.secondary" display="block">
+        © {new Date().getFullYear()} Tata Communications
+      </Typography>
+      <MuiLink component={Link} href="/privacy" variant="caption" onClick={() => setMobileOpen(false)}>
+        Privacy Policy
+      </MuiLink>
+    </Box>
   );
 
   return (
@@ -176,11 +192,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           display: { xs: "none", md: "block" },
           width: DRAWER_WIDTH,
           flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: DRAWER_WIDTH, boxSizing: "border-box" },
+          [`& .MuiDrawer-paper`]: { width: DRAWER_WIDTH, boxSizing: "border-box", display: "flex", flexDirection: "column" },
         }}
       >
         <Toolbar />
         {navList}
+        {drawerFooter}
       </Drawer>
 
       {/* Mobile/tablet: slide-over drawer */}
@@ -191,11 +208,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: "block", md: "none" },
-          [`& .MuiDrawer-paper`]: { width: Math.min(DRAWER_WIDTH + 40, 300), boxSizing: "border-box" },
+          [`& .MuiDrawer-paper`]: {
+            width: Math.min(DRAWER_WIDTH + 40, 300),
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+          },
         }}
       >
         <Toolbar />
         {navList}
+        {drawerFooter}
       </Drawer>
 
       <Box

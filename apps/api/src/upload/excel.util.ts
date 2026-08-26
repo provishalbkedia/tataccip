@@ -1,5 +1,33 @@
 import * as ExcelJS from "exceljs";
 
+// Some source spreadsheets (seen in a Reach List export) carry HTML-escaped
+// text in plain cells — "AT&amp;T Mobility" instead of "AT&T Mobility" —
+// most likely from an upstream pipeline that rendered the data through HTML
+// at some point without unescaping it before writing the sheet. Decoded
+// here so every Excel-based ingestion path gets clean text, not just Reach
+// List. `&amp;` must run last since decoding any other entity first can
+// introduce a literal `&` that a subsequent `&amp;` pass would corrupt.
+const HTML_ENTITIES: [RegExp, string][] = [
+  [/&lt;/g, "<"],
+  [/&gt;/g, ">"],
+  [/&quot;/g, '"'],
+  [/&#39;|&apos;/g, "'"],
+  [/&nbsp;/g, " "],
+  [/&amp;/g, "&"],
+];
+
+function decodeHtmlEntities(value: string): string {
+  let out = value;
+  for (const [pattern, replacement] of HTML_ENTITIES) {
+    out = out.replace(pattern, replacement);
+  }
+  // Numeric entities (&#65; / &#x41;) — handled separately since their
+  // replacement value depends on the matched digits.
+  out = out.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+  out = out.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  return out;
+}
+
 /** Reads the first worksheet of a workbook buffer into row objects keyed by
  * normalized (trimmed, lowercased) header text, so column order/casing in
  * the uploaded file doesn't matter. */
@@ -27,7 +55,7 @@ export async function readFirstSheetAsRows(buffer: Buffer): Promise<Record<strin
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const header = headers[colNumber];
       if (!header) return;
-      const value = cell.value == null ? "" : String(cell.value).trim();
+      const value = cell.value == null ? "" : decodeHtmlEntities(String(cell.value).trim());
       obj[header] = value;
       if (value) hasValue = true;
     });

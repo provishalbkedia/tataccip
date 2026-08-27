@@ -3,6 +3,7 @@ import { ServiceName, UploadStatus } from "@prisma/client";
 import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
+import { normalizeCountryToIso3 } from "./country-normalize";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
@@ -82,25 +83,37 @@ export class UploadService {
         continue;
       }
 
-      const existingMno = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: tadig } });
-      if (existingMno && country && existingMno.country !== country) {
-        errors.push(
-          `Row ${rowNum}: country mismatch for TADIG "${tadig}" (existing="${existingMno.country}", upload="${country}").`,
-        );
-      }
-
-      const mno = await this.prisma.mnoMaster.upsert({
-        where: { tadigCode: tadig },
-        update: {},
-        create: {
-          operatorName: mnoName || tadig,
-          country: country || "UNKNOWN",
-          mcc: "000",
-          mnc: "00",
-          countryCode: country.slice(0, 2).toUpperCase() || "XX",
-          tadigCode: tadig,
-        },
+      // A reach list may quote a legacy/secondary TADIG for an operator we
+      // already track under a different primary TADIG (see
+      // MnoMaster.secondaryTadigs) — resolve against both so the row
+      // attaches to the existing operator instead of spawning a duplicate
+      // MnoMaster. Deliberately a plain find + create rather than an
+      // upsert keyed on tadigCode: an upsert would miss a match found only
+      // via secondaryTadigs and create a spurious new row for it.
+      let mno = await this.prisma.mnoMaster.findFirst({
+        where: { OR: [{ tadigCode: tadig }, { secondaryTadigs: { has: tadig } }] },
       });
+
+      if (mno) {
+        const existingIso3 = normalizeCountryToIso3(mno.country);
+        const uploadIso3 = normalizeCountryToIso3(country);
+        if (uploadIso3 && existingIso3 && existingIso3 !== uploadIso3) {
+          errors.push(
+            `Row ${rowNum}: country mismatch for TADIG "${tadig}" (existing="${mno.country}", upload="${country}").`,
+          );
+        }
+      } else {
+        mno = await this.prisma.mnoMaster.create({
+          data: {
+            operatorName: mnoName || tadig,
+            country: country || "UNKNOWN",
+            mcc: "000",
+            mnc: "00",
+            countryCode: country.slice(0, 2).toUpperCase() || "XX",
+            tadigCode: tadig,
+          },
+        });
+      }
 
       // A single "Provider" cell can list more than one carrier (e.g.
       // "Arelion, CMI, BBIS") — split before resolving so each becomes its
@@ -124,9 +137,13 @@ export class UploadService {
         const providerId = await this.resolveProvider(providerToken, providerCache);
 
         for (const serviceName of validServiceTokens) {
-          const dedupeKey = `${tadig}|${providerId}|${serviceName}`;
+          // Keyed on the resolved mno.id, not the raw uploaded tadig string
+          // — otherwise the same operator's primary and secondary TADIG
+          // both appearing in one file would look like two distinct keys
+          // instead of a real duplicate.
+          const dedupeKey = `${mno.id}|${providerId}|${serviceName}`;
           if (seenKeys.has(dedupeKey)) {
-            errors.push(`Row ${rowNum}: duplicate (TADIG, Provider, Service) "${dedupeKey}" in file, skipped.`);
+            errors.push(`Row ${rowNum}: duplicate (TADIG, Provider, Service) "${tadig}|${providerId}|${serviceName}" in file, skipped.`);
             continue;
           }
           seenKeys.add(dedupeKey);

@@ -94,6 +94,15 @@ model MnoMaster {
   mnc          String
   countryCode  String
   tadigCode    String   @unique
+  // Alternate/legacy TADIGs known to belong to this same operator (e.g. a
+  // second TADIG issued for a merger or a separate radio-generation
+  // license) — curated by an admin via PATCH /mno/:id/secondary-tadigs,
+  // not auto-derived: a GSMA IR.21 XML declares exactly one TADIG per
+  // file, so there's no reliable signal to infer this relationship from
+  // ingestion alone. Reach List uploads resolve against tadigCode OR this
+  // list, so a reach list quoting only the legacy TADIG still attaches to
+  // the right operator instead of spawning a duplicate MnoMaster row.
+  secondaryTadigs String[] @default([])
   status       String   @default("ACTIVE")
   createdDate  DateTime @default(now())
 

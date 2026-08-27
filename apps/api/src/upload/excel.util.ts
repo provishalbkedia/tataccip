@@ -16,6 +16,31 @@ const HTML_ENTITIES: [RegExp, string][] = [
   [/&amp;/g, "&"],
 ];
 
+// ExcelJS represents non-plain cells (formula, hyperlink, rich text) as
+// objects rather than primitives, and none of them override toString() —
+// so a bare String(cell.value) on any of them silently produces the
+// literal text "[object Object]". Unwrap each shape to its actual text
+// before falling through to String() for genuine primitives/dates.
+function cellValueToString(value: ExcelJS.CellValue): string {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    const obj = value as unknown as Record<string, unknown>;
+    if (Array.isArray(obj.richText)) {
+      return (obj.richText as { text?: string }[]).map((span) => span.text ?? "").join("");
+    }
+    if ("result" in obj) {
+      return String(obj.result ?? "");
+    }
+    if ("text" in obj) {
+      // Hyperlink cells: { text, hyperlink }.
+      return String(obj.text ?? "");
+    }
+    return JSON.stringify(obj);
+  }
+  return String(value);
+}
+
 function decodeHtmlEntities(value: string): string {
   let out = value;
   for (const [pattern, replacement] of HTML_ENTITIES) {
@@ -42,7 +67,7 @@ export async function readFirstSheetAsRows(buffer: Buffer): Promise<Record<strin
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
   headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-    headers[colNumber] = String(cell.value ?? "").trim().toLowerCase();
+    headers[colNumber] = cellValueToString(cell.value).trim().toLowerCase();
   });
 
   const rows: Record<string, string>[] = [];
@@ -55,7 +80,7 @@ export async function readFirstSheetAsRows(buffer: Buffer): Promise<Record<strin
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const header = headers[colNumber];
       if (!header) return;
-      const value = cell.value == null ? "" : decodeHtmlEntities(String(cell.value).trim());
+      const value = decodeHtmlEntities(cellValueToString(cell.value).trim());
       obj[header] = value;
       if (value) hasValue = true;
     });

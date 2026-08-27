@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
@@ -153,6 +153,7 @@ export class MnoService {
         country: r.country,
         region: getRegionByCountry(r.country),
         tadigCode: r.tadigCode,
+        secondaryTadigs: r.secondaryTadigs,
         mcc: r.mcc,
         mnc: r.mnc,
         status: r.status,
@@ -257,6 +258,7 @@ export class MnoService {
       country: mno.country,
       region: getRegionByCountry(mno.country),
       tadigCode: mno.tadigCode,
+      secondaryTadigs: mno.secondaryTadigs,
       mcc: mno.mcc,
       mnc: mno.mnc,
       status: mno.status,
@@ -384,6 +386,40 @@ export class MnoService {
     }
     const buffer = await this.storage.download(connectivity.pdfStoragePath);
     return { buffer, fileName: connectivity.pdfFileName ?? `${connectivity.tadigCode}.pdf` };
+  }
+
+  /** Admin-curated: links alternate/legacy TADIGs to this operator so a
+   * Reach List quoting one of them resolves here instead of spawning a
+   * duplicate MnoMaster (see upload.service.ts's uploadReachlist). Not
+   * auto-derived from IR.21 XML — a GSMA IR.21 file declares exactly one
+   * TADIG for its exporting operator, so there's no reliable signal in
+   * ingestion to infer this relationship from; it has to be a deliberate
+   * admin judgment call (confirmed same real-world operator), the same way
+   * a mistaken merge earlier this platform's history taught us TADIG
+   * name-similarity alone isn't safe to auto-group on. */
+  async setSecondaryTadigs(id: number, tadigs: string[]): Promise<MnoDetail> {
+    const normalized = Array.from(
+      new Set(tadigs.map((t) => t.trim().toUpperCase()).filter((t) => /^[A-Z0-9]{5}$/.test(t))),
+    );
+
+    const mno = await this.prisma.mnoMaster.findUnique({ where: { id } });
+    if (!mno) throw new NotFoundException(`MNO ${id} not found`);
+    if (normalized.includes(mno.tadigCode)) {
+      throw new BadRequestException(`"${mno.tadigCode}" is this operator's own primary TADIG, not a secondary one`);
+    }
+
+    const clashing = await this.prisma.mnoMaster.findMany({
+      where: { tadigCode: { in: normalized } },
+      select: { tadigCode: true },
+    });
+    if (clashing.length > 0) {
+      throw new BadRequestException(
+        `TADIG(s) already registered as a different operator's primary TADIG: ${clashing.map((c) => c.tadigCode).join(", ")}`,
+      );
+    }
+
+    await this.prisma.mnoMaster.update({ where: { id }, data: { secondaryTadigs: normalized } });
+    return this.detail(id);
   }
 
   /** The raw (unresolved) declared strings that could have fed a given

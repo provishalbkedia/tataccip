@@ -1,8 +1,12 @@
-import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Patch, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
+import { Role } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RolesGuard } from "../auth/roles.guard";
+import { Roles } from "../auth/roles.decorator";
 import { MnoService } from "./mno.service";
+import { SetSecondaryTadigsDto } from "./dto/set-secondary-tadigs.dto";
 
 @ApiTags("mno")
 @ApiBearerAuth()
@@ -53,6 +57,13 @@ export class MnoController {
   @Get(":id")
   detail(@Param("id", ParseIntPipe) id: number) {
     return this.mnoService.detail(id);
+  }
+
+  @Patch(":id/secondary-tadigs")
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  setSecondaryTadigs(@Param("id", ParseIntPipe) id: number, @Body() dto: SetSecondaryTadigsDto) {
+    return this.mnoService.setSecondaryTadigs(id, dto.tadigs);
   }
 
   @Get(":id/pdf")

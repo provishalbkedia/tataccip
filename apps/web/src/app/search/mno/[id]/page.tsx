@@ -158,6 +158,11 @@ export default function MnoDetailPage() {
                       TADIG
                     </Typography>
                     <Typography variant="body1">{mno.tadigCode}</Typography>
+                    {mno.secondaryTadigs.length > 0 && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Also: {mno.secondaryTadigs.join(", ")}
+                      </Typography>
+                    )}
                   </Grid>
                   <Grid item xs={6} sm={2}>
                     <Typography variant="overline" color="text.secondary">

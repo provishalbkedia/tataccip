@@ -115,6 +115,10 @@ export interface MnoSummary {
   // unclassifiable country value (e.g. "UNKNOWN").
   region: string | null;
   tadigCode: string;
+  // Alternate/legacy TADIGs curated as belonging to this same operator —
+  // see MnoMaster.secondaryTadigs. A Reach List row quoting one of these
+  // resolves to this same operator instead of a separate MnoMaster.
+  secondaryTadigs: string[];
   mcc: string;
   mnc: string;
   status: string;

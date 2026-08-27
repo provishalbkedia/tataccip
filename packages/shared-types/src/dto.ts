@@ -280,6 +280,17 @@ export interface UploadHistoryRow {
 export interface UploadResult {
   uploadHistory: UploadHistoryRow;
   errors: string[];
+  // Reach List uploads only — which of the two accepted shapes was read:
+  // the standard one-row-per-record file, or the wide Competitor Coverage
+  // matrix (one column per wholesale provider) auto-unpivoted in memory.
+  formatDetected?: "STANDARD_TRANSPOSED" | "COMPETITOR_MATRIX";
+  // Set when formatDetected is COMPETITOR_MATRIX — how many normalized
+  // (Provider, Country, MNO, TADIG, Services) rows the matrix expanded into.
+  totalRowsTransposed?: number;
+  // MNOs from a matrix upload that don't already exist in MnoMaster — the
+  // matrix format carries no TADIG column, so there's nothing to attach a
+  // new operator row to; these rows were skipped rather than guessed at.
+  unresolvedMnos?: { mnoName: string; country: string }[];
 }
 
 // Powers the "Active IR.21 Baseline" banner on the Admin Menu/Dashboard.

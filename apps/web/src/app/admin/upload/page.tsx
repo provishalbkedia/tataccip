@@ -134,9 +134,30 @@ function UploadCard({
 
         {result && (
           <Box sx={{ mt: 2 }}>
+            {result.formatDetected === "COMPETITOR_MATRIX" && (
+              <Chip
+                size="small"
+                color="info"
+                label={`Wide competitor matrix detected — auto-transposed into ${result.totalRowsTransposed ?? 0} row(s)`}
+                sx={{ mb: 1 }}
+              />
+            )}
             <Alert severity={result.uploadHistory.status === "SUCCESS" ? "success" : "warning"}>
               {result.uploadHistory.recordsLoaded} record(s) loaded — status: {result.uploadHistory.status}
             </Alert>
+            {result.unresolvedMnos && result.unresolvedMnos.length > 0 && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                {result.unresolvedMnos.length} MNO(s) not found in the platform (no TADIG to attach to) — add them via
+                IR.21 upload first, or confirm the operator name/country match.
+                <List dense sx={{ maxHeight: 160, overflow: "auto", mt: 0.5 }}>
+                  {result.unresolvedMnos.map((u, i) => (
+                    <ListItem key={i} disableGutters>
+                      <ListItemText primary={`${u.mnoName} — ${u.country}`} primaryTypographyProps={{ variant: "caption" }} />
+                    </ListItem>
+                  ))}
+                </List>
+              </Alert>
+            )}
             {result.errors.length > 0 && (
               <List dense sx={{ maxHeight: 200, overflow: "auto", bgcolor: "background.default", mt: 1, borderRadius: 1 }}>
                 {result.errors.map((e, i) => (
@@ -443,9 +464,9 @@ export default function UploadPage() {
           <Grid item xs={12} md={6}>
             <UploadCard
               title="Reach List Upload"
-              description="Upload a connectivity provider's published reach list."
+              description="Upload a connectivity provider's reach list. Supports both standard transposed files (Provider, Country, MNO, TADIG, Services) and wide Competitor Coverage matrix sheets."
               endpoint="/upload/reachlist"
-              columnsHint="Provider, Country, MNO, TADIG, Services"
+              columnsHint="Provider, Country, MNO, TADIG, Services — or a wide matrix with MNO, Country, and one column per wholesale provider"
               onUploaded={loadHistory}
               isAdmin={isAdmin}
             />

@@ -4,6 +4,7 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeCountryToIso3 } from "./country-normalize";
+import { detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
@@ -45,12 +46,73 @@ export class UploadService {
   }
 
   async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string): Promise<UploadResult> {
-    const rows = await readFirstSheetAsRows(buffer);
+    let rows = await readFirstSheetAsRows(buffer);
     const services = await this.serviceMap();
     const providerCache = await this.providerCache();
     const errors: string[] = [];
     const seenKeys = new Set<string>();
     let recordsLoaded = 0;
+
+    // Two accepted shapes: the standard one-row-per-record file (Provider,
+    // Country, MNO, TADIG, Services), or a "wide" Competitor Coverage
+    // matrix — one column per wholesale provider, one row per MNO, no
+    // TADIG column at all. The matrix has no TADIG to read, so it's
+    // resolved from MnoMaster by (Country, MNO) instead; an MNO that
+    // doesn't already exist there has nothing to attach a TADIG to and is
+    // reported back as unresolved rather than guessed at.
+    const format = detectReachlistFormat(Object.keys(rows[0] ?? {}));
+    let totalRowsTransposed: number | undefined;
+    const unresolvedMnos: { mnoName: string; country: string }[] = [];
+
+    if (format === "MATRIX") {
+      const providerCols = matrixProviderColumns(Object.keys(rows[0] ?? {}));
+      const allMnos = await this.prisma.mnoMaster.findMany({
+        select: { operatorName: true, country: true, tadigCode: true },
+      });
+      const mnoLookup = new Map<string, string>(); // `${iso3}|${lowercased name}` -> tadigCode
+      for (const m of allMnos) {
+        const iso3 = normalizeCountryToIso3(m.country);
+        if (!iso3) continue;
+        const key = `${iso3}|${m.operatorName.trim().toLowerCase()}`;
+        if (!mnoLookup.has(key)) mnoLookup.set(key, m.tadigCode);
+      }
+
+      const expandedRows: Record<string, string>[] = [];
+      const seenUnresolved = new Set<string>();
+      for (const row of rows) {
+        const mnoName = col(row, "mno", "operator");
+        const country = col(row, "country");
+        if (!mnoName || !country) continue;
+
+        const iso3 = normalizeCountryToIso3(country);
+        const tadig = iso3 ? mnoLookup.get(`${iso3}|${mnoName.trim().toLowerCase()}`) : undefined;
+        if (!tadig) {
+          const pairKey = `${country}|${mnoName}`;
+          if (!seenUnresolved.has(pairKey)) {
+            seenUnresolved.add(pairKey);
+            unresolvedMnos.push({ mnoName, country });
+          }
+          continue;
+        }
+
+        for (const { display, key } of providerCols) {
+          const cellServices = row[key]?.trim();
+          if (!cellServices) continue;
+          expandedRows.push({ provider: display, country, mno: mnoName, tadig, services: cellServices });
+        }
+      }
+
+      if (unresolvedMnos.length > 0) {
+        errors.push(
+          `${unresolvedMnos.length} MNO(s) not found in MnoMaster (no TADIG to attach to), skipped: ` +
+            unresolvedMnos.slice(0, 10).map((u) => `"${u.mnoName}" (${u.country})`).join(", ") +
+            (unresolvedMnos.length > 10 ? `, and ${unresolvedMnos.length - 10} more` : ""),
+        );
+      }
+
+      totalRowsTransposed = expandedRows.length;
+      rows = expandedRows;
+    }
 
     for (let i = 0; i < rows.length; i++) {
       const rowNum = i + 2;
@@ -181,7 +243,13 @@ export class UploadService {
       },
     });
 
-    return { uploadHistory: this.toHistoryRow(uploadHistory), errors };
+    return {
+      uploadHistory: this.toHistoryRow(uploadHistory),
+      errors,
+      formatDetected: format === "MATRIX" ? "COMPETITOR_MATRIX" : "STANDARD_TRANSPOSED",
+      totalRowsTransposed,
+      unresolvedMnos: unresolvedMnos.length > 0 ? unresolvedMnos : undefined,
+    };
   }
 
   /** Ingests a batch of GSMA IR.21 XML files (each may itself be a .zip of

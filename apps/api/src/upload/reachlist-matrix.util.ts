@@ -1,3 +1,6 @@
+import { isConfidentSubstringMatch, normalizeCarrierName } from "./provider-normalize";
+import { normalizeCountryToIso3 } from "./country-normalize";
+
 // Wholesale providers that appear as their own column in the "wide"
 // Competitor Coverage matrix format (one column per carrier, one row per
 // MNO) rather than the standard one-row-per-(Provider,MNO,Service) format.
@@ -36,4 +39,52 @@ export function matrixProviderColumns(rowKeys: string[]): { display: string; key
     display: p,
     key: p.toLowerCase(),
   }));
+}
+
+/** Resolves a matrix row's (Country, MNO) against existing MnoMaster
+ * operators within that same country, so a wide competitor-coverage file
+ * can be ingested without a TADIG column of its own.
+ *
+ * Two passes, both scoped to candidates already in the same ISO3 country
+ * (keeps the candidate pool small and avoids cross-country false
+ * matches): first an exact match on the legal-suffix-stripped name
+ * (handles "Telecom Development Company Afghanistan" vs "...Afghanistan
+ * Limited"); if that's not unique, a confident substring match (handles
+ * MnoMaster's shorter IR.21 brand name, e.g. "Movistar" vs the matrix's
+ * "Movistar Argentina" — see provider-normalize.ts's
+ * isConfidentSubstringMatch, which already refuses anything under 4
+ * characters specifically to avoid this kind of short-code false
+ * positive, e.g. "A1" would never be trusted to substring-match on its
+ * own). Either pass returning more than one candidate is reported as
+ * ambiguous rather than guessed at — same principle as a straight miss:
+ * an operator this platform doesn't clearly already know is left for an
+ * admin to resolve (via secondaryTadigs or a fresh IR.21 upload), not
+ * silently attached to the wrong existing MnoMaster row. */
+export function buildMnoResolver(
+  mnos: { operatorName: string; country: string; tadigCode: string }[],
+): (country: string, mnoName: string) => { status: "resolved"; tadigCode: string } | { status: "not-found" | "ambiguous" } {
+  const byCountry = new Map<string, { tadigCode: string; normalizedName: string }[]>();
+  for (const m of mnos) {
+    const iso3 = normalizeCountryToIso3(m.country);
+    if (!iso3) continue;
+    if (!byCountry.has(iso3)) byCountry.set(iso3, []);
+    byCountry.get(iso3)!.push({ tadigCode: m.tadigCode, normalizedName: normalizeCarrierName(m.operatorName) });
+  }
+
+  return (country, mnoName) => {
+    const iso3 = normalizeCountryToIso3(country);
+    const candidates = iso3 ? byCountry.get(iso3) : undefined;
+    if (!candidates) return { status: "not-found" };
+
+    const normalized = normalizeCarrierName(mnoName);
+    const exact = candidates.filter((c) => c.normalizedName === normalized);
+    if (exact.length === 1) return { status: "resolved", tadigCode: exact[0].tadigCode };
+    if (exact.length > 1) return { status: "ambiguous" };
+
+    const fuzzy = candidates.filter((c) => isConfidentSubstringMatch(normalized, c.normalizedName));
+    if (fuzzy.length === 1) return { status: "resolved", tadigCode: fuzzy[0].tadigCode };
+    if (fuzzy.length > 1) return { status: "ambiguous" };
+
+    return { status: "not-found" };
+  };
 }

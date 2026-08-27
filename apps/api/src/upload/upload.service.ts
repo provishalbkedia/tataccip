@@ -4,7 +4,7 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeCountryToIso3 } from "./country-normalize";
-import { detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
+import { buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
@@ -69,13 +69,7 @@ export class UploadService {
       const allMnos = await this.prisma.mnoMaster.findMany({
         select: { operatorName: true, country: true, tadigCode: true },
       });
-      const mnoLookup = new Map<string, string>(); // `${iso3}|${lowercased name}` -> tadigCode
-      for (const m of allMnos) {
-        const iso3 = normalizeCountryToIso3(m.country);
-        if (!iso3) continue;
-        const key = `${iso3}|${m.operatorName.trim().toLowerCase()}`;
-        if (!mnoLookup.has(key)) mnoLookup.set(key, m.tadigCode);
-      }
+      const resolveMno = buildMnoResolver(allMnos);
 
       const expandedRows: Record<string, string>[] = [];
       const seenUnresolved = new Set<string>();
@@ -84,9 +78,8 @@ export class UploadService {
         const country = col(row, "country");
         if (!mnoName || !country) continue;
 
-        const iso3 = normalizeCountryToIso3(country);
-        const tadig = iso3 ? mnoLookup.get(`${iso3}|${mnoName.trim().toLowerCase()}`) : undefined;
-        if (!tadig) {
+        const resolution = resolveMno(country, mnoName);
+        if (resolution.status !== "resolved") {
           const pairKey = `${country}|${mnoName}`;
           if (!seenUnresolved.has(pairKey)) {
             seenUnresolved.add(pairKey);
@@ -94,6 +87,7 @@ export class UploadService {
           }
           continue;
         }
+        const tadig = resolution.tadigCode;
 
         for (const { display, key } of providerCols) {
           const cellServices = row[key]?.trim();

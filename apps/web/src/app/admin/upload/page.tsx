@@ -59,6 +59,7 @@ function UploadCard({
   columnsHint,
   onUploaded,
   isAdmin,
+  replaceOption,
 }: {
   title: string;
   description: string;
@@ -66,19 +67,27 @@ function UploadCard({
   columnsHint: string;
   onUploaded: () => void;
   isAdmin: boolean;
+  // Lets a re-upload delete prior records sourced from the same filename
+  // before ingesting — see Reach List Upload below. Omit for an upload
+  // type that has no such notion of "replace."
+  replaceOption?: { label: React.ReactNode; confirmTitle: string; confirmText: React.ReactNode };
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<UploadResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [replace, setReplace] = React.useState(false);
+  const [confirmReplaceOpen, setConfirmReplaceOpen] = React.useState(false);
+  const pendingFileRef = React.useRef<File | null>(null);
 
-  async function handleFile(file: File) {
+  async function doUpload(file: File) {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (replaceOption) formData.append("replace", String(replace));
       const res = await api.postForm<UploadResult>(endpoint, formData);
       setResult(res);
       onUploaded();
@@ -88,6 +97,15 @@ function UploadCard({
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
+  }
+
+  function handleFile(file: File) {
+    if (replaceOption && replace) {
+      pendingFileRef.current = file;
+      setConfirmReplaceOpen(true);
+      return;
+    }
+    doUpload(file);
   }
 
   return (
@@ -102,11 +120,26 @@ function UploadCard({
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
           Expected columns: {columnsHint}
         </Typography>
+        {replaceOption && (
+          <FormControlLabel
+            sx={{ display: "block", mb: 1 }}
+            control={
+              <Checkbox
+                checked={replace}
+                onChange={(e) => setReplace(e.target.checked)}
+                disabled={busy || !isAdmin}
+                color="warning"
+              />
+            }
+            label={<Typography variant="body2">{replaceOption.label}</Typography>}
+          />
+        )}
         <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
           <span>
             <Button
               variant="contained"
               component="label"
+              color={replaceOption && replace ? "warning" : "primary"}
               startIcon={<UploadFileIcon />}
               disabled={busy || !isAdmin}
             >
@@ -126,6 +159,28 @@ function UploadCard({
           </span>
         </Tooltip>
 
+        {replaceOption && (
+          <Dialog open={confirmReplaceOpen} onClose={() => setConfirmReplaceOpen(false)}>
+            <DialogTitle>{replaceOption.confirmTitle}</DialogTitle>
+            <DialogContent>
+              <DialogContentText component="div">{replaceOption.confirmText}</DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmReplaceOpen(false)}>Cancel</Button>
+              <Button
+                color="warning"
+                variant="contained"
+                onClick={() => {
+                  setConfirmReplaceOpen(false);
+                  if (pendingFileRef.current) doUpload(pendingFileRef.current);
+                }}
+              >
+                Replace &amp; Upload
+              </Button>
+            </DialogActions>
+          </Dialog>
+        )}
+
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}
@@ -140,6 +195,14 @@ function UploadCard({
                 color="info"
                 label={`Wide competitor matrix detected — auto-transposed into ${result.totalRowsTransposed ?? 0} row(s)`}
                 sx={{ mb: 1 }}
+              />
+            )}
+            {typeof result.recordsReplaced === "number" && (
+              <Chip
+                size="small"
+                color="warning"
+                label={`Replaced ${result.recordsReplaced} prior record(s) from this file`}
+                sx={{ mb: 1, ml: result.formatDetected === "COMPETITOR_MATRIX" ? 1 : 0 }}
               />
             )}
             <Alert severity={result.uploadHistory.status === "SUCCESS" ? "success" : "warning"}>
@@ -469,6 +532,24 @@ export default function UploadPage() {
               columnsHint="Provider, Country, MNO, TADIG, Services — or a wide matrix with MNO, Country, and one column per wholesale provider"
               onUploaded={loadHistory}
               isAdmin={isAdmin}
+              replaceOption={{
+                label: (
+                  <>
+                    <strong>Replace records from this file</strong> — deletes existing Reach List records
+                    previously loaded from a file with this same name before ingesting this upload (asks for
+                    confirmation). Records from other Reach List files are not affected.
+                  </>
+                ),
+                confirmTitle: "Replace records from this file?",
+                confirmText: (
+                  <>
+                    This will permanently delete every existing Reach List record whose source file matches the
+                    one you&apos;re about to upload, before ingesting the new data — so an operator, provider, or
+                    service removed from this newer version won&apos;t linger as a stale record. Reach List data
+                    loaded from any <em>other</em> file is not touched. This cannot be undone. Continue?
+                  </>
+                ),
+              }}
             />
           </Grid>
           <Grid item xs={12} md={6}>

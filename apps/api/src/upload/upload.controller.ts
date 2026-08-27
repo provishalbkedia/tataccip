@@ -56,9 +56,10 @@ export class UploadController {
   async uploadReachlist(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: { email: string },
+    @Body("replace") replace?: string,
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
-    return this.uploadService.uploadReachlist(file.buffer, file.originalname, user.email);
+    return this.uploadService.uploadReachlist(file.buffer, file.originalname, user.email, replace === "true");
   }
 
   @Post("ir21-xml")

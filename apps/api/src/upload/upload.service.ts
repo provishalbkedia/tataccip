@@ -45,13 +45,36 @@ export class UploadService {
     return { active: active ? this.toHistoryRow(active) : null, currentMnoCount };
   }
 
-  async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string): Promise<UploadResult> {
+  // uploadReachlist() is otherwise purely additive: it upserts on
+  // (mnoId, providerId, serviceId), so a re-uploaded sheet that renamed,
+  // dropped, or reassigned an operator's row leaves the old row behind
+  // forever, invisible but still feeding the Comparison Grid / Provider
+  // Detail footprint. `replace: true` fixes that by deleting every
+  // existing ProviderReachlist row attributed to this exact filename
+  // before ingesting — scoped to `sourceFile`, not a full-table wipe:
+  // this platform routinely has several reach list files in flight from
+  // different sources at once (see this session's history — a
+  // standard-format file and a wide competitor-matrix file both feeding
+  // ProviderReachlist independently), so purging everything on every
+  // upload would erase whichever *other* file's data isn't part of the
+  // one being re-uploaded right now. Matches the IR.21 batch upload's
+  // "Replace Active Dataset" pattern in spirit, but scoped narrower —
+  // there, a rebaseline genuinely is meant to be "everything, from this
+  // one archive"; a Reach List file is usually one source's subset, not
+  // the whole picture.
+  async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string, replace = false): Promise<UploadResult> {
     let rows = await readFirstSheetAsRows(buffer);
     const services = await this.serviceMap();
     const providerCache = await this.providerCache();
     const errors: string[] = [];
     const seenKeys = new Set<string>();
     let recordsLoaded = 0;
+
+    let recordsReplaced: number | undefined;
+    if (replace) {
+      const deleted = await this.prisma.providerReachlist.deleteMany({ where: { sourceFile: filename } });
+      recordsReplaced = deleted.count;
+    }
 
     // Two accepted shapes: the standard one-row-per-record file (Provider,
     // Country, MNO, TADIG, Services), or a "wide" Competitor Coverage
@@ -243,6 +266,7 @@ export class UploadService {
       formatDetected: format === "MATRIX" ? "COMPETITOR_MATRIX" : "STANDARD_TRANSPOSED",
       totalRowsTransposed,
       unresolvedMnos: unresolvedMnos.length > 0 ? unresolvedMnos : undefined,
+      recordsReplaced,
     };
   }
 

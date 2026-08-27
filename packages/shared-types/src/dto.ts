@@ -291,6 +291,10 @@ export interface UploadResult {
   // matrix format carries no TADIG column, so there's nothing to attach a
   // new operator row to; these rows were skipped rather than guessed at.
   unresolvedMnos?: { mnoName: string; country: string }[];
+  // Set when the upload was made with replace=true: how many prior
+  // ProviderReachlist rows sourced from this same filename were deleted
+  // before this upload's records were ingested.
+  recordsReplaced?: number;
 }
 
 // Powers the "Active IR.21 Baseline" banner on the Admin Menu/Dashboard.

@@ -160,17 +160,30 @@ export class UploadService {
 
     // Two accepted shapes: the standard one-row-per-record file (Provider,
     // Country, MNO, TADIG, Services), or a "wide" Competitor Coverage
-    // matrix — one column per wholesale provider, one row per MNO, no
-    // TADIG column at all. The matrix has no TADIG to read, so it's
-    // resolved from MnoMaster by (Country, MNO) instead; an MNO that
-    // doesn't already exist there has nothing to attach a TADIG to and is
-    // reported back as unresolved rather than guessed at.
+    // matrix — one column per wholesale provider, one row per MNO. A
+    // matrix row's own TADIG (when the file gives one) is used directly;
+    // only a genuinely blank TADIG falls back to resolving from MnoMaster
+    // by (Country, MNO) — an MNO that doesn't already exist there has
+    // nothing to attach a TADIG to and is reported back as unresolved
+    // rather than guessed at.
     const format = detectReachlistFormat(Object.keys(rows[0] ?? {}));
     let totalRowsTransposed: number | undefined;
     const unresolvedMnos: { mnoName: string; country: string }[] = [];
 
     if (format === "MATRIX") {
-      const providerCols = matrixProviderColumns(Object.keys(rows[0] ?? {}));
+      const resolveColumnProvider = await this.buildMatrixColumnResolver();
+      const { columns: providerCols, unrecognized: unrecognizedColumns } = matrixProviderColumns(
+        Object.keys(rows[0] ?? {}),
+        resolveColumnProvider,
+      );
+      if (unrecognizedColumns.length > 0) {
+        errors.push(
+          `${unrecognizedColumns.length} column(s) didn't match a known provider or alias, skipped: ` +
+            unrecognizedColumns.map((c) => `"${c}"`).join(", ") +
+            ". Add it via Provider Overrides & Normalization, or register an alias, then re-upload.",
+        );
+      }
+
       const allMnos = await this.prisma.mnoMaster.findMany({
         select: { operatorName: true, country: true, tadigCode: true },
       });
@@ -178,21 +191,40 @@ export class UploadService {
 
       const expandedRows: Record<string, string>[] = [];
       const seenUnresolved = new Set<string>();
+      let discontinuedSkipped = 0;
       for (const row of rows) {
-        const mnoName = col(row, "mno", "operator");
+        const mnoNameRaw = col(row, "mno", "operator");
         const country = col(row, "country");
-        if (!mnoName || !country) continue;
+        if (!mnoNameRaw || !country) continue;
 
-        const resolution = resolveMno(country, mnoName);
-        if (resolution.status !== "resolved") {
-          const pairKey = `${country}|${mnoName}`;
-          if (!seenUnresolved.has(pairKey)) {
-            seenUnresolved.add(pairKey);
-            unresolvedMnos.push({ mnoName, country });
-          }
+        if (/\[discontinued\]/i.test(mnoNameRaw)) {
+          discontinuedSkipped++;
           continue;
         }
-        const tadig = resolution.tadigCode;
+        const mnoName = mnoNameRaw.replace(/\[discontinued\]/i, "").trim();
+
+        // Prefer the row's own TADIG when it's already valid — it's often
+        // itself resolved from IR.21 by the source spreadsheet's own
+        // lookup formula, so a fuzzy country+name match shouldn't
+        // second-guess it and risk a false "ambiguous"/"not-found" on an
+        // operator whose matrix-file name doesn't closely match
+        // MnoMaster's IR.21-derived name.
+        const rawTadig = col(row, "tadig", "tadig code").trim().toUpperCase();
+        let tadig: string;
+        if (TADIG_REGEX.test(rawTadig)) {
+          tadig = rawTadig;
+        } else {
+          const resolution = resolveMno(country, mnoName);
+          if (resolution.status !== "resolved") {
+            const pairKey = `${country}|${mnoName}`;
+            if (!seenUnresolved.has(pairKey)) {
+              seenUnresolved.add(pairKey);
+              unresolvedMnos.push({ mnoName, country });
+            }
+            continue;
+          }
+          tadig = resolution.tadigCode;
+        }
 
         for (const { display, key } of providerCols) {
           const cellServices = row[key]?.trim();
@@ -201,6 +233,9 @@ export class UploadService {
         }
       }
 
+      if (discontinuedSkipped > 0) {
+        errors.push(`${discontinuedSkipped} row(s) skipped: operator marked "[discontinued]".`);
+      }
       if (unresolvedMnos.length > 0) {
         errors.push(
           `${unresolvedMnos.length} MNO(s) not found in MnoMaster (no TADIG to attach to), skipped: ` +
@@ -732,6 +767,35 @@ export class UploadService {
   private async providerCache(): Promise<Map<string, number>> {
     const providers = await this.prisma.providerMaster.findMany();
     return new Map(providers.map((p) => [p.providerName.toLowerCase(), p.id]));
+  }
+
+  /** Resolves a wide-matrix column header (e.g. "PCCW", "TATAComms") to an
+   * existing ProviderMaster row, dynamically — an exact case-insensitive
+   * name match first, then the same DB-backed alias directory every other
+   * ingestion path uses (ProviderResolverService.matchAlias). A brand-new
+   * wholesale-provider column needs no code change: register it (or an
+   * alias for it) once via Provider Overrides & Normalization, and it
+   * resolves here on the next upload. Deliberately read-only — an
+   * unrecognized column is reported back (matrixProviderColumns'
+   * `unrecognized`), never auto-created, since a stray non-provider
+   * column (e.g. "Notes") would otherwise spawn a junk ProviderMaster row. */
+  private async buildMatrixColumnResolver(): Promise<(headerKey: string) => { providerId: number; display: string } | null> {
+    const providers = await this.prisma.providerMaster.findMany({ select: { id: true, providerName: true } });
+    const byExactLower = new Map(providers.map((p) => [p.providerName.toLowerCase(), p]));
+    const byId = new Map(providers.map((p) => [p.id, p]));
+
+    return (headerKey: string) => {
+      const direct = byExactLower.get(headerKey);
+      if (direct) return { providerId: direct.id, display: direct.providerName };
+
+      const normalized = this.providerResolver.normalize(headerKey);
+      const providerId = normalized ? this.providerResolver.matchAlias(normalized) : undefined;
+      if (providerId) {
+        const p = byId.get(providerId);
+        if (p) return { providerId: p.id, display: p.providerName };
+      }
+      return null;
+    };
   }
 
   /** Resolves a Reach List cell's provider text to a ProviderMaster id.

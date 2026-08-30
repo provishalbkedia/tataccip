@@ -1,44 +1,69 @@
 import { isConfidentSubstringMatch, normalizeCarrierName } from "./provider-normalize";
 import { normalizeCountryToIso3 } from "./country-normalize";
 
-// Wholesale providers that appear as their own column in the "wide"
-// Competitor Coverage matrix format (one column per carrier, one row per
-// MNO) rather than the standard one-row-per-(Provider,MNO,Service) format.
-// Display casing here is what gets fed into the existing provider-alias
-// resolver as the raw "Provider" token — see upload.service.ts.
-export const MATRIX_PROVIDER_COLUMNS = [
-  "A1", "Syniverse", "BICS", "TATAComms", "Vodafone", "CMI", "Arelion",
-  "TIS", "Comfone", "DT", "iBASIS", "Orange", "TNS", "Telefonica",
-];
-
-const MATRIX_PROVIDER_KEYS = new Set(MATRIX_PROVIDER_COLUMNS.map((p) => p.toLowerCase()));
+// The fixed metadata columns a wide Competitor Coverage matrix file always
+// carries, alongside its per-wholesale-provider columns — "MNO" and
+// "Operator" are both accepted for the operator-name column since real
+// exports have used both header conventions. Every column NOT in this set
+// is a provider-column candidate, resolved dynamically against
+// ProviderMaster + the alias directory (see resolveMatrixProviderColumns
+// in upload.service.ts) rather than a hardcoded provider list — a brand
+// new wholesale-provider column (e.g. "PCCW") needs no code change here,
+// only an existing ProviderMaster row or alias to resolve against.
+const MATRIX_METADATA_KEYS = new Set(["mno", "operator", "country", "tadig", "tadig code", "gsma region", "region"]);
 
 export type ReachlistFormat = "STANDARD" | "MATRIX" | "EMPTY";
 
 /** Distinguishes the standard one-row-per-record format (has Provider +
- * TADIG columns) from the wide Competitor Coverage matrix (one column per
- * wholesale provider, no TADIG column at all — TADIG has to be resolved
- * from MnoMaster by (Country, MNO) instead). Row keys are already
- * normalized (trimmed, lowercased) by readFirstSheetAsRows. */
+ * TADIG columns) from the wide Competitor Coverage matrix (one row per
+ * MNO, one column per wholesale provider — TADIG may or may not be given
+ * per row; when absent it's resolved from MnoMaster by (Country, MNO)
+ * instead, see buildMnoResolver). Row keys are already normalized
+ * (trimmed, lowercased) by readFirstSheetAsRows. */
 export function detectReachlistFormat(rowKeys: string[]): ReachlistFormat {
   if (rowKeys.length === 0) return "EMPTY";
   const keys = new Set(rowKeys);
   if (keys.has("provider") && (keys.has("tadig") || keys.has("tadig code"))) return "STANDARD";
-  if (keys.has("mno") && keys.has("country") && [...keys].some((k) => MATRIX_PROVIDER_KEYS.has(k))) {
+  const hasOperatorColumn = keys.has("mno") || keys.has("operator");
+  const hasAtLeastOneProviderColumn = [...keys].some((k) => !MATRIX_METADATA_KEYS.has(k));
+  if (hasOperatorColumn && keys.has("country") && hasAtLeastOneProviderColumn) {
     return "MATRIX";
   }
   return "STANDARD"; // fall through to the existing (and existing error messages) for anything unrecognized
 }
 
+/** Resolves a matrix column header to an existing ProviderMaster row —
+ * exact name match, then the alias directory — or null if the header
+ * isn't a recognized provider at all (e.g. a stray "Notes" column). */
+export type MatrixColumnResolver = (headerKey: string) => { providerId: number; display: string } | null;
+
+export interface ResolvedMatrixColumn {
+  display: string;
+  key: string;
+  providerId: number;
+}
+
 /** The matrix format's provider columns actually present in this file,
- * paired with their canonical display name (used as the raw "Provider"
- * token downstream) and the lowercased row key to read from. */
-export function matrixProviderColumns(rowKeys: string[]): { display: string; key: string }[] {
-  const present = new Set(rowKeys);
-  return MATRIX_PROVIDER_COLUMNS.filter((p) => present.has(p.toLowerCase())).map((p) => ({
-    display: p,
-    key: p.toLowerCase(),
-  }));
+ * resolved dynamically via `resolve` rather than a hardcoded list — any
+ * non-metadata column that doesn't resolve to a known provider is reported
+ * back in `unrecognized` (surfaced in the upload response) instead of
+ * silently ingested or silently dropped. */
+export function matrixProviderColumns(
+  rowKeys: string[],
+  resolve: MatrixColumnResolver,
+): { columns: ResolvedMatrixColumn[]; unrecognized: string[] } {
+  const columns: ResolvedMatrixColumn[] = [];
+  const unrecognized: string[] = [];
+  for (const key of rowKeys) {
+    if (MATRIX_METADATA_KEYS.has(key)) continue;
+    const resolved = resolve(key);
+    if (resolved) {
+      columns.push({ display: resolved.display, key, providerId: resolved.providerId });
+    } else {
+      unrecognized.push(key);
+    }
+  }
+  return { columns, unrecognized };
 }
 
 /** Resolves a matrix row's (Country, MNO) against existing MnoMaster

@@ -19,10 +19,17 @@ import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { UploadService } from "./upload.service";
+import { ReachlistZipBatchService } from "./reachlist-zip-batch.service";
 
 const fileUploadBody = {
   schema: { type: "object", properties: { file: { type: "string", format: "binary" } } },
 };
+
+// A Multi-Carrier Reach List ZIP is a bundle of many carriers' own
+// exports (Excel/xls/PDF/msg) — generous but bounded well under Cloud
+// Run's 32 MiB HTTP/1.1 request cap, since unlike the IR.21 XML path this
+// isn't expected to need the split-upload/http2 treatment.
+const MAX_REACHLIST_ZIP_BYTES = 30 * 1024 * 1024;
 
 // GSMA IR.21 XML batches: up to ~1,000 files (or one .zip containing that
 // many) per request. Bare XML files run a few KB-100KB each, but a .zip
@@ -46,7 +53,10 @@ const xmlBatchUploadBody = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("upload")
 export class UploadController {
-  constructor(private uploadService: UploadService) {}
+  constructor(
+    private uploadService: UploadService,
+    private reachlistZipBatchService: ReachlistZipBatchService,
+  ) {}
 
   @Post("reachlist")
   @Roles(Role.ADMIN)
@@ -60,6 +70,24 @@ export class UploadController {
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
     return this.uploadService.uploadReachlist(file.buffer, file.originalname, user.email, replace === "true");
+  }
+
+  // Multi-Carrier Reach List ZIP Batch Ingestion — a distinct path from
+  // the single-file endpoint above (see reachlist-zip-batch.service.ts's
+  // header comment for why this isn't just an extension of it).
+  @Post("reachlist-zip")
+  @Roles(Role.ADMIN)
+  @ApiConsumes("multipart/form-data")
+  @ApiBody(fileUploadBody)
+  @UseInterceptors(FileInterceptor("file", { storage: memoryStorage(), limits: { fileSize: MAX_REACHLIST_ZIP_BYTES } }))
+  async uploadReachlistZip(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: { email: string },
+    @Body("replace") replace?: string,
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    if (!file.originalname.toLowerCase().endsWith(".zip")) throw new BadRequestException("Expected a .zip archive");
+    return this.reachlistZipBatchService.ingestZip(file.buffer, file.originalname, user.email, replace === "true");
   }
 
   @Post("ir21-xml")

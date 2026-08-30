@@ -63,7 +63,66 @@ export class UploadService {
   // one archive"; a Reach List file is usually one source's subset, not
   // the whole picture.
   async uploadReachlist(buffer: Buffer, filename: string, uploadedBy: string, replace = false): Promise<UploadResult> {
-    let rows = await readFirstSheetAsRows(buffer);
+    const rows = await readFirstSheetAsRows(buffer);
+    return this.ingestReachlistRows(rows, filename, uploadedBy, replace);
+  }
+
+  /** The row-processing core of uploadReachlist(), lifted out unchanged so
+   * the ZIP batch pipeline (reachlist-zip-batch.service.ts) can feed it
+   * already-parsed rows from an Excel/PDF/.msg file extracted out of an
+   * archive, reusing every bit of this logic (dual-format detection,
+   * country normalization, secondaryTadigs-aware MNO lookup, provider
+   * alias resolution, dedup, replace-scoping) rather than re-implementing
+   * any of it. `filename` here is the *inner* file's name (e.g.
+   * "BICS SS7.xlsx" from within a .zip), not the archive's — replace and
+   * sourceFile stay scoped per inner file, consistent with a direct
+   * single-file upload of that same file. */
+  async ingestReachlistRows(
+    rowsIn: Record<string, string>[],
+    filename: string,
+    uploadedBy: string,
+    replace = false,
+  ): Promise<UploadResult> {
+    const raw = await this.ingestReachlistRowsRaw(rowsIn, filename, replace);
+    const status = this.deriveStatus(raw.recordsLoaded, raw.errors.length);
+    const uploadHistory = await this.prisma.uploadHistory.create({
+      data: {
+        filename,
+        uploadedBy,
+        recordsLoaded: raw.recordsLoaded,
+        status,
+        errorLog: raw.errors.length ? raw.errors.join("\n") : null,
+      },
+    });
+
+    return {
+      uploadHistory: this.toHistoryRow(uploadHistory),
+      errors: raw.errors,
+      formatDetected: raw.formatDetected,
+      totalRowsTransposed: raw.totalRowsTransposed,
+      unresolvedMnos: raw.unresolvedMnos.length > 0 ? raw.unresolvedMnos : undefined,
+      recordsReplaced: raw.recordsReplaced,
+    };
+  }
+
+  /** The DB-mutation core of ingestReachlistRows(), without creating an
+   * UploadHistory row — so reachlist-zip-batch.service.ts can call this
+   * once per file extracted from an archive (dozens of times per upload)
+   * and create exactly one combined history row for the whole batch,
+   * instead of flooding Upload History with one row per inner file. */
+  async ingestReachlistRowsRaw(
+    rowsIn: Record<string, string>[],
+    filename: string,
+    replace = false,
+  ): Promise<{
+    recordsLoaded: number;
+    recordsReplaced?: number;
+    errors: string[];
+    formatDetected: "STANDARD_TRANSPOSED" | "COMPETITOR_MATRIX";
+    totalRowsTransposed?: number;
+    unresolvedMnos: { mnoName: string; country: string }[];
+  }> {
+    let rows = rowsIn;
     const services = await this.serviceMap();
     const providerCache = await this.providerCache();
     const errors: string[] = [];
@@ -249,24 +308,13 @@ export class UploadService {
       }
     }
 
-    const status = this.deriveStatus(recordsLoaded, errors.length);
-    const uploadHistory = await this.prisma.uploadHistory.create({
-      data: {
-        filename,
-        uploadedBy,
-        recordsLoaded,
-        status,
-        errorLog: errors.length ? errors.join("\n") : null,
-      },
-    });
-
     return {
-      uploadHistory: this.toHistoryRow(uploadHistory),
+      recordsLoaded,
+      recordsReplaced,
       errors,
       formatDetected: format === "MATRIX" ? "COMPETITOR_MATRIX" : "STANDARD_TRANSPOSED",
       totalRowsTransposed,
-      unresolvedMnos: unresolvedMnos.length > 0 ? unresolvedMnos : undefined,
-      recordsReplaced,
+      unresolvedMnos,
     };
   }
 

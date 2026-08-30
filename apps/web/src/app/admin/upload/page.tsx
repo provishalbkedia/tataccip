@@ -20,12 +20,19 @@ import {
   List,
   ListItem,
   ListItemText,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Tooltip,
   Typography,
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import FolderZipIcon from "@mui/icons-material/FolderZip";
 import LanIcon from "@mui/icons-material/Lan";
+import DownloadIcon from "@mui/icons-material/Download";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -33,7 +40,14 @@ import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { splitZipForUpload } from "@/lib/splitZipForUpload";
-import { BulkXmlUploadResult, DsxBackfillResult, Role, UploadHistoryRow, UploadResult } from "@ccip/shared-types";
+import {
+  BulkXmlUploadResult,
+  DsxBackfillResult,
+  ReachlistZipBatchResult,
+  Role,
+  UploadHistoryRow,
+  UploadResult,
+} from "@ccip/shared-types";
 
 const ADMIN_ONLY_TOOLTIP = "Administrator privileges required to upload datasets.";
 
@@ -442,6 +456,243 @@ function XmlBatchUploadCard({ onUploaded, isAdmin }: { onUploaded: () => void; i
   );
 }
 
+const FILE_STATUS_LABEL: Record<string, string> = {
+  PROCESSED: "Processed",
+  SKIPPED_UNSUPPORTED_FORMAT: "Skipped — unsupported format",
+  SKIPPED_UNRESOLVED_PROVIDER: "Skipped — provider not resolved",
+  SKIPPED_UNPARSEABLE: "Skipped — could not parse",
+  SKIPPED_NO_DATA: "Skipped — no data found",
+};
+
+function downloadUnresolvedCsv(rows: { mnoName: string; country: string }[]) {
+  const csv = ["MNO Name,Country", ...rows.map((r) => `"${r.mnoName.replace(/"/g, '""')}","${r.country.replace(/"/g, '""')}"`)].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "unresolved-operators.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// Multi-Carrier Reach List ZIP Batch Ingestion — a distinct upload path
+// from the single-file Reach List Upload card above: one archive of many
+// carriers' own single-provider reach-list exports (Excel/xls, a
+// Comfone-style PDF customer list, or an Outlook .msg), auto-identified
+// per file rather than read from a shared Provider column. See
+// apps/api/src/upload/reachlist-zip-batch.service.ts for the full design
+// rationale — kept entirely separate from UploadCard/uploadReachlist
+// above so neither upload path can regress the other.
+function ReachlistZipBatchCard({ onUploaded, isAdmin }: { onUploaded: () => void; isAdmin: boolean }) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [replace, setReplace] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const pendingFileRef = React.useRef<File | null>(null);
+  const [result, setResult] = React.useState<ReachlistZipBatchResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function doUpload(file: File) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("replace", String(replace));
+      const res = await api.postForm<ReachlistZipBatchResult>("/upload/reachlist-zip", formData);
+      setResult(res);
+      onUploaded();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  function handleFile(file: File) {
+    if (replace) {
+      pendingFileRef.current = file;
+      setConfirmOpen(true);
+      return;
+    }
+    doUpload(file);
+  }
+
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h6" fontWeight={700}>
+          Multi-Carrier Reach List ZIP Upload (Batch Ingestion)
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Upload a single .zip archive containing several carriers&apos; own reach-list exports at once —
+          each file is identified by its own filename (e.g. &quot;BICS SS7.xlsx&quot;, &quot;Comfone
+          Customer List.pdf&quot;), not a shared Provider column.
+        </Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+          Supports .xlsx, .xls, .pdf (Comfone-style customer list export), and .msg (an Outlook email with
+          a pasted partner table or list). A file whose provider or table structure can&apos;t be
+          confidently recognized is skipped and reported rather than guessed at — see the breakdown below
+          after uploading.
+        </Typography>
+        <FormControlLabel
+          sx={{ display: "block", mb: 1 }}
+          control={
+            <Checkbox
+              checked={replace}
+              onChange={(e) => setReplace(e.target.checked)}
+              disabled={busy || !isAdmin}
+              color="warning"
+            />
+          }
+          label={
+            <Typography variant="body2">
+              <strong>Replace records from these files</strong> — for each file in the archive, deletes
+              existing Reach List records previously loaded from a file with that same name before
+              ingesting (asks for confirmation). Records from files not in this archive are not affected.
+            </Typography>
+          }
+        />
+        <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
+          <span>
+            <Button
+              variant="contained"
+              component="label"
+              color={replace ? "warning" : "primary"}
+              startIcon={<FolderZipIcon />}
+              disabled={busy || !isAdmin}
+            >
+              {busy ? "Uploading..." : "Choose .zip archive"}
+              <input
+                ref={inputRef}
+                type="file"
+                hidden
+                accept=".zip"
+                disabled={!isAdmin}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }}
+              />
+            </Button>
+          </span>
+        </Tooltip>
+
+        <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+          <DialogTitle>Replace records from these files?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              For every file inside this archive, this will permanently delete existing Reach List records
+              whose source file matches that file&apos;s name, before ingesting the new data. Reach List
+              data loaded from any file <em>not</em> in this archive is not touched. This cannot be undone.
+              Continue?
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button
+              color="warning"
+              variant="contained"
+              onClick={() => {
+                setConfirmOpen(false);
+                if (pendingFileRef.current) doUpload(pendingFileRef.current);
+              }}
+            >
+              Replace &amp; Upload
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {result && (
+          <Box sx={{ mt: 2 }}>
+            <Alert severity={result.uploadHistory.status === "SUCCESS" ? "success" : "warning"} sx={{ mb: 2 }}>
+              {result.totalFilesInArchive} file(s) in archive — {result.filesProcessed} processed,{" "}
+              {result.filesSkipped} skipped — {result.totalRecordsLoaded} record(s) loaded.
+            </Alert>
+
+            <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, mb: 2 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700 }}>File</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Carrier / Provider</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }} align="right">Records Loaded</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }} align="right">Unresolved MNOs</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Note</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {result.files.map((f, i) => (
+                    <TableRow key={i}>
+                      <TableCell sx={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.filename}>
+                        {f.filename}
+                      </TableCell>
+                      <TableCell>{f.inferredProvider ?? "—"}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={FILE_STATUS_LABEL[f.status] ?? f.status}
+                          color={f.status === "PROCESSED" ? "success" : "default"}
+                          variant={f.status === "PROCESSED" ? "filled" : "outlined"}
+                        />
+                      </TableCell>
+                      <TableCell align="right">{f.recordsLoaded}</TableCell>
+                      <TableCell align="right">{f.unresolvedMnoCount || "—"}</TableCell>
+                      <TableCell sx={{ maxWidth: 280 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {f.note ?? ""}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {result.unresolvedMnos.length > 0 && (
+              <Alert
+                severity="warning"
+                action={
+                  <Button
+                    size="small"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => downloadUnresolvedCsv(result.unresolvedMnos)}
+                  >
+                    Download CSV
+                  </Button>
+                }
+              >
+                {result.unresolvedMnos.length} operator(s) across this archive weren&apos;t found in the
+                platform (no TADIG to attach to) — add them via IR.21 upload first, or confirm the
+                operator name/country match.
+              </Alert>
+            )}
+
+            {result.errors.length > 0 && (
+              <List dense sx={{ maxHeight: 200, overflow: "auto", bgcolor: "background.default", mt: 1, borderRadius: 1 }}>
+                {result.errors.map((e, i) => (
+                  <ListItem key={i}>
+                    <ListItemText primary={e} primaryTypographyProps={{ variant: "caption" }} />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function DsxBackfillCard({ isAdmin }: { isAdmin: boolean }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<DsxBackfillResult | null>(null);
@@ -554,6 +805,9 @@ export default function UploadPage() {
           </Grid>
           <Grid item xs={12} md={6}>
             <DsxBackfillCard isAdmin={isAdmin} />
+          </Grid>
+          <Grid item xs={12}>
+            <ReachlistZipBatchCard onUploaded={loadHistory} isAdmin={isAdmin} />
           </Grid>
         </Grid>
 

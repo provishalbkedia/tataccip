@@ -297,6 +297,46 @@ export interface UploadResult {
   recordsReplaced?: number;
 }
 
+// Multi-Carrier Reach List ZIP Batch Ingestion — a distinct upload path
+// from the single-file UploadResult above, for a .zip containing several
+// carriers' own reach-list exports (Excel/xls, a Comfone-style PDF
+// customer list, or an Outlook .msg with a pasted table/partner list).
+export interface ReachlistZipFileResult {
+  filename: string;
+  fileType: "EXCEL" | "PDF" | "MSG" | "OTHER";
+  status:
+    | "PROCESSED"
+    | "SKIPPED_UNSUPPORTED_FORMAT"
+    | "SKIPPED_UNRESOLVED_PROVIDER"
+    | "SKIPPED_UNPARSEABLE"
+    | "SKIPPED_NO_DATA";
+  // The carrier this file was matched to (from its filename, or — for
+  // .msg — the sender's name/email domain as a fallback), once resolved
+  // against the platform's existing provider aliases.
+  inferredProvider?: string;
+  recordsLoaded: number;
+  recordsReplaced?: number;
+  errorCount: number;
+  unresolvedMnoCount: number;
+  // Short, file-specific context — e.g. "used filename to infer service:
+  // SCCP, IPX" or "13 rows had a non-standard placeholder code instead of
+  // a TADIG, skipped" — surfaced so an admin can judge how much to trust
+  // this particular file's numbers, not just the batch total.
+  note?: string;
+}
+
+export interface ReachlistZipBatchResult {
+  uploadHistory: UploadHistoryRow;
+  totalFilesInArchive: number;
+  filesProcessed: number;
+  filesSkipped: number;
+  totalRecordsLoaded: number;
+  files: ReachlistZipFileResult[];
+  // Flattened and deduplicated across every file in the archive.
+  unresolvedMnos: { mnoName: string; country: string }[];
+  errors: string[];
+}
+
 // Powers the "Active IR.21 Baseline" banner on the Admin Menu/Dashboard.
 export interface ActiveBaselineInfo {
   active: UploadHistoryRow | null;

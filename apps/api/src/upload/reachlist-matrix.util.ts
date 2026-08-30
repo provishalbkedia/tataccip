@@ -88,3 +88,58 @@ export function buildMnoResolver(
     return { status: "not-found" };
   };
 }
+
+/** Same matching principle as buildMnoResolver, but without a country to
+ * scope the candidate pool — for sources that give only a free-text name
+ * (e.g. a plain bullet list of partner names pasted into an email body,
+ * with no per-line country). Searches the *entire* MnoMaster roster, so
+ * it's inherently higher-collision-risk than the country-scoped resolver;
+ * still only trusts an exact or confident-substring match (never picks
+ * among multiple candidates), but callers should prefer the country-
+ * scoped resolver whenever a country is actually available. */
+export function buildGlobalNameResolver(
+  mnos: { operatorName: string; tadigCode: string }[],
+): (name: string) => { status: "resolved"; tadigCode: string } | { status: "not-found" | "ambiguous" } {
+  const candidates = mnos.map((m) => ({ tadigCode: m.tadigCode, normalizedName: normalizeCarrierName(m.operatorName) }));
+
+  return (name) => {
+    const normalized = normalizeCarrierName(name);
+    if (!normalized) return { status: "not-found" };
+    const exact = candidates.filter((c) => c.normalizedName === normalized);
+    if (exact.length === 1) return { status: "resolved", tadigCode: exact[0].tadigCode };
+    if (exact.length > 1) return { status: "ambiguous" };
+
+    const fuzzy = candidates.filter((c) => isConfidentSubstringMatch(normalized, c.normalizedName));
+    if (fuzzy.length === 1) return { status: "resolved", tadigCode: fuzzy[0].tadigCode };
+    if (fuzzy.length > 1) return { status: "ambiguous" };
+
+    return { status: "not-found" };
+  };
+}
+
+// Filler words that repeat across real filenames/folder-naming conventions
+// but never denote the provider itself — stripped when inferring which
+// carrier a single-provider file belongs to from its own name.
+const FILENAME_STOP_WORDS = new Set([
+  "sccp", "dsx", "grx", "lte", "ss7", "sigtran", "ipx", "reach", "reachlist",
+  "list", "coverage", "old", "full", "destination", "external", "signaling",
+  "signalling", "diameter", "data", "customer", "on-net", "onnet", "and",
+  "new", "updated", "update", "report", "export", "roaming", "service",
+  "matrix", "batch", "2g", "3g", "4g", "5g", "gsm",
+]);
+
+/** A single-provider reach-list file is identified by carrier, not by a
+ * "Provider" column of its own (real examples: "A1 SCCP DSX GRX.xlsx",
+ * "BICS External LTE Destination List.xlsx") — the provider name is the
+ * leading run of filename tokens up to the first one that's a generic
+ * service/descriptor word, a bare year, or a bare number. */
+export function inferProviderNameFromFilename(filename: string): string {
+  const base = filename.replace(/\.(xlsx|xls|pdf|msg)$/i, "");
+  const tokens = base.split(/[\s_\-]+/).filter(Boolean);
+  const nameTokens: string[] = [];
+  for (const t of tokens) {
+    if (FILENAME_STOP_WORDS.has(t.toLowerCase()) || /^\d+$/.test(t)) break;
+    nameTokens.push(t);
+  }
+  return nameTokens.join(" ").trim() || base.trim();
+}

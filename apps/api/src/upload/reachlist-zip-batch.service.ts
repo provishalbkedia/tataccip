@@ -1,0 +1,305 @@
+import { Injectable, Logger } from "@nestjs/common";
+import { UploadStatus } from "@prisma/client";
+import AdmZip from "adm-zip";
+import { ReachlistZipBatchResult, ReachlistZipFileResult } from "@ccip/shared-types";
+import { PrismaService } from "../prisma/prisma.service";
+import { UploadService } from "./upload.service";
+import { ProviderResolverService } from "./provider-resolver.service";
+import { buildGlobalNameResolver, buildMnoResolver, inferProviderNameFromFilename } from "./reachlist-matrix.util";
+import { parseFlexibleExcel, type FlexibleExcelRow, type ServiceFamily } from "./reachlist-excel-flexible.util";
+import { parseComfonePdf } from "./reachlist-pdf.util";
+import { parseReachlistMsg } from "./reachlist-msg.util";
+
+interface RowSource {
+  country: string;
+  operator: string;
+  tadigs: string[];
+  services: ServiceFamily[];
+}
+
+/** Multi-Carrier Reach List ZIP Batch Ingestion — a separate path from the
+ * single-file Reach List Upload (upload.service.ts's uploadReachlist),
+ * built for the real shape carriers actually send: one archive containing
+ * many *single-provider* files, each identified by its own filename
+ * rather than a "Provider" column, in whichever of three formats that
+ * carrier happens to export (Excel/xls, a Comfone-style PDF customer
+ * list, or an Outlook .msg with a pasted partner table or list).
+ *
+ * Every extracted file is ultimately converted to the same
+ * {provider, country, mno, tadig, services} row shape the single-file
+ * path already understands and handed to
+ * UploadService.ingestReachlistRowsRaw() — so provider-alias resolution,
+ * country normalization, secondaryTadigs-aware MNO lookup, and dedup are
+ * all the exact same tested logic, not reimplemented here. This service
+ * owns only: archive extraction, per-format row extraction, and
+ * per-file provider/service inference (since these single-provider files
+ * carry that information in their filename or body, not in a column). */
+@Injectable()
+export class ReachlistZipBatchService {
+  private readonly logger = new Logger(ReachlistZipBatchService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private uploadService: UploadService,
+    private providerResolver: ProviderResolverService,
+  ) {}
+
+  async ingestZip(buffer: Buffer, zipFilename: string, uploadedBy: string, replace: boolean): Promise<ReachlistZipBatchResult> {
+    let zip: AdmZip;
+    try {
+      zip = new AdmZip(buffer);
+    } catch (e) {
+      throw new Error(`"${zipFilename}" could not be read as a .zip archive: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const entries = zip
+      .getEntries()
+      .filter((e) => !e.isDirectory && e.header.size > 0 && !/(^|\/)(__MACOSX|\.DS_Store)/.test(e.entryName));
+
+    const allMnos = await this.prisma.mnoMaster.findMany({ select: { operatorName: true, country: true, tadigCode: true } });
+    const countryResolver = buildMnoResolver(allMnos);
+    const nameOnlyResolver = buildGlobalNameResolver(allMnos);
+
+    const files: ReachlistZipFileResult[] = [];
+    const unresolvedMnos: { mnoName: string; country: string }[] = [];
+    const seenUnresolved = new Set<string>();
+    const errors: string[] = [];
+    let totalRecordsLoaded = 0;
+
+    const addUnresolved = (mnoName: string, country: string) => {
+      const key = `${country}|${mnoName}`;
+      if (seenUnresolved.has(key)) return;
+      seenUnresolved.add(key);
+      unresolvedMnos.push({ mnoName, country });
+    };
+
+    for (const entry of entries) {
+      const filename = entry.entryName.split("/").pop() ?? entry.entryName;
+      const ext = filename.split(".").pop()?.toLowerCase();
+
+      if (ext !== "xlsx" && ext !== "xls" && ext !== "pdf" && ext !== "msg") {
+        files.push({
+          filename,
+          fileType: "OTHER",
+          status: "SKIPPED_UNSUPPORTED_FORMAT",
+          recordsLoaded: 0,
+          errorCount: 0,
+          unresolvedMnoCount: 0,
+          note: `".${ext}" is not one of the supported formats (.xlsx, .xls, .pdf, .msg).`,
+        });
+        continue;
+      }
+
+      try {
+        const fileType = ext === "pdf" ? "PDF" : ext === "msg" ? "MSG" : "EXCEL";
+        const result = await this.processEntry(entry.getData(), filename, ext, fileType, countryResolver, nameOnlyResolver, addUnresolved, replace);
+        files.push(result);
+        totalRecordsLoaded += result.recordsLoaded;
+      } catch (e) {
+        this.logger.error(`Failed processing "${filename}" from "${zipFilename}"`, e instanceof Error ? e.stack : undefined);
+        files.push({
+          filename,
+          fileType: ext === "pdf" ? "PDF" : ext === "msg" ? "MSG" : "EXCEL",
+          status: "SKIPPED_UNPARSEABLE",
+          recordsLoaded: 0,
+          errorCount: 1,
+          unresolvedMnoCount: 0,
+          note: e instanceof Error ? e.message : "Failed to parse this file.",
+        });
+        errors.push(`"${filename}": ${e instanceof Error ? e.message : "failed to parse"}`);
+      }
+    }
+
+    const filesProcessed = files.filter((f) => f.status === "PROCESSED").length;
+    const filesSkipped = files.length - filesProcessed;
+    const status: UploadStatus =
+      totalRecordsLoaded === 0
+        ? UploadStatus.FAILED
+        : filesSkipped > 0 || unresolvedMnos.length > 0
+          ? UploadStatus.PARTIAL
+          : UploadStatus.SUCCESS;
+
+    const uploadHistory = await this.prisma.uploadHistory.create({
+      data: {
+        filename: zipFilename,
+        uploadedBy,
+        recordsLoaded: totalRecordsLoaded,
+        status,
+        errorLog: errors.length ? errors.join("\n") : null,
+      },
+    });
+
+    return {
+      uploadHistory: {
+        id: uploadHistory.id,
+        filename: uploadHistory.filename,
+        uploadTime: uploadHistory.uploadTime.toISOString(),
+        uploadedBy: uploadHistory.uploadedBy,
+        recordsLoaded: uploadHistory.recordsLoaded,
+        status: uploadHistory.status,
+        errorLog: uploadHistory.errorLog,
+        isCurrentActive: uploadHistory.isCurrentActive,
+        mnoCount: null,
+      },
+      totalFilesInArchive: entries.length,
+      filesProcessed,
+      filesSkipped,
+      totalRecordsLoaded,
+      files,
+      unresolvedMnos,
+      errors,
+    };
+  }
+
+  private async processEntry(
+    buffer: Buffer,
+    filename: string,
+    ext: string,
+    fileType: "EXCEL" | "PDF" | "MSG",
+    countryResolver: ReturnType<typeof buildMnoResolver>,
+    nameOnlyResolver: ReturnType<typeof buildGlobalNameResolver>,
+    addUnresolved: (mnoName: string, country: string) => void,
+    replace: boolean,
+  ): Promise<ReachlistZipFileResult> {
+    if (fileType === "EXCEL") {
+      const parsed = await parseFlexibleExcel(buffer, ext === "xls", filename);
+      if (!parsed.headerFound) {
+        return this.skip(filename, fileType, "SKIPPED_UNPARSEABLE", "Could not find a recognizable header row (Country/Operator/TADIG/Service) anywhere in the first 40 rows — needs manual review.");
+      }
+      const provider = this.inferProvider(filename);
+      if (!provider) {
+        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameFromFilename(filename)}" (from the filename) to a known provider.`);
+      }
+      const sources: RowSource[] = parsed.rows.map((r: FlexibleExcelRow) => ({ country: r.country, operator: r.operator, tadigs: r.tadigs, services: r.services }));
+      const note = parsed.usedFilenameServiceFallback
+        ? parsed.filenameFallbackFamilies.length > 0
+          ? `Used filename to infer service: ${parsed.filenameFallbackFamilies.join(", ")}.`
+          : "No service indicator found in the sheet or filename — rows without a resolvable service were skipped."
+        : undefined;
+      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
+    }
+
+    if (fileType === "PDF") {
+      const parsed = await parseComfonePdf(buffer);
+      if (parsed.rows.length === 0) {
+        return this.skip(filename, fileType, "SKIPPED_NO_DATA", "No TADIG-anchored rows recognized in the PDF text — this parser is built for the Comfone customer-list export layout specifically.");
+      }
+      const provider = this.inferProvider(filename);
+      if (!provider) {
+        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameFromFilename(filename)}" (from the filename) to a known provider.`);
+      }
+      const sources: RowSource[] = parsed.rows.map((r) => ({ country: r.country, operator: "", tadigs: [r.tadig], services: r.services }));
+      const note = parsed.skippedNonStandardCodeLines > 0
+        ? `${parsed.skippedNonStandardCodeLines} row(s) had a non-standard placeholder code instead of a real TADIG, skipped.`
+        : undefined;
+      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
+    }
+
+    // MSG
+    const parsed = parseReachlistMsg(buffer);
+    if (parsed.tadigRows.length === 0 && parsed.nameOnlyRows.length === 0) {
+      return this.skip(filename, fileType, "SKIPPED_NO_DATA", "No reach-list data found in the message body — likely correspondence only (e.g. a request still being clarified), not a data submission.");
+    }
+    const provider = this.inferProvider(filename) ?? this.inferProvider(parsed.senderName ?? "") ?? this.inferProviderFromEmailDomain(parsed.senderEmail);
+    if (!provider) {
+      return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match a provider from the filename, sender name ("${parsed.senderName ?? "unknown"}"), or sender email domain.`);
+    }
+
+    const sources: RowSource[] = parsed.tadigRows.map((r) => ({ country: r.country, operator: "", tadigs: [r.tadig], services: r.services }));
+    let nameOnlyResolved = 0;
+    for (const row of parsed.nameOnlyRows) {
+      const resolution = nameOnlyResolver(row.operatorNameCandidate);
+      if (resolution.status === "resolved") {
+        sources.push({ country: "", operator: row.operatorNameCandidate, tadigs: [resolution.tadigCode], services: row.services });
+        nameOnlyResolved++;
+      } else {
+        addUnresolved(row.operatorNameCandidate, "(no country given — free-text partner list)");
+      }
+    }
+    const note = parsed.nameOnlyRows.length > 0
+      ? `Matched ${nameOnlyResolved} of ${parsed.nameOnlyRows.length} free-text partner names to an existing operator (no per-line country given in the message).`
+      : undefined;
+    return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
+  }
+
+  private async ingest(
+    sources: RowSource[],
+    provider: string,
+    filename: string,
+    replace: boolean,
+    fileType: "EXCEL" | "PDF" | "MSG",
+    countryResolver: ReturnType<typeof buildMnoResolver>,
+    addUnresolved: (mnoName: string, country: string) => void,
+    note?: string,
+  ): Promise<ReachlistZipFileResult> {
+    const synthetic: Record<string, string>[] = [];
+    for (const row of sources) {
+      if (row.services.length === 0) continue;
+      const servicesStr = row.services.join(",");
+
+      if (row.tadigs.length > 0) {
+        for (const tadig of row.tadigs) {
+          synthetic.push({ provider, country: row.country, mno: row.operator, tadig, services: servicesStr });
+        }
+        continue;
+      }
+      // No TADIG on this row at all (several real Excel formats never
+      // carry one, e.g. TIS's exports) — resolve via country + operator
+      // name against the existing operator roster instead.
+      if (!row.country || !row.operator) continue;
+      const resolution = countryResolver(row.country, row.operator);
+      if (resolution.status !== "resolved") {
+        addUnresolved(row.operator, row.country);
+        continue;
+      }
+      synthetic.push({ provider, country: row.country, mno: row.operator, tadig: resolution.tadigCode, services: servicesStr });
+    }
+
+    if (synthetic.length === 0) {
+      return this.skip(filename, fileType, "SKIPPED_NO_DATA", note ?? "No rows resolved to a known operator.");
+    }
+
+    const raw = await this.uploadService.ingestReachlistRowsRaw(synthetic, filename, replace);
+    return {
+      filename,
+      fileType,
+      status: "PROCESSED",
+      inferredProvider: provider,
+      recordsLoaded: raw.recordsLoaded,
+      recordsReplaced: raw.recordsReplaced,
+      errorCount: raw.errors.length,
+      unresolvedMnoCount: raw.unresolvedMnos.length,
+      note,
+    };
+  }
+
+  private skip(
+    filename: string,
+    fileType: "EXCEL" | "PDF" | "MSG",
+    status: "SKIPPED_UNPARSEABLE" | "SKIPPED_UNRESOLVED_PROVIDER" | "SKIPPED_NO_DATA",
+    note: string,
+  ): ReachlistZipFileResult {
+    return { filename, fileType, status, recordsLoaded: 0, errorCount: 0, unresolvedMnoCount: 0, note };
+  }
+
+  /** Only returns a provider when the alias resolver is already confident
+   * — this is the same exact/substring-match logic every other ingestion
+   * path trusts (see ProviderResolverService), just consulted here first
+   * so an unrecognized filename gets reported rather than silently
+   * spawning a new ProviderMaster row from a guess. */
+  private inferProvider(candidate: string): string | null {
+    const cleaned = inferProviderNameFromFilename(candidate);
+    if (!cleaned) return null;
+    const normalized = this.providerResolver.normalize(cleaned);
+    if (!normalized) return null;
+    const providerId = this.providerResolver.matchAlias(normalized);
+    return providerId ? cleaned : null;
+  }
+
+  private inferProviderFromEmailDomain(email: string | null): string | null {
+    if (!email) return null;
+    const domain = email.split("@")[1]?.split(".")[0];
+    if (!domain) return null;
+    return this.inferProvider(domain);
+  }
+}

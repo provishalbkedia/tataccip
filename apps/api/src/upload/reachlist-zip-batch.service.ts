@@ -81,7 +81,7 @@ export class ReachlistZipBatchService {
       .filter((e) => !e.isDirectory && e.header.size > 0 && !/(^|\/)(__MACOSX|\.DS_Store)/.test(e.entryName));
 
     const [allMnos, allProviders] = await Promise.all([
-      this.prisma.mnoMaster.findMany({ select: { operatorName: true, country: true, tadigCode: true } }),
+      this.prisma.mnoMaster.findMany({ select: { id: true, operatorName: true, country: true, tadigCode: true } }),
       this.prisma.providerMaster.findMany({ select: { id: true, providerName: true } }),
     ]);
     const countryResolver = buildMnoResolver(allMnos);
@@ -323,6 +323,7 @@ export class ReachlistZipBatchService {
       // the real count is what this method's own country+name resolution
       // above just gave up on.
       unresolvedMnoCount: unresolvedInThisFile + raw.unresolvedMnos.length + extraUnresolvedCount,
+      pendingNormalizationCount: raw.pendingNormalizationCount > 0 ? raw.pendingNormalizationCount : undefined,
       note,
     };
   }

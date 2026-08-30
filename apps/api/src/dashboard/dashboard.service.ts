@@ -17,6 +17,7 @@ export class DashboardService {
       ipx,
       reachProviderIds,
       ir21ProviderIds,
+      pendingMnoNormalizationCount,
     ] = await Promise.all([
       this.prisma.mnoMaster.count(),
       this.prisma.mnoMaster.count({ where: { connectivity: { isNot: null } } }),
@@ -27,6 +28,7 @@ export class DashboardService {
       this.prisma.ir21Connectivity.count({ where: { service: { serviceName: "IPX" } } }),
       this.prisma.providerReachlist.findMany({ select: { providerId: true }, distinct: ["providerId"] }),
       this.prisma.ir21Connectivity.findMany({ select: { providerId: true }, distinct: ["providerId"] }),
+      this.prisma.mnoNormalizationAudit.count({ where: { matchStatus: "PENDING_REVIEW" } }),
     ]);
 
     // ProviderMaster.count() alone counts every row ever created, including
@@ -42,6 +44,7 @@ export class DashboardService {
     return {
       totalMnos: authoritativeMnoCount,
       reachlistOnlyMnoCount: rawMnoCount - authoritativeMnoCount,
+      pendingMnoNormalizationCount,
       totalProviders,
       totalConnections: totalIr21 + totalReach,
       sccpCount: sccp,

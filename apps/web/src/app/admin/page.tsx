@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Box, Card, CardActionArea, CardContent, Grid, Typography } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RuleIcon from "@mui/icons-material/Rule";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 import TuneIcon from "@mui/icons-material/Tune";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
@@ -25,6 +26,12 @@ const SECTIONS = [
     title: "Unmapped Variants Queue",
     description: "Resolve raw carrier-name strings encountered during ingestion that didn't match any known alias.",
     icon: <RuleIcon fontSize="large" color="primary" />,
+  },
+  {
+    href: "/admin/mno-normalization",
+    title: "Unresolved Reach List Aliases",
+    description: "Map Reach List rows that didn't match an existing IR.21 MNO to the correct operator — GSMA IR.21 stays the sole source of new MNO records.",
+    icon: <FactCheckIcon fontSize="large" color="primary" />,
   },
   {
     href: "/admin/overrides",

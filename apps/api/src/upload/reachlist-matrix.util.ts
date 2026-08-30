@@ -86,14 +86,14 @@ export function matrixProviderColumns(
  * admin to resolve (via secondaryTadigs or a fresh IR.21 upload), not
  * silently attached to the wrong existing MnoMaster row. */
 export function buildMnoResolver(
-  mnos: { operatorName: string; country: string; tadigCode: string }[],
-): (country: string, mnoName: string) => { status: "resolved"; tadigCode: string } | { status: "not-found" | "ambiguous" } {
-  const byCountry = new Map<string, { tadigCode: string; normalizedName: string }[]>();
+  mnos: { id: number; operatorName: string; country: string; tadigCode: string }[],
+): (country: string, mnoName: string) => { status: "resolved"; tadigCode: string; mnoId: number } | { status: "not-found" | "ambiguous" } {
+  const byCountry = new Map<string, { id: number; tadigCode: string; normalizedName: string }[]>();
   for (const m of mnos) {
     const iso3 = normalizeCountryToIso3(m.country);
     if (!iso3) continue;
     if (!byCountry.has(iso3)) byCountry.set(iso3, []);
-    byCountry.get(iso3)!.push({ tadigCode: m.tadigCode, normalizedName: normalizeCarrierName(m.operatorName) });
+    byCountry.get(iso3)!.push({ id: m.id, tadigCode: m.tadigCode, normalizedName: normalizeCarrierName(m.operatorName) });
   }
 
   return (country, mnoName) => {
@@ -103,11 +103,11 @@ export function buildMnoResolver(
 
     const normalized = normalizeCarrierName(mnoName);
     const exact = candidates.filter((c) => c.normalizedName === normalized);
-    if (exact.length === 1) return { status: "resolved", tadigCode: exact[0].tadigCode };
+    if (exact.length === 1) return { status: "resolved", tadigCode: exact[0].tadigCode, mnoId: exact[0].id };
     if (exact.length > 1) return { status: "ambiguous" };
 
     const fuzzy = candidates.filter((c) => isConfidentSubstringMatch(normalized, c.normalizedName));
-    if (fuzzy.length === 1) return { status: "resolved", tadigCode: fuzzy[0].tadigCode };
+    if (fuzzy.length === 1) return { status: "resolved", tadigCode: fuzzy[0].tadigCode, mnoId: fuzzy[0].id };
     if (fuzzy.length > 1) return { status: "ambiguous" };
 
     return { status: "not-found" };

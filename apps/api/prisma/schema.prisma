@@ -111,6 +111,7 @@ model MnoMaster {
   discrepancies    DataDiscrepancy[]
   connectivity     MnoMasterConnectivity?
   providerOverrides MnoProviderOverride[]
+  normalizationAudits MnoNormalizationAudit[]
 
   @@index([operatorName])
   @@index([country])
@@ -171,6 +172,7 @@ model ProviderMaster {
   aliases          ProviderAlias[]
   unmappedVariants UnmappedProviderVariant[]
   overrides        MnoProviderOverride[]
+  normalizationAudits MnoNormalizationAudit[]
 }
 
 // A known raw-string spelling of a provider name (from an IR.21 XML export,
@@ -209,6 +211,51 @@ model UnmappedProviderVariant {
   resolvedProvider ProviderMaster? @relation(fields: [resolvedProviderId], references: [id])
 
   @@index([status])
+}
+
+enum MnoMatchStatus {
+  EXACT_TADIG
+  ALIAS_MATCHED
+  PENDING_REVIEW
+  MANUALLY_OVERRIDDEN
+}
+
+// GSMA IR.21 is the platform's sole authoritative source for new MNO
+// records — Reach List ingestion no longer auto-creates a MnoMaster row
+// for a TADIG it doesn't already recognize (see
+// UploadService.ingestReachlistRowsRaw). A row that doesn't match an
+// existing MnoMaster by exact TADIG (tadigCode or secondaryTadigs), or by
+// a confident country+name fuzzy match, is queued here instead —
+// ALIAS_MATCHED for the fuzzy-matched case (a paper trail for a judgment
+// call, since it wasn't an exact TADIG hit) and PENDING_REVIEW for a
+// genuine miss — so an admin can map it to the right existing MnoMaster,
+// or confirm it's a genuinely new operator that needs its own IR.21
+// upload, rather than the ingestion pipeline silently inflating the MNO
+// count with an unverified reach-list citation.
+model MnoNormalizationAudit {
+  id              String         @id @default(uuid())
+  rawOperatorName String         @default("")
+  rawTadigCode    String         @default("")
+  country         String         @default("")
+  providerId      Int
+  // Every service (SCCP/DSX/IPX) this raw row has declared, across every
+  // upload that hit this same unresolved combination — not just the most
+  // recent one, so resolving it later backfills every service, not one.
+  affectedServices String[]      @default([])
+  affectedFiles     String[]     @default([])
+  occurrenceCount   Int          @default(1)
+  matchStatus       MnoMatchStatus @default(PENDING_REVIEW)
+  canonicalMnoId    Int?
+  reasonNote        String?
+  updatedBy         String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  provider     ProviderMaster @relation(fields: [providerId], references: [id])
+  canonicalMno MnoMaster?     @relation(fields: [canonicalMnoId], references: [id])
+
+  @@unique([providerId, rawTadigCode, rawOperatorName])
+  @@index([matchStatus])
 }
 
 // An admin-pinned (MNO, service) -> provider mapping that outlives normal

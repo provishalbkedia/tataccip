@@ -11,6 +11,7 @@ import HubIcon from "@mui/icons-material/Hub";
 import RouterIcon from "@mui/icons-material/Router";
 import LanIcon from "@mui/icons-material/Lan";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import RuleIcon from "@mui/icons-material/Rule";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
@@ -104,7 +105,7 @@ export default function DashboardPage() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2}>
           {!metrics
-            ? Array.from({ length: 6 }).map((_, i) => (
+            ? Array.from({ length: 7 }).map((_, i) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={i}>
                   <Skeleton variant="rounded" height={110} />
                 </Grid>
@@ -157,6 +158,14 @@ export default function DashboardPage() {
               color: "#0B6FBF",
               href: "/search/provider?service=IPX&source=IR21",
               tooltip: "IPX (GRX/data roaming) relationships declared specifically in GSMA IR.21 documents. Reach List coverage for this service is tracked separately — see Provider Search with the Reach List source selected.",
+            },
+            {
+              label: "Unresolved Reach List Aliases",
+              key: "pendingMnoNormalizationCount" as const,
+              icon: <RuleIcon fontSize="large" />,
+              color: "#EF6C00",
+              href: "/admin/mno-normalization",
+              tooltip: "Reach List rows whose operator/TADIG didn't match an existing IR.21 MNO by exact TADIG or a confident name match. Reach List ingestion no longer auto-creates a new MNO for these — an admin needs to map each one to the right existing operator (or confirm it's genuinely new and needs its own IR.21 upload).",
             },
               ].map((tile) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={tile.key}>

@@ -10,6 +10,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
 import { ProviderOverrideModule } from "./provider-override/provider-override.module";
 import { UserModule } from "./user/user.module";
+import { MnoNormalizationModule } from "./mno-normalization/mno-normalization.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UserModule } from "./user/user.module";
     ProviderAliasModule,
     ProviderOverrideModule,
     UserModule,
+    MnoNormalizationModule,
   ],
   controllers: [HealthController],
 })

@@ -111,6 +111,13 @@ export interface DashboardMetrics {
   // under a different spelling, so folding these into the MNO count would
   // risk inflating it with duplicates rather than genuinely new operators.
   reachlistOnlyMnoCount: number;
+  // Reach List rows queued in MnoNormalizationAudit (matchStatus
+  // PENDING_REVIEW) because their TADIG matched neither an existing
+  // MnoMaster nor a confident country+name match. See
+  // GET /mno-normalization/pending -- Reach List ingestion no longer
+  // auto-creates a new MnoMaster for these, so this count only grows
+  // until an admin resolves each one.
+  pendingMnoNormalizationCount: number;
   totalProviders: number;
   totalConnections: number;
   sccpCount: number;
@@ -307,6 +314,11 @@ export interface UploadResult {
   // ProviderReachlist rows sourced from this same filename were deleted
   // before this upload's records were ingested.
   recordsReplaced?: number;
+  // Rows whose TADIG matched neither an existing MnoMaster (exact or via
+  // secondaryTadigs) nor a confident country+name match -- queued in
+  // MnoNormalizationAudit for admin review instead of auto-creating a new
+  // MnoMaster row. See GET /mno-normalization/pending.
+  pendingNormalizationCount?: number;
 }
 
 // Multi-Carrier Reach List ZIP Batch Ingestion — a distinct upload path
@@ -330,6 +342,9 @@ export interface ReachlistZipFileResult {
   recordsReplaced?: number;
   errorCount: number;
   unresolvedMnoCount: number;
+  // Rows queued in MnoNormalizationAudit because their TADIG matched
+  // neither an existing MnoMaster nor a confident country+name match.
+  pendingNormalizationCount?: number;
   // Short, file-specific context — e.g. "used filename to infer service:
   // SCCP, IPX" or "13 rows had a non-standard placeholder code instead of
   // a TADIG, skipped" — surfaced so an admin can judge how much to trust
@@ -578,4 +593,41 @@ export interface OperatorCompareMatrixResponse {
     dsx: OperatorCompareMatrixProviderRow[];
     ipx: OperatorCompareMatrixProviderRow[];
   };
+}
+
+// Reach List MNO Normalization — GSMA IR.21 is the platform's sole
+// authoritative source for new MNO records, so a Reach List row whose
+// TADIG doesn't match an existing MnoMaster (exact, or a confident
+// country+name fuzzy match) is queued here instead of auto-creating a new
+// MnoMaster row. See UploadService.recordNormalizationAudit /
+// MnoNormalizationService.
+export type MnoMatchStatus = "EXACT_TADIG" | "ALIAS_MATCHED" | "PENDING_REVIEW" | "MANUALLY_OVERRIDDEN";
+
+export interface MnoNormalizationAuditRow {
+  id: string;
+  rawOperatorName: string;
+  rawTadigCode: string;
+  country: string;
+  providerId: number;
+  providerName: string;
+  affectedServices: string[];
+  affectedFiles: string[];
+  occurrenceCount: number;
+  matchStatus: MnoMatchStatus;
+  canonicalMnoId: number | null;
+  canonicalMnoName: string | null;
+  canonicalMnoTadig: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolveMnoNormalizationRequest {
+  auditId: string;
+  mnoId: number;
+}
+
+export interface ResolveMnoNormalizationResult {
+  audit: MnoNormalizationAuditRow;
+  recordsCreated: number;
 }

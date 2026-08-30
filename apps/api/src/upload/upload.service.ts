@@ -125,6 +125,7 @@ export class UploadService {
       totalRowsTransposed: raw.totalRowsTransposed,
       unresolvedMnos: raw.unresolvedMnos.length > 0 ? raw.unresolvedMnos : undefined,
       recordsReplaced: raw.recordsReplaced,
+      pendingNormalizationCount: raw.pendingNormalizationCount > 0 ? raw.pendingNormalizationCount : undefined,
     };
   }
 
@@ -144,6 +145,7 @@ export class UploadService {
     formatDetected: "STANDARD_TRANSPOSED" | "COMPETITOR_MATRIX";
     totalRowsTransposed?: number;
     unresolvedMnos: { mnoName: string; country: string }[];
+    pendingNormalizationCount: number;
   }> {
     let rows = rowsIn;
     const services = await this.serviceMap();
@@ -169,6 +171,16 @@ export class UploadService {
     const format = detectReachlistFormat(Object.keys(rows[0] ?? {}));
     let totalRowsTransposed: number | undefined;
     const unresolvedMnos: { mnoName: string; country: string }[] = [];
+    let pendingNormalizationCount = 0;
+
+    // Shared by the MATRIX pre-pass below (resolving a blank-TADIG row by
+    // country+name) and the per-row loop further down (the fallback for a
+    // TADIG that doesn't match anything — see the MnoNormalizationAudit
+    // comment there for why this exists at all).
+    const allMnos = await this.prisma.mnoMaster.findMany({
+      select: { id: true, operatorName: true, country: true, tadigCode: true },
+    });
+    const resolveMno = buildMnoResolver(allMnos);
 
     if (format === "MATRIX") {
       const resolveColumnProvider = await this.buildMatrixColumnResolver();
@@ -184,10 +196,6 @@ export class UploadService {
         );
       }
 
-      const allMnos = await this.prisma.mnoMaster.findMany({
-        select: { operatorName: true, country: true, tadigCode: true },
-      });
-      const resolveMno = buildMnoResolver(allMnos);
 
       const expandedRows: Record<string, string>[] = [];
       const seenUnresolved = new Set<string>();
@@ -279,44 +287,14 @@ export class UploadService {
         continue;
       }
 
-      // A reach list may quote a legacy/secondary TADIG for an operator we
-      // already track under a different primary TADIG (see
-      // MnoMaster.secondaryTadigs) — resolve against both so the row
-      // attaches to the existing operator instead of spawning a duplicate
-      // MnoMaster. Deliberately a plain find + create rather than an
-      // upsert keyed on tadigCode: an upsert would miss a match found only
-      // via secondaryTadigs and create a spurious new row for it.
-      let mno = await this.prisma.mnoMaster.findFirst({
-        where: { OR: [{ tadigCode: tadig }, { secondaryTadigs: { has: tadig } }] },
-      });
-
-      if (mno) {
-        const existingIso3 = normalizeCountryToIso3(mno.country);
-        const uploadIso3 = normalizeCountryToIso3(country);
-        if (uploadIso3 && existingIso3 && existingIso3 !== uploadIso3) {
-          errors.push(
-            `Row ${rowNum}: country mismatch for TADIG "${tadig}" (existing="${mno.country}", upload="${country}").`,
-          );
-        }
-      } else {
-        mno = await this.prisma.mnoMaster.create({
-          data: {
-            operatorName: mnoName || tadig,
-            country: country || "UNKNOWN",
-            mcc: "000",
-            mnc: "00",
-            countryCode: country.slice(0, 2).toUpperCase() || "XX",
-            tadigCode: tadig,
-          },
-        });
-      }
-
       // A single "Provider" cell can list more than one carrier (e.g.
       // "Arelion, CMI, BBIS") — split before resolving so each becomes its
       // own ProviderReachlist row against its own canonical provider,
       // rather than one row against a bogus composite ProviderMaster.
       // Placeholder tokens ("None", "N/A") are dropped here rather than
       // resolved — otherwise they'd auto-create their own junk provider.
+      // Parsed before MNO resolution below because an unresolved MNO still
+      // needs a providerId to file its MnoNormalizationAudit entry under.
       const providerTokens = splitCompositeProviderNames(providerRaw).filter((token) => {
         if (isJunkProviderName(this.providerResolver.normalize(token))) {
           errors.push(`Row ${rowNum}: Provider token "${token}" is a placeholder, not a real provider, skipped.`);
@@ -329,8 +307,77 @@ export class UploadService {
         continue;
       }
 
+      // GSMA IR.21 is the platform's sole authoritative source for new MNO
+      // records — a reach-list TADIG that doesn't match an existing
+      // MnoMaster no longer spawns a bare placeholder row. A reach list may
+      // quote a legacy/secondary TADIG for an operator already tracked
+      // under a different primary TADIG (see MnoMaster.secondaryTadigs),
+      // so that's checked first; if that misses too, a confident
+      // country+name match against an existing operator is tried next (the
+      // row's own TADIG might just be a typo or an unregistered legacy
+      // code — same resolver the wide-matrix format already uses). Only
+      // when neither finds anything is the row queued in
+      // MnoNormalizationAudit for an admin to map manually, rather than
+      // guessed at or silently dropped.
+      let mno = await this.prisma.mnoMaster.findFirst({
+        where: { OR: [{ tadigCode: tadig }, { secondaryTadigs: { has: tadig } }] },
+      });
+      let matchStatus: "EXACT_TADIG" | "ALIAS_MATCHED" = "EXACT_TADIG";
+
+      if (mno) {
+        const existingIso3 = normalizeCountryToIso3(mno.country);
+        const uploadIso3 = normalizeCountryToIso3(country);
+        if (uploadIso3 && existingIso3 && existingIso3 !== uploadIso3) {
+          errors.push(
+            `Row ${rowNum}: country mismatch for TADIG "${tadig}" (existing="${mno.country}", upload="${country}").`,
+          );
+        }
+      } else if (country && mnoName) {
+        const nameResolution = resolveMno(country, mnoName);
+        if (nameResolution.status === "resolved") {
+          mno = await this.prisma.mnoMaster.findUnique({ where: { id: nameResolution.mnoId } });
+          matchStatus = "ALIAS_MATCHED";
+        }
+      }
+
+      if (!mno) {
+        for (const providerToken of providerTokens) {
+          const providerId = await this.resolveProvider(providerToken, providerCache);
+          await this.recordNormalizationAudit({
+            rawOperatorName: mnoName,
+            rawTadigCode: tadig,
+            country,
+            providerId,
+            services: validServiceTokens,
+            sourceFile: filename,
+            matchStatus: "PENDING_REVIEW",
+          });
+        }
+        pendingNormalizationCount++;
+        errors.push(
+          `Row ${rowNum}: TADIG "${tadig}" (operator "${mnoName || tadig}") not found in MnoMaster and no ` +
+            `confident name match — queued for admin review under Unresolved Reach List Aliases, skipped.`,
+        );
+        continue;
+      }
+
       for (const providerToken of providerTokens) {
         const providerId = await this.resolveProvider(providerToken, providerCache);
+        if (matchStatus === "ALIAS_MATCHED") {
+          // Not a hard failure — the row still ingests below — but a fuzzy
+          // match is a judgment call worth a paper trail, unlike an exact
+          // TADIG hit which needs none.
+          await this.recordNormalizationAudit({
+            rawOperatorName: mnoName,
+            rawTadigCode: tadig,
+            country,
+            providerId,
+            services: validServiceTokens,
+            sourceFile: filename,
+            matchStatus: "ALIAS_MATCHED",
+            canonicalMnoId: mno.id,
+          });
+        }
 
         for (const serviceName of validServiceTokens) {
           // Keyed on the resolved mno.id, not the raw uploaded tadig string
@@ -373,7 +420,58 @@ export class UploadService {
       formatDetected: format === "MATRIX" ? "COMPETITOR_MATRIX" : "STANDARD_TRANSPOSED",
       totalRowsTransposed,
       unresolvedMnos,
+      pendingNormalizationCount,
     };
+  }
+
+  /** Upserts a MnoNormalizationAudit row for one unresolved or fuzzy-matched
+   * Reach List (operator, TADIG, provider) combination, keyed on
+   * (providerId, rawTadigCode, rawOperatorName) so a repeat upload of the
+   * same unresolved data accumulates onto one row (occurrenceCount,
+   * affectedServices, affectedFiles) instead of growing a duplicate every
+   * time. Never overwrites a row an admin has already resolved
+   * (MANUALLY_OVERRIDDEN) — a stale re-upload shouldn't undo that. */
+  private async recordNormalizationAudit(params: {
+    rawOperatorName: string;
+    rawTadigCode: string;
+    country: string;
+    providerId: number;
+    services: string[];
+    sourceFile: string;
+    matchStatus: "PENDING_REVIEW" | "ALIAS_MATCHED";
+    canonicalMnoId?: number;
+  }): Promise<void> {
+    const { rawOperatorName, rawTadigCode, country, providerId, services, sourceFile, matchStatus, canonicalMnoId } = params;
+    const existing = await this.prisma.mnoNormalizationAudit.findUnique({
+      where: { providerId_rawTadigCode_rawOperatorName: { providerId, rawTadigCode, rawOperatorName } },
+    });
+    if (existing) {
+      if (existing.matchStatus === "MANUALLY_OVERRIDDEN") return;
+      await this.prisma.mnoNormalizationAudit.update({
+        where: { id: existing.id },
+        data: {
+          occurrenceCount: { increment: 1 },
+          affectedServices: { set: Array.from(new Set([...existing.affectedServices, ...services])) },
+          affectedFiles: { set: Array.from(new Set([...existing.affectedFiles, sourceFile])) },
+          matchStatus,
+          country: country || existing.country,
+          canonicalMnoId: canonicalMnoId ?? existing.canonicalMnoId,
+        },
+      });
+      return;
+    }
+    await this.prisma.mnoNormalizationAudit.create({
+      data: {
+        rawOperatorName,
+        rawTadigCode,
+        country,
+        providerId,
+        affectedServices: services,
+        affectedFiles: [sourceFile],
+        matchStatus,
+        canonicalMnoId,
+      },
+    });
   }
 
   /** Ingests a batch of GSMA IR.21 XML files (each may itself be a .zip of

@@ -733,7 +733,7 @@ export class UploadService {
       sccpPointCodes: parsed.sccpPointCodes,
       grxIpxProviders: parsed.grxIpxProviders,
       lteIpxProviders: parsed.lteIpxProviders,
-      asNumber: parsed.asNumber,
+      asNumbers: parsed.asNumbers,
       interPmnIpRanges: parsed.interPmnIpRanges,
       diameterEdgeAgentFqdn: parsed.diameterEdgeAgentFqdn,
       authoritativeDnsIps: parsed.authoritativeDnsIps,

@@ -18,12 +18,14 @@ export interface ParsedIr21Document {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
-  // The operator's own AS Number for BGP peering with its GRX/IPX
-  // carrier(s) — declared once per MNO in the GRX/IPX routing section, not
-  // per-provider. Tag naming varies across schema versions/vendor tooling
-  // like everything else this parser reads (see the class doc comment);
-  // matched defensively rather than against one exact tag.
-  asNumber: string | null;
+  // The operator's own AS Number(s) for BGP peering with its GRX/IPX
+  // carrier(s) — an MNO can (and often does) declare more than one (e.g. a
+  // real Claro Brasil file lists both 22085 and 64580 under "MNO's ASNs
+  // for GRX/IPX"), so this is a list, not a single value. Tag naming
+  // varies across schema versions/vendor tooling like everything else this
+  // parser reads (see the class doc comment); matched defensively rather
+  // than against one exact tag.
+  asNumbers: string[];
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];
@@ -174,7 +176,7 @@ export class Ir21XmlParserService {
       sccpPointCodes: sccp.pointCodes,
       grxIpxProviders: collectProviderNames(grxScope, [/^providername$/i]),
       lteIpxProviders: this.extractDsxDiameterProviders(lteScope, signallingScope),
-      asNumber: firstText(grxScope, [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i]),
+      asNumbers: collectTexts(grxScope, [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i]),
       interPmnIpRanges: collectTexts(grxScope, [/^ipaddressrange$/i]),
       diameterEdgeAgentFqdn:
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),

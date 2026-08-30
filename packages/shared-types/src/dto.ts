@@ -144,10 +144,11 @@ export interface MnoSummary {
   // Populated once this MNO has had an IR.21 XML ingested; empty/null for
   // MNOs known only via seed data or a reach-list mention.
   networkType: string | null;
-  // The operator's own AS Number(s) for BGP peering with its GRX/IPX
-  // carrier(s), as declared in the IR.21 GRX/IPX routing section — an MNO
-  // can (and often does) declare more than one.
-  asNumbers: string[];
+  // IR.21's GRX/IPX ASN table splits on "Network Owner": the operator's
+  // own AS Number(s) vs. a specific provider's own ASN ("ProviderName:
+  // ASN" strings).
+  mnoAsNumbers: string[];
+  providerAsNumbers: string[];
   // Consolidated per the platform's 3 core services: sccpProviders merges
   // primary + backup SCCP carriers (deduplicated); ipxProviders is the
   // GRXIPXRoutingForDataRoamingSection data-roaming carrier list; dsxProviders
@@ -208,10 +209,11 @@ export interface MnoConnectivitySnapshot {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
-  // The operator's own AS Number(s) for BGP peering with its GRX/IPX
-  // carrier(s), as declared in the IR.21 GRX/IPX routing section — an MNO
-  // can (and often does) declare more than one.
-  asNumbers: string[];
+  // IR.21's GRX/IPX ASN table splits on "Network Owner": the operator's
+  // own AS Number(s) vs. a specific provider's own ASN ("ProviderName:
+  // ASN" strings).
+  mnoAsNumbers: string[];
+  providerAsNumbers: string[];
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];

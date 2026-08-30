@@ -357,14 +357,13 @@ function MnoSearchPageInner() {
               flex: 0.6,
             },
             { field: "tadigCode", headerName: "TADIG" },
-            { field: "networkType", headerName: "Network Type" },
-            { field: "asNumbers", headerName: "AS Numbers (GRX/IPX)", valueFormatter: joinOrDash },
+            { field: "mnoAsNumbers", headerName: "MNO's ASNs (GRX/IPX)", valueFormatter: joinOrDash },
+            { field: "providerAsNumbers", headerName: "Provider ASNs", valueFormatter: joinOrDash },
             {
               field: "lastEffectiveDate",
               headerName: "Last Effective Date",
               valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : ""),
             },
-            { field: "status", headerName: "Status" },
           ]}
           rowSelection="multiRow"
           suppressRowClickSelection

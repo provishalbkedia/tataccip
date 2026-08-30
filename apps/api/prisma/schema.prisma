@@ -134,10 +134,12 @@ model MnoMasterConnectivity {
   sccpPointCodes          String[]
   grxIpxProviders         String[]
   lteIpxProviders         String[]
-  // The operator's own Autonomous System Number(s) for BGP peering with
-  // its GRX/IPX carrier(s) — an MNO can (and often does) declare more than
-  // one, see Ir21XmlParserService.
-  asNumbers               String[]
+  // IR.21's GRX/IPX ASN table splits on "Network Owner": the operator's
+  // own AS Number(s) (mnoAsNumbers) vs. a specific provider's own ASN
+  // (providerAsNumbers, stored as "ProviderName: ASN" strings) — see
+  // Ir21XmlParserService.extractAsNumbers.
+  mnoAsNumbers            String[]
+  providerAsNumbers       String[]
   interPmnIpRanges        String[]
   diameterEdgeAgentFqdn   String?
   authoritativeDnsIps     String[]

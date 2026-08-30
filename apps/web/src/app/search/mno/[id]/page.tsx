@@ -299,7 +299,8 @@ export default function MnoDetailPage() {
                     <Grid container spacing={3}>
                       <ChipListField label="GRX/IPX Providers" values={snap.grxIpxProviders} />
                       <ChipListField label="LTE IPX / Diameter Providers" values={snap.lteIpxProviders} />
-                      <ChipListField label="AS Numbers" values={snap.asNumbers} />
+                      <ChipListField label="MNO's ASNs for GRX/IPX" values={snap.mnoAsNumbers} />
+                      <ChipListField label="Provider ASNs" values={snap.providerAsNumbers} />
                       <Field label="Diameter Edge Agent FQDN" value={snap.diameterEdgeAgentFqdn} />
                       <ChipListField label="Authoritative DNS IPs" values={snap.authoritativeDnsIps} />
                       <ChipListField label="Inter-PMN Backbone IP Ranges" values={snap.interPmnIpRanges} />

@@ -18,14 +18,17 @@ export interface ParsedIr21Document {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
-  // The operator's own AS Number(s) for BGP peering with its GRX/IPX
-  // carrier(s) — an MNO can (and often does) declare more than one (e.g. a
-  // real Claro Brasil file lists both 22085 and 64580 under "MNO's ASNs
-  // for GRX/IPX"), so this is a list, not a single value. Tag naming
-  // varies across schema versions/vendor tooling like everything else this
-  // parser reads (see the class doc comment); matched defensively rather
-  // than against one exact tag.
-  asNumbers: string[];
+  // IR.21's GRX/IPX ASN table carries a "Network Owner" per row -- either
+  // "MNO" (the operator's own AS Number for BGP peering with its GRX/IPX
+  // carrier(s), can be more than one) or a specific provider's name (that
+  // provider's own ASN). Split on that column rather than merged into one
+  // list. Tag naming is unverified against a real sample beyond the ASN
+  // value itself -- matched defensively (see collectSiblingPairs), same as
+  // everything else this parser reads given schema versions/vendor tooling
+  // vary (see the class doc comment).
+  mnoAsNumbers: string[];
+  // "ProviderName: ASN" pairs, e.g. "Syniverse: 64580".
+  providerAsNumbers: string[];
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];
@@ -115,6 +118,39 @@ function collectProviderNames(root: unknown, patterns: RegExp[]): string[] {
   return Array.from(new Set(out));
 }
 
+/** Finds every object node in the tree that directly carries both a
+ * key matching `patternA` and a key matching `patternB` as its own
+ * immediate children (not nested further down) — e.g. one ASN row that has
+ * its own <ASNumber> and <NetworkOwner> as siblings. Deliberately doesn't
+ * need to know what the *wrapping* row/item element is called (unlike
+ * collectByKey(root, [/^someitem$/i])), so it's tolerant of container tag
+ * naming this parser hasn't seen a confirmed sample of yet — a real
+ * concern here specifically, since the exact GRX/IPX ASN table structure
+ * (see MnoNormalizationAudit... no, see ParsedIr21Document.asNumbers) is
+ * still unverified against a real file. */
+function collectSiblingPairs(root: unknown, patternA: RegExp[], patternB: RegExp[]): { a: string; b: string }[] {
+  const results: { a: string; b: string }[] = [];
+  function visit(node: unknown): void {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const obj = node as Record<string, unknown>;
+    let aVal: string | null = null;
+    let bVal: string | null = null;
+    for (const [key, value] of Object.entries(obj)) {
+      if (key.startsWith("@_") || key === "#text") continue;
+      if (!aVal && patternA.some((p) => p.test(key))) aVal = textOf(Array.isArray(value) ? value[0] : value);
+      if (!bVal && patternB.some((p) => p.test(key))) bVal = textOf(Array.isArray(value) ? value[0] : value);
+    }
+    if (aVal && bVal) results.push({ a: aVal, b: bVal });
+    for (const value of Object.values(obj)) visit(value);
+  }
+  visit(root);
+  return results;
+}
+
 /** First matching section/list subtree, or `undefined` if absent (e.g. a
  * "SectionNA" placeholder section, or a schema version that omits it) — lets
  * callers degrade to empty results instead of falling back to the whole
@@ -162,6 +198,7 @@ export class Ir21XmlParserService {
 
     const sccp = this.extractSccpCarriers(sccpScope);
     const dnsScope = grxScope; // PMNLocalDNSIPList / PMNAuthoritativeDNSIPList both live in this section
+    const asNumbers = this.extractAsNumbers(grxScope);
 
     return {
       senderTadig: senderTadig.trim().toUpperCase(),
@@ -176,7 +213,8 @@ export class Ir21XmlParserService {
       sccpPointCodes: sccp.pointCodes,
       grxIpxProviders: collectProviderNames(grxScope, [/^providername$/i]),
       lteIpxProviders: this.extractDsxDiameterProviders(lteScope, signallingScope),
-      asNumbers: collectTexts(grxScope, [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i]),
+      mnoAsNumbers: asNumbers.mno,
+      providerAsNumbers: asNumbers.provider,
       interPmnIpRanges: collectTexts(grxScope, [/^ipaddressrange$/i]),
       diameterEdgeAgentFqdn:
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),
@@ -244,6 +282,37 @@ export class Ir21XmlParserService {
     }
 
     return { primary, backups: Array.from(new Set(backups)), pointCodes: Array.from(new Set(pointCodes)) };
+  }
+
+  /** IR.21's GRX/IPX ASN table pairs each ASN with a "Network Owner" —
+   * "MNO" for the operator's own AS Number, or a specific provider's name
+   * for that provider's own ASN. Uses collectSiblingPairs rather than a
+   * named container search since the exact wrapping element/tag names here
+   * are unverified against a real sample (only the ASN value itself was
+   * confirmed, against Claro Brasil's real file, before this owner-split
+   * was added). Falls back to treating every found ASN as the MNO's own if
+   * no row pairs an ASN with an owner field at all — protects the
+   * already-working flat extraction from regressing to zero results if
+   * this owner-pairing assumption turns out wrong for a given file. */
+  private extractAsNumbers(grxScope: unknown): { mno: string[]; provider: string[] } {
+    const asnPatterns = [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i];
+    const pairs = collectSiblingPairs(grxScope, asnPatterns, [/^networkowner$/i, /^owner$/i]);
+
+    const mno = new Set<string>();
+    const provider = new Set<string>();
+    for (const { a: asn, b: owner } of pairs) {
+      if (/^mno$/i.test(owner.trim())) {
+        mno.add(asn);
+      } else {
+        provider.add(`${owner}: ${asn}`);
+      }
+    }
+
+    if (mno.size === 0 && provider.size === 0) {
+      for (const asn of collectTexts(grxScope, asnPatterns)) mno.add(asn);
+    }
+
+    return { mno: Array.from(mno), provider: Array.from(provider) };
   }
 
   /** Diameter Signaling Exchange (DSX/LTE) carrier extraction. GSMA IR.21

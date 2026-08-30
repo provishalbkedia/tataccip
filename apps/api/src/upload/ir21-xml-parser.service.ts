@@ -18,16 +18,13 @@ export interface ParsedIr21Document {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
-  // IR.21's GRX/IPX ASN table carries a "Network Owner" per row -- either
-  // "MNO" (the operator's own AS Number for BGP peering with its GRX/IPX
-  // carrier(s), can be more than one) or a specific provider's name (that
-  // provider's own ASN). Split on that column rather than merged into one
-  // list. Tag naming is unverified against a real sample beyond the ASN
-  // value itself -- matched defensively (see collectSiblingPairs), same as
-  // everything else this parser reads given schema versions/vendor tooling
-  // vary (see the class doc comment).
+  // The operator's own AS Number(s) for BGP peering with its GRX/IPX
+  // carrier(s) -- from <ASNsList>, verified against a real Claro Brasil
+  // file (see extractAsNumbers). Distinct from each provider's own ASN,
+  // declared separately per provider in <GRXIPXProvidersList>.
   mnoAsNumbers: string[];
-  // "ProviderName: ASN" pairs, e.g. "Syniverse: 64580".
+  // "ProviderName: ASN" pairs, e.g. "Tata Communications: 4755" -- each
+  // GRX/IPX provider's own ASN, from <GRXIPXProvidersList>.
   providerAsNumbers: string[];
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
@@ -118,16 +115,14 @@ function collectProviderNames(root: unknown, patterns: RegExp[]): string[] {
   return Array.from(new Set(out));
 }
 
-/** Finds every object node in the tree that directly carries both a
- * key matching `patternA` and a key matching `patternB` as its own
- * immediate children (not nested further down) — e.g. one ASN row that has
- * its own <ASNumber> and <NetworkOwner> as siblings. Deliberately doesn't
+/** Finds every object node in the tree that directly carries both a key
+ * matching `patternA` and a key matching `patternB` as its own immediate
+ * children (not nested further down) — e.g. one <GRXIPXProviderItem> that
+ * has its own <ProviderName> and <ASN> as siblings. Deliberately doesn't
  * need to know what the *wrapping* row/item element is called (unlike
- * collectByKey(root, [/^someitem$/i])), so it's tolerant of container tag
- * naming this parser hasn't seen a confirmed sample of yet — a real
- * concern here specifically, since the exact GRX/IPX ASN table structure
- * (see MnoNormalizationAudit... no, see ParsedIr21Document.asNumbers) is
- * still unverified against a real file. */
+ * collectByKey(root, [/^someitem$/i])), so it tolerates container tag
+ * naming varying across schema versions the way every other field in this
+ * parser already has to. */
 function collectSiblingPairs(root: unknown, patternA: RegExp[], patternB: RegExp[]): { a: string; b: string }[] {
   const results: { a: string; b: string }[] = [];
   function visit(node: unknown): void {
@@ -284,33 +279,39 @@ export class Ir21XmlParserService {
     return { primary, backups: Array.from(new Set(backups)), pointCodes: Array.from(new Set(pointCodes)) };
   }
 
-  /** IR.21's GRX/IPX ASN table pairs each ASN with a "Network Owner" —
-   * "MNO" for the operator's own AS Number, or a specific provider's name
-   * for that provider's own ASN. Uses collectSiblingPairs rather than a
-   * named container search since the exact wrapping element/tag names here
-   * are unverified against a real sample (only the ASN value itself was
-   * confirmed, against Claro Brasil's real file, before this owner-split
-   * was added). Falls back to treating every found ASN as the MNO's own if
-   * no row pairs an ASN with an owner field at all — protects the
-   * already-working flat extraction from regressing to zero results if
-   * this owner-pairing assumption turns out wrong for a given file. */
+  /** Verified against a real Claro Brasil (BRACL) IR.21 XML file: the
+   * GRX/IPX section carries two distinct ASN sources, and the
+   * <NetworkOwner> field that sits next to both is a red herring — it
+   * reads "MNO" in every row regardless of whose ASN it actually is, so it
+   * cannot be used to tell them apart (an earlier version of this method
+   * tried exactly that and misclassified every provider's ASN as the
+   * MNO's own).
+   *
+   *   <ASNsList>                              -- the MNO's own ASN(s)
+   *     <ASNItem><ASN>22085</ASN><NetworkOwner>MNO</NetworkOwner></ASNItem>
+   *     <ASNItem><ASN>64580</ASN><NetworkOwner>MNO</NetworkOwner></ASNItem>
+   *   </ASNsList>
+   *   <GRXIPXProvidersList>                   -- each provider's own ASN
+   *     <GRXIPXProviderItem>
+   *       <ProviderName>Tata Communications</ProviderName>
+   *       <ASN>4755</ASN>
+   *       <NetworkOwner>MNO</NetworkOwner>
+   *     </GRXIPXProviderItem>
+   *     ...
+   *   </GRXIPXProvidersList>
+   *
+   * So this scopes ASNsList specifically for the MNO's own numbers, and
+   * pairs ProviderName with its sibling ASN (via collectSiblingPairs, so
+   * it doesn't depend on the exact "GRXIPXProviderItem" wrapper name
+   * holding across schema versions) for the provider ASNs. */
   private extractAsNumbers(grxScope: unknown): { mno: string[]; provider: string[] } {
     const asnPatterns = [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i];
-    const pairs = collectSiblingPairs(grxScope, asnPatterns, [/^networkowner$/i, /^owner$/i]);
 
-    const mno = new Set<string>();
-    const provider = new Set<string>();
-    for (const { a: asn, b: owner } of pairs) {
-      if (/^mno$/i.test(owner.trim())) {
-        mno.add(asn);
-      } else {
-        provider.add(`${owner}: ${asn}`);
-      }
-    }
+    const mnoAsnScope = scopeTo(grxScope, [/^asnslist$/i]) ?? grxScope;
+    const mno = new Set(collectTexts(mnoAsnScope, asnPatterns));
 
-    if (mno.size === 0 && provider.size === 0) {
-      for (const asn of collectTexts(grxScope, asnPatterns)) mno.add(asn);
-    }
+    const providerPairs = collectSiblingPairs(grxScope, [/^providername$/i], asnPatterns);
+    const provider = new Set(providerPairs.map(({ a: name, b: asn }) => `${name}: ${asn}`));
 
     return { mno: Array.from(mno), provider: Array.from(provider) };
   }

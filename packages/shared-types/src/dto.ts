@@ -99,6 +99,11 @@ export interface ProviderSuggestion {
 
 export interface DashboardMetrics {
   totalMnos: number;
+  // Of totalMnos, how many carry a full parsed IR.21 XML declaration
+  // (MnoMasterConnectivity). The rest are known only through Reach List
+  // coverage (a wholesale provider's file cited their TADIG, but no IR.21
+  // was ever uploaded for them) -- real operators, just a different source.
+  mnosWithIr21Declaration: number;
   totalProviders: number;
   totalConnections: number;
   sccpCount: number;

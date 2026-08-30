@@ -95,7 +95,7 @@ export default function DashboardPage() {
         {metrics && (
           <Chip
             icon={<InfoOutlinedIcon fontSize="small" />}
-            label={`${metrics.mnosWithIr21Declaration.toLocaleString()} operator records with a full IR.21 declaration, plus ${(metrics.totalMnos - metrics.mnosWithIr21Declaration).toLocaleString()} known only via Reach List coverage. Informational use only.`}
+            label={`Derived from ${metrics.totalMnos.toLocaleString()} IR.21-declared operator records — the platform's authoritative source of truth. ${metrics.reachlistOnlyMnoCount.toLocaleString()} additional TADIGs appear only in Reach List uploads and are tracked separately, not counted here. Informational use only.`}
             size="small"
             variant="outlined"
             sx={{ mb: 3, color: "text.secondary", borderColor: "divider" }}
@@ -116,7 +116,7 @@ export default function DashboardPage() {
               icon: <CellTowerIcon fontSize="large" />,
               color: "#0A2540",
               href: "/search/mno",
-              tooltip: `Every operator (MNO) CCIP knows about, from any source: ${metrics.mnosWithIr21Declaration.toLocaleString()} have a full parsed IR.21 declaration on file; the remaining ${(metrics.totalMnos - metrics.mnosWithIr21Declaration).toLocaleString()} are known only because a wholesale provider's Reach List cited their TADIG — real operators, just without an IR.21 XML uploaded for them yet.`,
+              tooltip: `Operators with a full, authoritative GSMA IR.21 declaration on file — the platform's source of truth for MNO count. ${metrics.reachlistOnlyMnoCount.toLocaleString()} additional TADIGs are cited in wholesale providers' Reach Lists but don't have their own IR.21 declaration; those are tracked separately, not included here, since a Reach List citation isn't independently authenticated the way an IR.21 XML is.`,
             },
             {
               label: "Total Providers",

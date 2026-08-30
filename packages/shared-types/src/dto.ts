@@ -98,12 +98,19 @@ export interface ProviderSuggestion {
 }
 
 export interface DashboardMetrics {
+  // Authoritative MNO count: operators with a full parsed GSMA IR.21 XML
+  // declaration on file (MnoMasterConnectivity). This is the platform's
+  // source of truth for "how many MNOs does CCIP know about" -- see
+  // reachlistOnlyMnoCount for the separate, non-authoritative count below.
   totalMnos: number;
-  // Of totalMnos, how many carry a full parsed IR.21 XML declaration
-  // (MnoMasterConnectivity). The rest are known only through Reach List
-  // coverage (a wholesale provider's file cited their TADIG, but no IR.21
-  // was ever uploaded for them) -- real operators, just a different source.
-  mnosWithIr21Declaration: number;
+  // TADIGs cited in a wholesale provider's Reach List that don't (yet)
+  // have their own IR.21 declaration. Tracked for transparency but
+  // deliberately excluded from totalMnos -- a Reach List citation isn't
+  // independently authenticated the way an IR.21 XML is, and reach lists
+  // are prone to naming/TADIG variants of operators IR.21 already knows
+  // under a different spelling, so folding these into the MNO count would
+  // risk inflating it with duplicates rather than genuinely new operators.
+  reachlistOnlyMnoCount: number;
   totalProviders: number;
   totalConnections: number;
   sccpCount: number;

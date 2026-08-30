@@ -8,8 +8,8 @@ export class DashboardService {
 
   async metrics(): Promise<DashboardMetrics> {
     const [
-      totalMnos,
-      mnosWithIr21Declaration,
+      rawMnoCount,
+      authoritativeMnoCount,
       totalIr21,
       totalReach,
       sccp,
@@ -40,8 +40,8 @@ export class DashboardService {
     ]).size;
 
     return {
-      totalMnos,
-      mnosWithIr21Declaration,
+      totalMnos: authoritativeMnoCount,
+      reachlistOnlyMnoCount: rawMnoCount - authoritativeMnoCount,
       totalProviders,
       totalConnections: totalIr21 + totalReach,
       sccpCount: sccp,

@@ -20,6 +20,7 @@ import {
   List,
   ListItem,
   ListItemText,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -33,6 +34,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import FolderZipIcon from "@mui/icons-material/FolderZip";
 import LanIcon from "@mui/icons-material/Lan";
 import DownloadIcon from "@mui/icons-material/Download";
+import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -43,6 +45,7 @@ import { splitZipForUpload } from "@/lib/splitZipForUpload";
 import {
   BulkXmlUploadResult,
   DsxBackfillResult,
+  PurgeReachlistResult,
   ReachlistZipBatchResult,
   Role,
   UploadHistoryRow,
@@ -693,6 +696,87 @@ function ReachlistZipBatchCard({ onUploaded, isAdmin }: { onUploaded: () => void
   );
 }
 
+// Full, unscoped purge — deliberately its own explicit action rather than
+// a mode on either Reach List upload card above (both of those are
+// scoped to a single sourceFile precisely so an admin re-uploading one
+// updated file can never accidentally wipe data loaded from any other
+// file). This one has no such scoping: every Reach List record, from
+// every source, gone.
+function DeleteAllReachlistCard({ onDeleted, isAdmin }: { onDeleted: () => void; isAdmin: boolean }) {
+  const [busy, setBusy] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+
+  async function handleDelete() {
+    setConfirmOpen(false);
+    setBusy(true);
+    try {
+      const res = await api.delete<PurgeReachlistResult>("/upload/reachlist/all");
+      setToast(`Deleted ${res.deletedCount} Reach List record(s).`);
+      onDeleted();
+    } catch (err) {
+      setToast(err instanceof ApiError ? `Delete failed: ${err.message}` : "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card sx={{ borderColor: "error.main", borderWidth: 1, borderStyle: "solid" }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight={700} color="error.main">
+          Delete All Reach List Data
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Permanently removes every Reach List record platform-wide, regardless of which file or upload it
+          came from — an unscoped purge, not the per-file &quot;Replace&quot; option on the upload cards
+          above. IR.21-sourced connectivity data is not affected. Use this to clear out legacy data before a
+          clean re-import, not as a routine step.
+        </Typography>
+        <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
+          <span>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteForeverIcon />}
+              onClick={() => setConfirmOpen(true)}
+              disabled={busy || !isAdmin}
+            >
+              {busy ? "Deleting..." : "Delete All Reach List Data"}
+            </Button>
+          </span>
+        </Tooltip>
+
+        <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+          <DialogTitle>Delete all Reach List data?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Are you sure you want to delete <strong>all</strong> existing Reach List data? Every record
+              from every upload — single-file, wide-matrix, and ZIP batch alike — will be permanently
+              removed, and every operator&apos;s Comparison Grid will show no Reach List side until new data
+              is ingested. This action cannot be undone.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button color="error" variant="contained" onClick={handleDelete}>
+              Delete All
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Snackbar
+          open={!!toast}
+          autoHideDuration={4500}
+          onClose={() => setToast(null)}
+          message={toast}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 function DsxBackfillCard({ isAdmin }: { isAdmin: boolean }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<DsxBackfillResult | null>(null);
@@ -808,6 +892,9 @@ export default function UploadPage() {
           </Grid>
           <Grid item xs={12}>
             <ReachlistZipBatchCard onUploaded={loadHistory} isAdmin={isAdmin} />
+          </Grid>
+          <Grid item xs={12}>
+            <DeleteAllReachlistCard onDeleted={loadHistory} isAdmin={isAdmin} />
           </Grid>
         </Grid>
 

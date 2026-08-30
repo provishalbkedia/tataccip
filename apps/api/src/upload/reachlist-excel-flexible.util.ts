@@ -18,6 +18,12 @@ export interface FlexibleExcelRow {
   operator: string;
   tadigs: string[]; // one row can carry more than one valid TADIG (e.g. "TADIG 1".."TADIG 26" columns)
   services: ServiceFamily[];
+  // Raw text of a "Connection Type" / "Route Type" / "Direct/Peering"
+  // style column, when the sheet has one — undefined when it doesn't
+  // (several real carrier exports, e.g. Deutsche Telekom's, carry no such
+  // column at all). Consumed by carrier-specific row filtering in
+  // reachlist-zip-batch.service.ts, not by anything in this file.
+  connectionType?: string;
 }
 
 export interface FlexibleExcelResult {
@@ -70,6 +76,7 @@ interface DetectedColumns {
   operator: number;
   tadig: number;
   extraTadigCols: number[];
+  connectionType: number;
   presenceCols: { idx: number; family: ServiceFamily }[];
   valueCols: number[];
 }
@@ -106,7 +113,7 @@ function detectHeaderAndColumns(matrix: string[][]): { headerRowIdx: number; col
   if (best.score < 2) return null;
 
   const headerRow = matrix[best.idx];
-  const cols: DetectedColumns = { country: -1, operator: -1, tadig: -1, extraTadigCols: [], presenceCols: [], valueCols: [] };
+  const cols: DetectedColumns = { country: -1, operator: -1, tadig: -1, extraTadigCols: [], connectionType: -1, presenceCols: [], valueCols: [] };
   const tadigCandidates: { idx: number; bare: boolean; numbered: boolean }[] = [];
 
   headerRow.forEach((raw, idx) => {
@@ -119,6 +126,9 @@ function detectHeaderAndColumns(matrix: string[][]): { headerRowIdx: number; col
       cols.operator = idx;
     }
     if (isTadig) tadigCandidates.push({ idx, bare: c.replace(/[^a-z]/g, "") === "tadig", numbered: /^tadig\s*\d+$/.test(c) });
+    if (cols.connectionType === -1 && (c.includes("connection type") || c.includes("route type") || c.includes("direct/peering") || c.includes("direct / peering") || (c.includes("route") && c.length < 12))) {
+      cols.connectionType = idx;
+    }
     const fam = classifyServiceFamily(c);
     if (fam) cols.presenceCols.push({ idx, family: fam });
     else if (c.includes("service") || c.includes("protocol")) cols.valueCols.push(idx);
@@ -222,7 +232,8 @@ export async function parseFlexibleExcel(buffer: Buffer, isXls: boolean, filenam
       if (fam) services.add(fam);
     }
 
-    rows.push({ country, operator, tadigs, services: [...services] });
+    const connectionType = cols.connectionType >= 0 ? (row[cols.connectionType] ?? "").trim() : undefined;
+    rows.push({ country, operator, tadigs, services: [...services], connectionType: connectionType || undefined });
   }
 
   // No row anywhere in the file carried its own service signal — fall

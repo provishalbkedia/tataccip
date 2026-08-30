@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Post,
@@ -135,5 +136,14 @@ export class UploadController {
   @HttpCode(200)
   async backfillDsx() {
     return this.uploadService.backfillDsxFromSnapshot();
+  }
+
+  // Full, unscoped purge — deliberately its own explicit endpoint rather
+  // than a `replace` flag on either reachlist upload path, both of which
+  // are scoped to a single sourceFile precisely so they *can't* do this.
+  @Delete("reachlist/all")
+  @Roles(Role.ADMIN)
+  async purgeAllReachlistData(@CurrentUser() user: { email: string }) {
+    return this.uploadService.purgeAllReachlistData(user.email);
   }
 }

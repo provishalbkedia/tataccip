@@ -44,6 +44,10 @@ export class ReachlistZipBatchService {
   // (aliases exist for *variant* spellings; the canonical name itself
   // usually doesn't need one).
   private providerNames = new Map<string, string>();
+  // providerId -> canonical name, so an alias match (e.g. "DT" ->
+  // Deutsche Telekom's id) can report/act on the real name rather than
+  // the raw filename fragment that happened to match the alias.
+  private providerNamesById = new Map<number, string>();
 
   constructor(
     private prisma: PrismaService,
@@ -65,11 +69,12 @@ export class ReachlistZipBatchService {
 
     const [allMnos, allProviders] = await Promise.all([
       this.prisma.mnoMaster.findMany({ select: { operatorName: true, country: true, tadigCode: true } }),
-      this.prisma.providerMaster.findMany({ select: { providerName: true } }),
+      this.prisma.providerMaster.findMany({ select: { id: true, providerName: true } }),
     ]);
     const countryResolver = buildMnoResolver(allMnos);
     const nameOnlyResolver = buildGlobalNameResolver(allMnos);
     this.providerNames = new Map(allProviders.map((p) => [p.providerName.toLowerCase(), p.providerName]));
+    this.providerNamesById = new Map(allProviders.map((p) => [p.id, p.providerName]));
 
     const files: ReachlistZipFileResult[] = [];
     const unresolvedMnos: { mnoName: string; country: string }[] = [];
@@ -181,13 +186,20 @@ export class ReachlistZipBatchService {
       if (!provider) {
         return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameCandidatesFromFilename(filename)[0]}" (from the filename) to a known provider.`);
       }
-      const sources: RowSource[] = parsed.rows.map((r: FlexibleExcelRow) => ({ country: r.country, operator: r.operator, tadigs: r.tadigs, services: r.services }));
-      const note = parsed.usedFilenameServiceFallback
-        ? parsed.filenameFallbackFamilies.length > 0
-          ? `Used filename to infer service: ${parsed.filenameFallbackFamilies.join(", ")}.`
-          : "No service indicator found in the sheet or filename — rows without a resolvable service were skipped."
-        : undefined;
-      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
+      const { kept, filteredOutCount } = this.applyCarrierRowFilter(provider, parsed.rows);
+      const sources: RowSource[] = kept.map((r: FlexibleExcelRow) => ({ country: r.country, operator: r.operator, tadigs: r.tadigs, services: r.services }));
+      const noteParts: string[] = [];
+      if (parsed.usedFilenameServiceFallback) {
+        noteParts.push(
+          parsed.filenameFallbackFamilies.length > 0
+            ? `Used filename to infer service: ${parsed.filenameFallbackFamilies.join(", ")}.`
+            : "No service indicator found in the sheet or filename — rows without a resolvable service were skipped.",
+        );
+      }
+      if (filteredOutCount > 0) {
+        noteParts.push(`${filteredOutCount} row(s) filtered out by ${provider}'s carrier-specific rule.`);
+      }
+      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, noteParts.join(" ") || undefined);
     }
 
     if (fileType === "PDF") {
@@ -293,6 +305,38 @@ export class ReachlistZipBatchService {
     };
   }
 
+  /** Carrier-specific row filtering, applied only to the three carriers
+   * where it was explicitly requested — every other carrier keeps its
+   * existing all-rows behavior. Deliberately strict: a row with no
+   * connectionType at all (common — several real carrier exports, e.g.
+   * Deutsche Telekom's, carry no connection-type column whatsoever) does
+   * NOT count as "confirmed Direct" and is excluded, same as an explicit
+   * "Indirect"/"Peering" value would be. For a file with no such column
+   * at all, this filters out every row — an explicit, deliberate choice
+   * (confirmed with the platform owner) over silently ignoring the rule
+   * for files that don't carry the field it depends on. */
+  private applyCarrierRowFilter(
+    provider: string,
+    rows: FlexibleExcelRow[],
+  ): { kept: FlexibleExcelRow[]; filteredOutCount: number } {
+    const key = provider.trim().toLowerCase();
+
+    if (key === "deutsche telekom" || key === "china mobile") {
+      const kept = rows.filter((r) => {
+        const ct = (r.connectionType ?? "").toLowerCase();
+        return /\bdirect\b/.test(ct) && !/\b(indirect|hub|transit)\b/.test(ct);
+      });
+      return { kept, filteredOutCount: rows.length - kept.length };
+    }
+
+    if (key === "ibasis") {
+      const kept = rows.filter((r) => `${r.operator} ${r.connectionType ?? ""}`.toLowerCase().includes("ibasis"));
+      return { kept, filteredOutCount: rows.length - kept.length };
+    }
+
+    return { kept: rows, filteredOutCount: 0 };
+  }
+
   private skip(
     filename: string,
     fileType: "EXCEL" | "PDF" | "MSG",
@@ -331,7 +375,12 @@ export class ReachlistZipBatchService {
     const normalized = this.providerResolver.normalize(trimmed);
     if (!normalized) return null;
     const providerId = this.providerResolver.matchAlias(normalized);
-    return providerId ? trimmed : null;
+    if (!providerId) return null;
+    // Resolve to the canonical name (e.g. "DT" -> "Deutsche Telekom") so
+    // the UI breakdown and carrier-specific filtering both act on the
+    // real identity, not the raw filename fragment that happened to
+    // match the alias.
+    return this.providerNamesById.get(providerId) ?? trimmed;
   }
 
   /** Tries every label of the sender's domain except the TLD — a domain

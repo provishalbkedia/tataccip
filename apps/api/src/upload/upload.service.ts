@@ -45,6 +45,29 @@ export class UploadService {
     return { active: active ? this.toHistoryRow(active) : null, currentMnoCount };
   }
 
+  /** Full, unscoped purge of every Reach List record — unlike the
+   * per-file `replace` option on both reachlist upload paths (scoped to
+   * `sourceFile`, so re-uploading one file's newer version can't destroy
+   * data loaded from any other file), this is a deliberate, explicit
+   * admin action with no scoping at all: every ProviderReachlist row,
+   * from every source, is gone. IR.21-sourced connectivity (the
+   * Comparison Grid's other half) is untouched. Logged as its own
+   * UploadHistory row for the same audit trail every other ingestion
+   * action gets. */
+  async purgeAllReachlistData(purgedBy: string): Promise<{ deletedCount: number }> {
+    const { count } = await this.prisma.providerReachlist.deleteMany({});
+    await this.prisma.uploadHistory.create({
+      data: {
+        filename: "Manual Purge — All Reach List Data",
+        uploadedBy: purgedBy,
+        recordsLoaded: count,
+        status: UploadStatus.SUCCESS,
+        errorLog: null,
+      },
+    });
+    return { deletedCount: count };
+  }
+
   // uploadReachlist() is otherwise purely additive: it upserts on
   // (mnoId, providerId, serviceId), so a re-uploaded sheet that renamed,
   // dropped, or reassigned an operator's row leaves the old row behind

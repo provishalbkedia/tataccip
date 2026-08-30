@@ -325,6 +325,14 @@ export interface ReachlistZipFileResult {
   note?: string;
 }
 
+// Full, unscoped purge of every Reach List record — see
+// UploadService.purgeAllReachlistData for why this is deliberately
+// separate from (and much blunter than) the per-file `replace` option on
+// both reachlist upload paths.
+export interface PurgeReachlistResult {
+  deletedCount: number;
+}
+
 export interface ReachlistZipBatchResult {
   uploadHistory: UploadHistoryRow;
   totalFilesInArchive: number;

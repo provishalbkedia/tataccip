@@ -7,10 +7,12 @@ import {
   Box,
   Button,
   Chip,
+  FormControlLabel,
   Grid,
   IconButton,
   MenuItem,
   Paper,
+  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -103,6 +105,7 @@ function MnoSearchPageInner() {
   const [mcc, setMcc] = React.useState("");
   const [mnc, setMnc] = React.useState("");
   const [region, setRegion] = React.useState<Region | "">("");
+  const [onlyWithProviders, setOnlyWithProviders] = React.useState(true);
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
@@ -121,13 +124,15 @@ function MnoSearchPageInner() {
     setMnc(searchParams.get("mnc") ?? "");
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
+    setOnlyWithProviders(searchParams.get("onlyWithProviders") !== "false");
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (overrides?: { region?: Region | "" }) => {
+    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean }) => {
       const nextRegion = overrides?.region ?? region;
+      const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (tadig) params.set("tadig", tadig);
@@ -135,9 +140,12 @@ function MnoSearchPageInner() {
       if (mcc) params.set("mcc", mcc);
       if (mnc) params.set("mnc", mnc);
       if (nextRegion) params.set("region", nextRegion);
+      // Only written to the URL when off the (true) default, so an
+      // ordinary search URL stays clean.
+      if (!nextOnlyWithProviders) params.set("onlyWithProviders", "false");
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, pathname, router],
   );
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
@@ -256,7 +264,7 @@ function MnoSearchPageInner() {
           </Grid>
         </Paper>
 
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 3, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
           <ToggleButtonGroup
             exclusive
             size="small"
@@ -289,6 +297,23 @@ function MnoSearchPageInner() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
+
+          <Tooltip title={onlyWithProviders ? "Showing only operators with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every operator, including those with no listed provider"}>
+            <FormControlLabel
+              sx={{ ml: 0 }}
+              control={
+                <Switch
+                  checked={onlyWithProviders}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setOnlyWithProviders(next);
+                    pushParams({ onlyWithProviders: next });
+                  }}
+                />
+              }
+              label={<Typography variant="body2">Only with listed providers</Typography>}
+            />
+          </Tooltip>
         </Box>
 
         <Box sx={{ mb: 1 }}>

@@ -80,8 +80,16 @@ export class MnoService {
    * (comma-separated, e.g. "Americas,Europe") filters by the derived
    * region — see region-mapper.ts — applied in JS after the fetch since
    * it's computed from `country`, not a stored column. */
-  async search(params: { q?: string; tadig?: string; country?: string; mcc?: string; mnc?: string; region?: string }): Promise<MnoSummary[]> {
-    const { q, tadig, country, mcc, mnc, region } = params;
+  async search(params: {
+    q?: string;
+    tadig?: string;
+    country?: string;
+    mcc?: string;
+    mnc?: string;
+    region?: string;
+    onlyWithProviders?: boolean;
+  }): Promise<MnoSummary[]> {
+    const { q, tadig, country, mcc, mnc, region, onlyWithProviders = true } = params;
     const requestedRegions = region
       ? new Set(region.split(",").map((r) => r.trim()).filter((r) => (ALL_REGIONS as string[]).includes(r)))
       : null;
@@ -147,32 +155,35 @@ export class MnoService {
 
     // An MNO with no resolved provider on any service (no Ir21Connectivity,
     // no ProviderReachlist row) has nothing comparable to show in Operator
-    // Search — every provider/PDF/date column would just render "-". The
-    // MnoMaster row itself is left alone (still counted in the IR.21
-    // baseline, still reachable by a direct link); this only hides it from
-    // search results.
-    return orderedRows
-      .map((r) => {
-        const p = providersByMno.get(r.id);
-        return {
-          id: r.id,
-          operatorName: r.operatorName,
-          country: r.country,
-          region: getRegionByCountry(r.country),
-          tadigCode: r.tadigCode,
-          secondaryTadigs: r.secondaryTadigs,
-          mcc: r.mcc,
-          mnc: r.mnc,
-          status: r.status,
-          networkType: r.connectivity?.networkType ?? null,
-          sccpProviders: p ? Array.from(p.SCCP) : [],
-          dsxProviders: p ? Array.from(p.DSX) : [],
-          ipxProviders: p ? Array.from(p.IPX) : [],
-          lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
-          hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
-        };
-      })
-      .filter((r) => r.sccpProviders.length > 0 || r.dsxProviders.length > 0 || r.ipxProviders.length > 0);
+    // Search — every provider/PDF/date column would just render "-".
+    // Filtered out by default (onlyWithProviders), toggleable off from the
+    // UI to see the full IR.21 baseline. The MnoMaster row itself is left
+    // alone either way (still counted in the baseline, still reachable by
+    // a direct link); this only changes what search results include.
+    const mapped = orderedRows.map((r) => {
+      const p = providersByMno.get(r.id);
+      return {
+        id: r.id,
+        operatorName: r.operatorName,
+        country: r.country,
+        region: getRegionByCountry(r.country),
+        tadigCode: r.tadigCode,
+        secondaryTadigs: r.secondaryTadigs,
+        mcc: r.mcc,
+        mnc: r.mnc,
+        status: r.status,
+        networkType: r.connectivity?.networkType ?? null,
+        sccpProviders: p ? Array.from(p.SCCP) : [],
+        dsxProviders: p ? Array.from(p.DSX) : [],
+        ipxProviders: p ? Array.from(p.IPX) : [],
+        lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
+        hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
+      };
+    });
+
+    return onlyWithProviders
+      ? mapped.filter((r) => r.sccpProviders.length > 0 || r.dsxProviders.length > 0 || r.ipxProviders.length > 0)
+      : mapped;
   }
 
   /** Lightweight matches for the Operator Search autocomplete — fetched on

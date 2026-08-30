@@ -21,6 +21,13 @@ interface RowSource {
   // applyCarrierRowFilter) runs identically regardless of which parser
   // produced the row, not just for Excel.
   connectionType?: string;
+  // Raw per-service cell text (see FlexibleExcelRow.serviceCellValues) —
+  // undefined for PDF/.msg-derived rows. Some real Excel exports (e.g.
+  // Deutsche Telekom's) carry the direct/indirect signal inside each
+  // service's own column instead of one shared Connection Type column;
+  // applyCarrierRowFilter checks this before falling back to
+  // connectionType.
+  serviceCellValues?: Partial<Record<ServiceFamily, string>>;
 }
 
 /** Multi-Carrier Reach List ZIP Batch Ingestion — a separate path from the
@@ -198,6 +205,7 @@ export class ReachlistZipBatchService {
         tadigs: r.tadigs,
         services: r.services,
         connectionType: r.connectionType,
+        serviceCellValues: r.serviceCellValues,
       }));
       const note = parsed.usedFilenameServiceFallback
         ? parsed.filenameFallbackFamilies.length > 0
@@ -324,11 +332,18 @@ export class ReachlistZipBatchService {
    * existing all-rows behavior. Runs uniformly for every fileType (see
    * the call site in ingest()), not just Excel.
    *
-   * Deutsche Telekom / China Mobile: strictly "Direct" only. A row with
-   * no connectionType at all (Deutsche Telekom's real file carries no
-   * connection-type column whatsoever) does not count as confirmed
-   * Direct and is excluded, same as an explicit "Indirect"/"Peering"
-   * value would be.
+   * Deutsche Telekom / China Mobile: strictly "Direct" only. Real DT
+   * exports (e.g. "DT Full Coverage Old.xlsx") carry no single Connection
+   * Type column at all — the direct/indirect signal instead lives inside
+   * each per-service column's own cell text (SS7/Diameter/Data Roaming:
+   * "Direct", "Direct via Group", "Available", ...). When a row carries
+   * that per-service text (serviceCellValues), each service is judged on
+   * its own cell independently — a row can keep some services and drop
+   * others (e.g. SS7 "Direct" kept, Diameter "Available" dropped). Only
+   * when a row has no such per-service text does this fall back to the
+   * single connectionType column (BICS/Syniverse-style exports); a row
+   * with neither does not count as confirmed Direct and is excluded, same
+   * as an explicit "Indirect"/"Peering" value would be.
    *
    * iBasis: real production data corrected this rule mid-implementation
    * — iBasis's actual "Route Type" column never contains the literal
@@ -345,12 +360,31 @@ export class ReachlistZipBatchService {
   ): { kept: RowSource[]; filteredOutCount: number } {
     const key = provider.trim().toLowerCase();
 
+    const isDirectText = (v: string) => {
+      const t = v.toLowerCase();
+      return /\bdirect\b/.test(t) && !/\b(indirect|hub|transit)\b/.test(t);
+    };
+
     if (key === "deutsche telekom" || key === "china mobile") {
-      const kept = rows.filter((r) => {
-        const ct = (r.connectionType ?? "").toLowerCase();
-        return /\bdirect\b/.test(ct) && !/\b(indirect|hub|transit)\b/.test(ct);
-      });
-      return { kept, filteredOutCount: rows.length - kept.length };
+      const kept: RowSource[] = [];
+      let filteredOutCount = 0;
+      for (const r of rows) {
+        if (r.serviceCellValues) {
+          const keptServices = r.services.filter((fam) => isDirectText(r.serviceCellValues![fam] ?? ""));
+          if (keptServices.length === 0) {
+            filteredOutCount++;
+          } else {
+            kept.push(keptServices.length === r.services.length ? r : { ...r, services: keptServices });
+          }
+          continue;
+        }
+        if (isDirectText(r.connectionType ?? "")) {
+          kept.push(r);
+        } else {
+          filteredOutCount++;
+        }
+      }
+      return { kept, filteredOutCount };
     }
 
     if (key === "ibasis") {

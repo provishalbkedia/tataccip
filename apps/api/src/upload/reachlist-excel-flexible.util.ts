@@ -20,10 +20,17 @@ export interface FlexibleExcelRow {
   services: ServiceFamily[];
   // Raw text of a "Connection Type" / "Route Type" / "Direct/Peering"
   // style column, when the sheet has one — undefined when it doesn't
-  // (several real carrier exports, e.g. Deutsche Telekom's, carry no such
-  // column at all). Consumed by carrier-specific row filtering in
+  // (several real carrier exports carry no such column at all).
+  // Consumed by carrier-specific row filtering in
   // reachlist-zip-batch.service.ts, not by anything in this file.
   connectionType?: string;
+  // Raw text of each per-service presence column, keyed by the family it
+  // was classified as — e.g. Deutsche Telekom's real export has no
+  // Connection Type column at all; instead its SS7/Diameter/Data Roaming
+  // columns each carry "Direct", "Direct via Group", or "Available"
+  // directly in the cell. Undefined when the sheet's presence columns are
+  // plain markers (an "X", a checkmark) rather than descriptive text.
+  serviceCellValues?: Partial<Record<ServiceFamily, string>>;
 }
 
 export interface FlexibleExcelResult {
@@ -193,6 +200,19 @@ function loadXlsMatrix(buffer: Buffer): string[][] {
 
 const TADIG_TOKEN = /^[A-Z0-9]{5}$/;
 
+/** A TADIG cell is usually one bare code, but several real exports (e.g.
+ * Deutsche Telekom's "AZEAC;AZENT") pack more than one valid TADIG for the
+ * same operator into a single cell, semicolon/comma/slash-separated.
+ * Splitting first and testing each token means a single-code cell behaves
+ * exactly as before while a multi-code cell yields every valid TADIG
+ * instead of failing the whole-cell regex and silently losing all of them. */
+function extractTadigTokens(raw: string): string[] {
+  return (raw ?? "")
+    .split(/[;,/]+/)
+    .map((t) => t.trim().toUpperCase())
+    .filter((t) => TADIG_TOKEN.test(t));
+}
+
 /** Parses one single-provider Excel/xls file into normalized rows.
  * `filenameForFallback` supplies the service family when no column in the
  * sheet indicates it per-row (common — many real files are already scoped
@@ -215,17 +235,26 @@ export async function parseFlexibleExcel(buffer: Buffer, isXls: boolean, filenam
     if (!country && !operator) continue;
 
     const tadigs: string[] = [];
-    const primaryTadig = cols.tadig >= 0 ? (row[cols.tadig] ?? "").trim().toUpperCase() : "";
-    if (TADIG_TOKEN.test(primaryTadig)) tadigs.push(primaryTadig);
+    if (cols.tadig >= 0) {
+      for (const t of extractTadigTokens(row[cols.tadig] ?? "")) {
+        if (!tadigs.includes(t)) tadigs.push(t);
+      }
+    }
     for (const idx of cols.extraTadigCols) {
-      const t = (row[idx] ?? "").trim().toUpperCase();
-      if (TADIG_TOKEN.test(t) && !tadigs.includes(t)) tadigs.push(t);
+      for (const t of extractTadigTokens(row[idx] ?? "")) {
+        if (!tadigs.includes(t)) tadigs.push(t);
+      }
     }
     if (tadigs.length === 0 && !operator) continue; // nothing to key this row on at all
 
     const services = new Set<ServiceFamily>();
+    const serviceCellValues: Partial<Record<ServiceFamily, string>> = {};
     for (const { idx, family } of cols.presenceCols) {
-      if ((row[idx] ?? "").trim()) services.add(family);
+      const v = (row[idx] ?? "").trim();
+      if (v) {
+        services.add(family);
+        serviceCellValues[family] = v;
+      }
     }
     for (const idx of cols.valueCols) {
       const fam = classifyServiceFamily(row[idx] ?? "");
@@ -233,7 +262,14 @@ export async function parseFlexibleExcel(buffer: Buffer, isXls: boolean, filenam
     }
 
     const connectionType = cols.connectionType >= 0 ? (row[cols.connectionType] ?? "").trim() : undefined;
-    rows.push({ country, operator, tadigs, services: [...services], connectionType: connectionType || undefined });
+    rows.push({
+      country,
+      operator,
+      tadigs,
+      services: [...services],
+      connectionType: connectionType || undefined,
+      serviceCellValues: Object.keys(serviceCellValues).length > 0 ? serviceCellValues : undefined,
+    });
   }
 
   // No row anywhere in the file carried its own service signal — fall

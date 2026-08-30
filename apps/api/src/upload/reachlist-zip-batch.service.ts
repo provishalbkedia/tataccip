@@ -230,7 +230,8 @@ export class ReachlistZipBatchService {
     const note = parsed.nameOnlyRows.length > 0
       ? `Matched ${nameOnlyResolved} of ${parsed.nameOnlyRows.length} free-text partner names to an existing operator (no per-line country given in the message).`
       : undefined;
-    return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
+    const nameOnlyUnresolved = parsed.nameOnlyRows.length - nameOnlyResolved;
+    return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note, nameOnlyUnresolved);
   }
 
   private async ingest(
@@ -242,6 +243,7 @@ export class ReachlistZipBatchService {
     countryResolver: ReturnType<typeof buildMnoResolver>,
     addUnresolved: (mnoName: string, country: string) => void,
     note?: string,
+    extraUnresolvedCount = 0,
   ): Promise<ReachlistZipFileResult> {
     const synthetic: Record<string, string>[] = [];
     let unresolvedInThisFile = 0;
@@ -286,7 +288,7 @@ export class ReachlistZipBatchService {
       // takes (every row here already carries a tadig by construction) —
       // the real count is what this method's own country+name resolution
       // above just gave up on.
-      unresolvedMnoCount: unresolvedInThisFile + raw.unresolvedMnos.length,
+      unresolvedMnoCount: unresolvedInThisFile + raw.unresolvedMnos.length + extraUnresolvedCount,
       note,
     };
   }

@@ -411,18 +411,73 @@ function AdminTab() {
           </Typography>
         </TechAccordion>
 
+        <TechAccordion title="Multi-Carrier Reach List ZIP Upload (Batch Ingestion)">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            A separate path from the single-file Reach List Upload above, built for the shape carriers actually
+            send: one <code>.zip</code> archive containing several carriers&apos; own exports at once, each
+            identified by its own filename (e.g. &quot;BICS External LTE...xlsx&quot;, &quot;Comfone Customer
+            List.pdf&quot;) rather than a shared Provider column. Every file, whatever its format, is converted to
+            the same row shape the single-file path understands and passed through the identical provider-alias
+            resolution, country normalization, and secondaryTadigs-aware MNO lookup — a ZIP-batch upload and a
+            standard-format upload of the same data land on identical records.
+          </Typography>
+          <Bullets
+            items={[
+              <><strong>.xlsx / .xls</strong> — flexible header detection scans up to 40 rows to find the real header row (country, operator, TADIG, MCC-MNC, and service columns), so files don&apos;t need to match a fixed template. Numbered &quot;TADIG 1&quot;..&quot;TADIG N&quot; columns are all captured as secondary TADIGs for the same operator.</>,
+              <><strong>.pdf</strong> — Comfone-style customer-list exports, parsed from the tab-delimited text stream directly (these files carry no ruled table borders for automatic table detection to find).</>,
+              <><strong>.msg</strong> — an Outlook email with a pasted partner table or plain name list, parsed either by TADIG anchor (tracking the last-seen country and service heading while scanning) or by free-text operator name.</>,
+            ]}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+            The carrier for each file is inferred automatically — first from the filename (leading tokens, e.g.
+            &quot;BICS...&quot;, then trailing tokens for a forwarded-email subject that names the carrier last,
+            e.g. &quot;...Routing Audit. Telstra 2026.msg&quot;), then from the .msg sender name or email domain. A
+            file whose provider or table structure can&apos;t be confidently recognized is skipped and reported —
+            not guessed at — in a per-file breakdown table after upload, alongside a downloadable CSV of any MNOs
+            that couldn&apos;t be resolved.
+          </Typography>
+        </TechAccordion>
+
+        <TechAccordion title="Carrier-specific connection filtering">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Some carriers&apos; own exports list every route they know about, including indirect/hub/transit paths
+            CCIP shouldn&apos;t record as direct connectivity. For three carriers, rows are filtered against the
+            file&apos;s own Connection Type / Route Type column before ingestion — applied uniformly across every
+            format above (.xlsx, .xls, .pdf, .msg), not just Excel:
+          </Typography>
+          <Bullets
+            items={[
+              <><strong>Deutsche Telekom &amp; China Mobile</strong> — only rows whose connection type contains &quot;direct&quot; and does not contain &quot;indirect&quot;, &quot;hub&quot;, or &quot;transit&quot; are kept.</>,
+              <><strong>iBasis</strong> — only rows whose connection type matches &quot;direct&quot; or &quot;on-net&quot; are kept (iBasis&apos;s real Route Type values are &quot;Direct&quot;, &quot;On-Net&quot;, &quot;On-Net Planned&quot;, &quot;On-Net Backup&quot;, etc. — not the literal word &quot;iBasis&quot;).</>,
+              <><strong>Every other carrier</strong> — passes through unfiltered, using the standard extraction rules above.</>,
+            ]}
+          />
+          <Tip>A row with a blank or unrecognized connection type is excluded, not assumed direct — the same &quot;no confirmation, no inclusion&quot; standard for all three carriers.</Tip>
+        </TechAccordion>
+
         <TechAccordion title="Replace / purge safety">
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Both upload types offer an opt-in replace checkbox, unchecked by default, each scoped to what it&apos;s
-            actually safe to replace:
+            Upload paths offer an opt-in replace checkbox, unchecked by default, each scoped to what it&apos;s
+            actually safe to replace — plus one fully unscoped purge for a genuine full reset:
           </Typography>
           <Bullets
             items={[
               <><strong>IR.21 batch</strong> — &quot;Replace Active Dataset&quot; wipes every IR.21-sourced connectivity record platform-wide before ingesting, since a rebaseline archive is meant to represent the entire known operator universe.</>,
-              <><strong>Reach List</strong> — &quot;Replace records from this file&quot; deletes only the records previously loaded from a file of that exact name before ingesting the new version, leaving Reach List data loaded from any other file untouched — a Reach List upload is usually one source&apos;s subset, not the whole picture, so a full-table purge would destroy unrelated providers&apos; data.</>,
+              <><strong>Reach List (single file)</strong> — &quot;Replace records from this file&quot; deletes only the records previously loaded from a file of that exact name before ingesting the new version, leaving Reach List data loaded from any other file untouched.</>,
+              <><strong>Reach List ZIP batch</strong> — &quot;Replace records from these files&quot; applies that same per-filename scoping independently to every file inside the archive; Reach List data loaded from a file not in this archive is never touched.</>,
+              <><strong>Delete All Reach List Data</strong> — a fully unscoped purge of every Reach List record platform-wide (IR.21-sourced connectivity data is not affected), for a genuine full reset rather than a per-source replace. Danger-styled, gated behind a confirmation dialog, and logged to Upload History.</>,
             ]}
           />
-          <Warn>Both replace actions are permanent and ask for confirmation before running. Neither can be undone.</Warn>
+          <Warn>All replace and purge actions are permanent and ask for confirmation before running. None can be undone.</Warn>
+        </TechAccordion>
+
+        <TechAccordion title="Format guide &amp; sample templates">
+          <Typography variant="body2" color="text.secondary">
+            The Reach List Upload card documents both accepted single-file shapes (standard transposed and wide
+            competitor matrix — see &quot;Dual-format Reach List ingestion&quot; above) inline, each with a
+            downloadable sample <code>.xlsx</code> template pre-filled with the expected columns, so a new upload
+            can be built by editing a known-good file rather than guessing at the format from prose alone.
+          </Typography>
         </TechAccordion>
 
         <TechAccordion title="Unmapped provider management">

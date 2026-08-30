@@ -27,6 +27,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -35,6 +36,7 @@ import FolderZipIcon from "@mui/icons-material/FolderZip";
 import LanIcon from "@mui/icons-material/Lan";
 import DownloadIcon from "@mui/icons-material/Download";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import ReportProblemIcon from "@mui/icons-material/ReportProblem";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -47,6 +49,7 @@ import {
   DsxBackfillResult,
   PurgeReachlistResult,
   ReachlistZipBatchResult,
+  ResetIr21DatabaseResult,
   Role,
   UploadHistoryRow,
   UploadResult,
@@ -806,6 +809,99 @@ function DeleteAllReachlistCard({ onDeleted, isAdmin }: { onDeleted: () => void;
   );
 }
 
+const RESET_CONFIRMATION_PIN = "12345";
+
+function ResetIr21DatabaseCard({ onReset, isAdmin }: { onReset: () => void; isAdmin: boolean }) {
+  const [busy, setBusy] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [pin, setPin] = React.useState("");
+  const [toast, setToast] = React.useState<string | null>(null);
+
+  async function handleReset() {
+    setBusy(true);
+    try {
+      const res = await api.delete<ResetIr21DatabaseResult>(`/upload/reset-ir21-database?pin=${encodeURIComponent(pin)}`);
+      setToast(`Reset complete — ${res.mnosDeleted} MNO record(s) and every dependent IR.21/Reach List row permanently deleted.`);
+      setConfirmOpen(false);
+      setPin("");
+      onReset();
+    } catch (err) {
+      setToast(err instanceof ApiError ? `Reset failed: ${err.message}` : "Reset failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card sx={{ borderColor: "error.main", borderWidth: 2, borderStyle: "solid" }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight={700} color="error.main">
+          Reset IR.21 &amp; MNO Master Database
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Permanently deletes <strong>every</strong> MNO record platform-wide, and every row a foreign key
+          requires be gone with it: all IR.21 declarations, all Reach List connectivity, discrepancies,
+          overrides, and pending normalization entries. Effectively a full reset back to a day-zero empty
+          operator universe, ready for a fresh IR.21 upload. Registered providers and their aliases are
+          <em> not</em> affected. This is far broader than &quot;Delete All Reach List Data&quot; above —
+          use it only when you mean to start over completely.
+        </Typography>
+        <Tooltip title={!isAdmin ? ADMIN_ONLY_TOOLTIP : ""}>
+          <span>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<ReportProblemIcon />}
+              onClick={() => setConfirmOpen(true)}
+              disabled={busy || !isAdmin}
+            >
+              {busy ? "Resetting..." : "Reset IR.21 & MNO Database"}
+            </Button>
+          </span>
+        </Tooltip>
+
+        <Dialog open={confirmOpen} onClose={() => { setConfirmOpen(false); setPin(""); }}>
+          <DialogTitle>Reset the entire IR.21 &amp; MNO Master database?</DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ mb: 2 }}>
+              This deletes every MNO, every IR.21 declaration, and every Reach List connectivity record
+              platform-wide — nothing is scoped, nothing is recoverable. Operator Search, Provider Search,
+              and every comparison view will show an empty operator universe until new IR.21/Reach List data
+              is uploaded. Registered providers themselves are kept.
+            </DialogContentText>
+            <DialogContentText sx={{ mb: 1 }}>
+              Type the confirmation PIN to proceed:
+            </DialogContentText>
+            <TextField
+              autoFocus
+              fullWidth
+              size="small"
+              label="Confirmation PIN"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && pin === RESET_CONFIRMATION_PIN && handleReset()}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => { setConfirmOpen(false); setPin(""); }}>Cancel</Button>
+            <Button color="error" variant="contained" disabled={pin !== RESET_CONFIRMATION_PIN || busy} onClick={handleReset}>
+              Reset Everything
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Snackbar
+          open={!!toast}
+          autoHideDuration={6000}
+          onClose={() => setToast(null)}
+          message={toast}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 function DsxBackfillCard({ isAdmin }: { isAdmin: boolean }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<DsxBackfillResult | null>(null);
@@ -940,6 +1036,9 @@ export default function UploadPage() {
           </Grid>
           <Grid item xs={12}>
             <DeleteAllReachlistCard onDeleted={loadHistory} isAdmin={isAdmin} />
+          </Grid>
+          <Grid item xs={12}>
+            <ResetIr21DatabaseCard onReset={loadHistory} isAdmin={isAdmin} />
           </Grid>
         </Grid>
 

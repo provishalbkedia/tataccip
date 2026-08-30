@@ -96,7 +96,7 @@ export default function DashboardPage() {
         {metrics && (
           <Chip
             icon={<InfoOutlinedIcon fontSize="small" />}
-            label={`Derived from ${metrics.totalMnos.toLocaleString()} IR.21-declared operator records — the platform's authoritative source of truth. ${metrics.reachlistOnlyMnoCount.toLocaleString()} additional TADIGs appear only in Reach List uploads and are tracked separately, not counted here. Informational use only.`}
+            label={`Derived from ${metrics.totalMnos.toLocaleString()} IR.21-declared operator records — the platform's authoritative source of truth. ${metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were auto-created from Reach List uploads before MNO normalization was enforced; ${metrics.pendingMnoNormalizationCount.toLocaleString()} newer Reach List rows are queued for admin review instead of being auto-created. Informational use only.`}
             size="small"
             variant="outlined"
             sx={{ mb: 3, color: "text.secondary", borderColor: "divider" }}
@@ -117,7 +117,7 @@ export default function DashboardPage() {
               icon: <CellTowerIcon fontSize="large" />,
               color: "#0A2540",
               href: "/search/mno",
-              tooltip: `Operators with a full, authoritative GSMA IR.21 declaration on file — the platform's source of truth for MNO count. ${metrics.reachlistOnlyMnoCount.toLocaleString()} additional TADIGs are cited in wholesale providers' Reach Lists but don't have their own IR.21 declaration; those are tracked separately, not included here, since a Reach List citation isn't independently authenticated the way an IR.21 XML is.`,
+              tooltip: `Operators with a full, authoritative GSMA IR.21 declaration on file — the platform's source of truth for MNO count. ${metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were auto-created from Reach List uploads before MNO normalization was enforced (kept as-is, not retroactively removed). Reach List ingestion no longer creates a new MNO automatically — an unmatched row is now queued under "Unresolved Reach List Aliases" for admin review instead.`,
             },
             {
               label: "Total Providers",

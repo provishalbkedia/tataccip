@@ -68,6 +68,44 @@ export class UploadService {
     return { deletedCount: count };
   }
 
+  /** Full platform reset: wipes every MnoMaster row and everything a
+   * foreign key requires be gone first (Ir21Connectivity,
+   * MnoMasterConnectivity, ProviderReachlist, DataDiscrepancy,
+   * MnoProviderOverride, MnoNormalizationAudit) — back to a day-zero empty
+   * operator universe, ready for a fresh IR.21 baseline. ProviderMaster /
+   * ProviderAlias / UnmappedProviderVariant are deliberately left alone —
+   * they're provider-side data, not "IR.21" or "MNO master" data, so a
+   * provider registered today stays registered (just with zero MNOs)
+   * after this runs. Wrapped in one transaction so a failure partway
+   * through can't leave the platform half-wiped. */
+  async resetIr21AndMnoDatabase(resetBy: string): Promise<{ mnosDeleted: number }> {
+    const mnosDeleted = await this.prisma.mnoMaster.count();
+    await this.prisma.$transaction([
+      this.prisma.dataDiscrepancy.deleteMany({}),
+      this.prisma.providerReachlist.deleteMany({}),
+      this.prisma.ir21Connectivity.deleteMany({}),
+      this.prisma.mnoMasterConnectivity.deleteMany({}),
+      this.prisma.mnoProviderOverride.deleteMany({}),
+      this.prisma.mnoNormalizationAudit.deleteMany({}),
+      this.prisma.mnoMaster.deleteMany({}),
+      // The "Active IR.21 Baseline" banner reads whichever UploadHistory
+      // row still has this flag set — without clearing it, the banner
+      // would keep pointing at a batch whose MnoMaster data no longer
+      // exists.
+      this.prisma.uploadHistory.updateMany({ where: { isCurrentActive: true }, data: { isCurrentActive: false } }),
+      this.prisma.uploadHistory.create({
+        data: {
+          filename: "FULL PLATFORM RESET — IR.21 & MNO Master Database",
+          uploadedBy: resetBy,
+          recordsLoaded: 0,
+          status: UploadStatus.SUCCESS,
+          errorLog: `${mnosDeleted} MNO record(s), and every IR.21/Reach List connectivity row attached to them, permanently deleted.`,
+        },
+      }),
+    ]);
+    return { mnosDeleted };
+  }
+
   // uploadReachlist() is otherwise purely additive: it upserts on
   // (mnoId, providerId, serviceId), so a re-uploaded sheet that renamed,
   // dropped, or reassigned an operator's row leaves the old row behind

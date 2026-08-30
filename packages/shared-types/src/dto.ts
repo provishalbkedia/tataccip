@@ -360,6 +360,14 @@ export interface PurgeReachlistResult {
   deletedCount: number;
 }
 
+// Full platform reset — see UploadService.resetIr21AndMnoDatabase. Wipes
+// every MnoMaster row and everything a foreign key requires be gone first
+// (IR.21 connectivity, Reach List connectivity, discrepancies, overrides,
+// normalization audit). ProviderMaster/ProviderAlias are left untouched.
+export interface ResetIr21DatabaseResult {
+  mnosDeleted: number;
+}
+
 export interface ReachlistZipBatchResult {
   uploadHistory: UploadHistoryRow;
   totalFilesInArchive: number;

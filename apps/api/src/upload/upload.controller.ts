@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   Post,
+  Query,
   UploadedFile,
   UploadedFiles,
   UseGuards,
@@ -41,6 +42,14 @@ const MAX_REACHLIST_ZIP_BYTES = 30 * 1024 * 1024;
 // all (see Dockerfile/deploy notes).
 const MAX_XML_BATCH_FILES = 1100;
 const MAX_XML_FILE_BYTES = 250 * 1024 * 1024;
+
+// A deliberate "you really mean this" typing step for the full-database
+// reset below, not a real secret — the actual security boundary is the
+// JWT + ADMIN role guard every other admin action already relies on. An
+// admin who already has that access can already delete everything this
+// action deletes via other endpoints; this PIN only exists to make a
+// destructive misclick harder.
+const RESET_CONFIRMATION_PIN = "12345";
 
 const xmlBatchUploadBody = {
   schema: {
@@ -145,5 +154,18 @@ export class UploadController {
   @Roles(Role.ADMIN)
   async purgeAllReachlistData(@CurrentUser() user: { email: string }) {
     return this.uploadService.purgeAllReachlistData(user.email);
+  }
+
+  // Full platform reset: every MnoMaster row, and every IR.21/Reach List
+  // connectivity row a foreign key requires be gone first, permanently
+  // deleted. ProviderMaster/ProviderAlias are untouched. See
+  // UploadService.resetIr21AndMnoDatabase for the exact scope.
+  @Delete("reset-ir21-database")
+  @Roles(Role.ADMIN)
+  async resetIr21Database(@CurrentUser() user: { email: string }, @Query("pin") pin?: string) {
+    if (pin !== RESET_CONFIRMATION_PIN) {
+      throw new BadRequestException("Incorrect confirmation PIN.");
+    }
+    return this.uploadService.resetIr21AndMnoDatabase(user.email);
   }
 }

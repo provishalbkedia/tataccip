@@ -15,6 +15,12 @@ interface RowSource {
   operator: string;
   tadigs: string[];
   services: ServiceFamily[];
+  // Raw "Connection Type" / "Route Type" text, when the source carried
+  // one — undefined for PDF/.msg-derived rows, which have no such
+  // concept. Carried through so carrier-specific filtering (see
+  // applyCarrierRowFilter) runs identically regardless of which parser
+  // produced the row, not just for Excel.
+  connectionType?: string;
 }
 
 /** Multi-Carrier Reach List ZIP Batch Ingestion — a separate path from the
@@ -186,20 +192,19 @@ export class ReachlistZipBatchService {
       if (!provider) {
         return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameCandidatesFromFilename(filename)[0]}" (from the filename) to a known provider.`);
       }
-      const { kept, filteredOutCount } = this.applyCarrierRowFilter(provider, parsed.rows);
-      const sources: RowSource[] = kept.map((r: FlexibleExcelRow) => ({ country: r.country, operator: r.operator, tadigs: r.tadigs, services: r.services }));
-      const noteParts: string[] = [];
-      if (parsed.usedFilenameServiceFallback) {
-        noteParts.push(
-          parsed.filenameFallbackFamilies.length > 0
-            ? `Used filename to infer service: ${parsed.filenameFallbackFamilies.join(", ")}.`
-            : "No service indicator found in the sheet or filename — rows without a resolvable service were skipped.",
-        );
-      }
-      if (filteredOutCount > 0) {
-        noteParts.push(`${filteredOutCount} row(s) filtered out by ${provider}'s carrier-specific rule.`);
-      }
-      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, noteParts.join(" ") || undefined);
+      const sources: RowSource[] = parsed.rows.map((r: FlexibleExcelRow) => ({
+        country: r.country,
+        operator: r.operator,
+        tadigs: r.tadigs,
+        services: r.services,
+        connectionType: r.connectionType,
+      }));
+      const note = parsed.usedFilenameServiceFallback
+        ? parsed.filenameFallbackFamilies.length > 0
+          ? `Used filename to infer service: ${parsed.filenameFallbackFamilies.join(", ")}.`
+          : "No service indicator found in the sheet or filename — rows without a resolvable service were skipped."
+        : undefined;
+      return this.ingest(sources, provider, filename, replace, fileType, countryResolver, addUnresolved, note);
     }
 
     if (fileType === "PDF") {
@@ -257,9 +262,18 @@ export class ReachlistZipBatchService {
     note?: string,
     extraUnresolvedCount = 0,
   ): Promise<ReachlistZipFileResult> {
+    // Applied here — uniformly, for every fileType — rather than only in
+    // the Excel branch, so the rule runs identically no matter which
+    // parser produced these rows (a hypothetical DT/CMI/iBasis PDF or
+    // .msg gets the exact same treatment, not silently bypassed).
+    const { kept, filteredOutCount } = this.applyCarrierRowFilter(provider, sources);
+    if (filteredOutCount > 0) {
+      note = [note, `${filteredOutCount} row(s) filtered out by ${provider}'s carrier-specific rule.`].filter(Boolean).join(" ");
+    }
+
     const synthetic: Record<string, string>[] = [];
     let unresolvedInThisFile = 0;
-    for (const row of sources) {
+    for (const row of kept) {
       if (row.services.length === 0) continue;
       const servicesStr = row.services.join(",");
 
@@ -307,18 +321,28 @@ export class ReachlistZipBatchService {
 
   /** Carrier-specific row filtering, applied only to the three carriers
    * where it was explicitly requested — every other carrier keeps its
-   * existing all-rows behavior. Deliberately strict: a row with no
-   * connectionType at all (common — several real carrier exports, e.g.
-   * Deutsche Telekom's, carry no connection-type column whatsoever) does
-   * NOT count as "confirmed Direct" and is excluded, same as an explicit
-   * "Indirect"/"Peering" value would be. For a file with no such column
-   * at all, this filters out every row — an explicit, deliberate choice
-   * (confirmed with the platform owner) over silently ignoring the rule
-   * for files that don't carry the field it depends on. */
+   * existing all-rows behavior. Runs uniformly for every fileType (see
+   * the call site in ingest()), not just Excel.
+   *
+   * Deutsche Telekom / China Mobile: strictly "Direct" only. A row with
+   * no connectionType at all (Deutsche Telekom's real file carries no
+   * connection-type column whatsoever) does not count as confirmed
+   * Direct and is excluded, same as an explicit "Indirect"/"Peering"
+   * value would be.
+   *
+   * iBasis: real production data corrected this rule mid-implementation
+   * — iBasis's actual "Route Type" column never contains the literal
+   * word "iBasis" (it's already iBasis's own file; there's no per-row
+   * provider-mention column), but it *does* carry a genuine on-net
+   * signal: real values are "Direct", "On-Net", "On-Net Planned",
+   * "On-Net 2", "On-Net Backup" (verified against the real file — 1,051
+   * of 1,057 rows carry one of these; only 6 are genuinely blank). Kept
+   * rows are any of those; a blank connectionType still excludes, same
+   * strict "no confirmation, no inclusion" standard as DT/CMI. */
   private applyCarrierRowFilter(
     provider: string,
-    rows: FlexibleExcelRow[],
-  ): { kept: FlexibleExcelRow[]; filteredOutCount: number } {
+    rows: RowSource[],
+  ): { kept: RowSource[]; filteredOutCount: number } {
     const key = provider.trim().toLowerCase();
 
     if (key === "deutsche telekom" || key === "china mobile") {
@@ -330,7 +354,7 @@ export class ReachlistZipBatchService {
     }
 
     if (key === "ibasis") {
-      const kept = rows.filter((r) => `${r.operator} ${r.connectionType ?? ""}`.toLowerCase().includes("ibasis"));
+      const kept = rows.filter((r) => /\bdirect\b|on[\s-]?net/i.test(r.connectionType ?? ""));
       return { kept, filteredOutCount: rows.length - kept.length };
     }
 

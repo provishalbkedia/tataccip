@@ -77,6 +77,7 @@ function UploadCard({
   onUploaded,
   isAdmin,
   replaceOption,
+  formatGuide,
 }: {
   title: string;
   description: string;
@@ -88,6 +89,10 @@ function UploadCard({
   // before ingesting — see Reach List Upload below. Omit for an upload
   // type that has no such notion of "replace."
   replaceOption?: { label: React.ReactNode; confirmTitle: string; confirmText: React.ReactNode };
+  // Expanded per-format documentation + downloadable sample templates —
+  // shown so an admin knows the expected headers/structure before their
+  // first upload, instead of discovering it from a parse error.
+  formatGuide?: { formats: { title: string; columns: string; sampleHref: string; sampleLabel: string }[] };
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
@@ -134,9 +139,33 @@ function UploadCard({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {description}
         </Typography>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: formatGuide ? 1 : 2 }}>
           Expected columns: {columnsHint}
         </Typography>
+        {formatGuide && (
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: "action.hover", borderRadius: 1 }}>
+            {formatGuide.formats.map((f) => (
+              <Box key={f.title} sx={{ mb: f === formatGuide.formats[formatGuide.formats.length - 1] ? 0 : 1.5 }}>
+                <Typography variant="caption" fontWeight={700} display="block">
+                  {f.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  {f.columns}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<DownloadIcon fontSize="small" />}
+                  href={f.sampleHref}
+                  download
+                  sx={{ minHeight: "auto", py: 0.25, textTransform: "none" }}
+                >
+                  {f.sampleLabel}
+                </Button>
+              </Box>
+            ))}
+          </Box>
+        )}
         {replaceOption && (
           <FormControlLabel
             sx={{ display: "block", mb: 1 }}
@@ -867,6 +896,22 @@ export default function UploadPage() {
               columnsHint="Provider, Country, MNO, TADIG, Services — or a wide matrix with MNO, Country, and one column per wholesale provider"
               onUploaded={loadHistory}
               isAdmin={isAdmin}
+              formatGuide={{
+                formats: [
+                  {
+                    title: "Format 1 — Standard Transposed",
+                    columns: "Provider, Country, MNO, TADIG, Services, Connection Type (optional — e.g. Direct, On-Net, Peering)",
+                    sampleHref: "/samples/reachlist-standard-transposed-template.xlsx",
+                    sampleLabel: "Download sample (standard)",
+                  },
+                  {
+                    title: "Format 2 — Wide Matrix",
+                    columns: "MNO, Country, then one column per wholesale provider — each cell lists the services (e.g. \"SCCP, DSX\") that provider claims for that row's MNO, blank if none",
+                    sampleHref: "/samples/reachlist-wide-matrix-template.xlsx",
+                    sampleLabel: "Download sample (wide matrix)",
+                  },
+                ],
+              }}
               replaceOption={{
                 label: (
                   <>

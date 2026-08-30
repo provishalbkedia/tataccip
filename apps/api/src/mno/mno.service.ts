@@ -145,26 +145,34 @@ export class MnoService {
     const mnoIds = regionFilteredRows.map((r) => r.id);
     const providersByMno = await this.resolvedProvidersByMno(mnoIds);
 
-    return orderedRows.map((r) => {
-      const p = providersByMno.get(r.id);
-      return {
-        id: r.id,
-        operatorName: r.operatorName,
-        country: r.country,
-        region: getRegionByCountry(r.country),
-        tadigCode: r.tadigCode,
-        secondaryTadigs: r.secondaryTadigs,
-        mcc: r.mcc,
-        mnc: r.mnc,
-        status: r.status,
-        networkType: r.connectivity?.networkType ?? null,
-        sccpProviders: p ? Array.from(p.SCCP) : [],
-        dsxProviders: p ? Array.from(p.DSX) : [],
-        ipxProviders: p ? Array.from(p.IPX) : [],
-        lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
-        hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
-      };
-    });
+    // An MNO with no resolved provider on any service (no Ir21Connectivity,
+    // no ProviderReachlist row) has nothing comparable to show in Operator
+    // Search — every provider/PDF/date column would just render "-". The
+    // MnoMaster row itself is left alone (still counted in the IR.21
+    // baseline, still reachable by a direct link); this only hides it from
+    // search results.
+    return orderedRows
+      .map((r) => {
+        const p = providersByMno.get(r.id);
+        return {
+          id: r.id,
+          operatorName: r.operatorName,
+          country: r.country,
+          region: getRegionByCountry(r.country),
+          tadigCode: r.tadigCode,
+          secondaryTadigs: r.secondaryTadigs,
+          mcc: r.mcc,
+          mnc: r.mnc,
+          status: r.status,
+          networkType: r.connectivity?.networkType ?? null,
+          sccpProviders: p ? Array.from(p.SCCP) : [],
+          dsxProviders: p ? Array.from(p.DSX) : [],
+          ipxProviders: p ? Array.from(p.IPX) : [],
+          lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
+          hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
+        };
+      })
+      .filter((r) => r.sccpProviders.length > 0 || r.dsxProviders.length > 0 || r.ipxProviders.length > 0);
   }
 
   /** Lightweight matches for the Operator Search autocomplete — fetched on

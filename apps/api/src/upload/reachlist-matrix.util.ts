@@ -134,12 +134,34 @@ const FILENAME_STOP_WORDS = new Set([
  * leading run of filename tokens up to the first one that's a generic
  * service/descriptor word, a bare year, or a bare number. */
 export function inferProviderNameFromFilename(filename: string): string {
+  return inferProviderNameCandidatesFromFilename(filename)[0];
+}
+
+/** Same extraction, but also tries the *trailing* run of tokens before a
+ * bare year — a forwarded-email subject line names the carrier last, not
+ * first (e.g. "RE Request for Latest On-Net RP List Routing Audit.
+ * Telstra 2026.msg"), unlike the provider-first convention every Excel/
+ * PDF filename in real reach-list archives actually follows. Returns
+ * leading first (the common case), then trailing, so a caller trying
+ * candidates in order favors the usual convention. */
+export function inferProviderNameCandidatesFromFilename(filename: string): string[] {
   const base = filename.replace(/\.(xlsx|xls|pdf|msg)$/i, "");
-  const tokens = base.split(/[\s_\-]+/).filter(Boolean);
-  const nameTokens: string[] = [];
+  const tokens = base.split(/[\s_\-.]+/).filter(Boolean);
+
+  const leading: string[] = [];
   for (const t of tokens) {
     if (FILENAME_STOP_WORDS.has(t.toLowerCase()) || /^\d+$/.test(t)) break;
-    nameTokens.push(t);
+    leading.push(t);
   }
-  return nameTokens.join(" ").trim() || base.trim();
+  const leadingName = leading.join(" ").trim();
+
+  let end = tokens.length;
+  while (end > 0 && /^\d+$/.test(tokens[end - 1])) end--; // drop trailing bare year(s)
+  let start = end;
+  while (start > 0 && !FILENAME_STOP_WORDS.has(tokens[start - 1].toLowerCase()) && !/^\d+$/.test(tokens[start - 1])) start--;
+  const trailingName = tokens.slice(start, end).join(" ").trim();
+
+  const candidates = [leadingName || base.trim()];
+  if (trailingName && trailingName !== leadingName) candidates.push(trailingName);
+  return candidates;
 }

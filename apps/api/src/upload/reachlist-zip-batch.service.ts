@@ -5,7 +5,7 @@ import { ReachlistZipBatchResult, ReachlistZipFileResult } from "@ccip/shared-ty
 import { PrismaService } from "../prisma/prisma.service";
 import { UploadService } from "./upload.service";
 import { ProviderResolverService } from "./provider-resolver.service";
-import { buildGlobalNameResolver, buildMnoResolver, inferProviderNameFromFilename } from "./reachlist-matrix.util";
+import { buildGlobalNameResolver, buildMnoResolver, inferProviderNameCandidatesFromFilename } from "./reachlist-matrix.util";
 import { parseFlexibleExcel, type FlexibleExcelRow, type ServiceFamily } from "./reachlist-excel-flexible.util";
 import { parseComfonePdf } from "./reachlist-pdf.util";
 import { parseReachlistMsg } from "./reachlist-msg.util";
@@ -37,6 +37,13 @@ interface RowSource {
 @Injectable()
 export class ReachlistZipBatchService {
   private readonly logger = new Logger(ReachlistZipBatchService.name);
+  // Populated fresh at the start of each ingestZip() call — lowercased
+  // ProviderMaster.providerName -> real casing, so filename inference can
+  // recognize an existing canonical name directly (e.g. "TNS", "PCCW
+  // Global") even when it has no separate alias-cache entry of its own
+  // (aliases exist for *variant* spellings; the canonical name itself
+  // usually doesn't need one).
+  private providerNames = new Map<string, string>();
 
   constructor(
     private prisma: PrismaService,
@@ -56,9 +63,13 @@ export class ReachlistZipBatchService {
       .getEntries()
       .filter((e) => !e.isDirectory && e.header.size > 0 && !/(^|\/)(__MACOSX|\.DS_Store)/.test(e.entryName));
 
-    const allMnos = await this.prisma.mnoMaster.findMany({ select: { operatorName: true, country: true, tadigCode: true } });
+    const [allMnos, allProviders] = await Promise.all([
+      this.prisma.mnoMaster.findMany({ select: { operatorName: true, country: true, tadigCode: true } }),
+      this.prisma.providerMaster.findMany({ select: { providerName: true } }),
+    ]);
     const countryResolver = buildMnoResolver(allMnos);
     const nameOnlyResolver = buildGlobalNameResolver(allMnos);
+    this.providerNames = new Map(allProviders.map((p) => [p.providerName.toLowerCase(), p.providerName]));
 
     const files: ReachlistZipFileResult[] = [];
     const unresolvedMnos: { mnoName: string; country: string }[] = [];
@@ -166,9 +177,9 @@ export class ReachlistZipBatchService {
       if (!parsed.headerFound) {
         return this.skip(filename, fileType, "SKIPPED_UNPARSEABLE", "Could not find a recognizable header row (Country/Operator/TADIG/Service) anywhere in the first 40 rows — needs manual review.");
       }
-      const provider = this.inferProvider(filename);
+      const provider = this.inferProviderFromFilename(filename);
       if (!provider) {
-        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameFromFilename(filename)}" (from the filename) to a known provider.`);
+        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameCandidatesFromFilename(filename)[0]}" (from the filename) to a known provider.`);
       }
       const sources: RowSource[] = parsed.rows.map((r: FlexibleExcelRow) => ({ country: r.country, operator: r.operator, tadigs: r.tadigs, services: r.services }));
       const note = parsed.usedFilenameServiceFallback
@@ -184,9 +195,9 @@ export class ReachlistZipBatchService {
       if (parsed.rows.length === 0) {
         return this.skip(filename, fileType, "SKIPPED_NO_DATA", "No TADIG-anchored rows recognized in the PDF text — this parser is built for the Comfone customer-list export layout specifically.");
       }
-      const provider = this.inferProvider(filename);
+      const provider = this.inferProviderFromFilename(filename);
       if (!provider) {
-        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameFromFilename(filename)}" (from the filename) to a known provider.`);
+        return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match "${inferProviderNameCandidatesFromFilename(filename)[0]}" (from the filename) to a known provider.`);
       }
       const sources: RowSource[] = parsed.rows.map((r) => ({ country: r.country, operator: "", tadigs: [r.tadig], services: r.services }));
       const note = parsed.skippedNonStandardCodeLines > 0
@@ -200,7 +211,7 @@ export class ReachlistZipBatchService {
     if (parsed.tadigRows.length === 0 && parsed.nameOnlyRows.length === 0) {
       return this.skip(filename, fileType, "SKIPPED_NO_DATA", "No reach-list data found in the message body — likely correspondence only (e.g. a request still being clarified), not a data submission.");
     }
-    const provider = this.inferProvider(filename) ?? this.inferProvider(parsed.senderName ?? "") ?? this.inferProviderFromEmailDomain(parsed.senderEmail);
+    const provider = this.inferProviderFromFilename(filename) ?? this.inferProviderCandidate(parsed.senderName ?? "") ?? this.inferProviderFromEmailDomain(parsed.senderEmail);
     if (!provider) {
       return this.skip(filename, fileType, "SKIPPED_UNRESOLVED_PROVIDER", `Could not confidently match a provider from the filename, sender name ("${parsed.senderName ?? "unknown"}"), or sender email domain.`);
     }
@@ -233,6 +244,7 @@ export class ReachlistZipBatchService {
     note?: string,
   ): Promise<ReachlistZipFileResult> {
     const synthetic: Record<string, string>[] = [];
+    let unresolvedInThisFile = 0;
     for (const row of sources) {
       if (row.services.length === 0) continue;
       const servicesStr = row.services.join(",");
@@ -250,6 +262,7 @@ export class ReachlistZipBatchService {
       const resolution = countryResolver(row.country, row.operator);
       if (resolution.status !== "resolved") {
         addUnresolved(row.operator, row.country);
+        unresolvedInThisFile++;
         continue;
       }
       synthetic.push({ provider, country: row.country, mno: row.operator, tadig: resolution.tadigCode, services: servicesStr });
@@ -268,7 +281,12 @@ export class ReachlistZipBatchService {
       recordsLoaded: raw.recordsLoaded,
       recordsReplaced: raw.recordsReplaced,
       errorCount: raw.errors.length,
-      unresolvedMnoCount: raw.unresolvedMnos.length,
+      // raw.unresolvedMnos only ever fires for the wide-matrix format's own
+      // internal resolution path, which this synthetic-row pipeline never
+      // takes (every row here already carries a tadig by construction) —
+      // the real count is what this method's own country+name resolution
+      // above just gave up on.
+      unresolvedMnoCount: unresolvedInThisFile + raw.unresolvedMnos.length,
       note,
     };
   }
@@ -282,24 +300,48 @@ export class ReachlistZipBatchService {
     return { filename, fileType, status, recordsLoaded: 0, errorCount: 0, unresolvedMnoCount: 0, note };
   }
 
-  /** Only returns a provider when the alias resolver is already confident
-   * — this is the same exact/substring-match logic every other ingestion
-   * path trusts (see ProviderResolverService), just consulted here first
-   * so an unrecognized filename gets reported rather than silently
-   * spawning a new ProviderMaster row from a guess. */
-  private inferProvider(candidate: string): string | null {
-    const cleaned = inferProviderNameFromFilename(candidate);
-    if (!cleaned) return null;
-    const normalized = this.providerResolver.normalize(cleaned);
-    if (!normalized) return null;
-    const providerId = this.providerResolver.matchAlias(normalized);
-    return providerId ? cleaned : null;
+  /** Tries every filename-derived candidate (leading tokens — the common
+   * "BICS External LTE..." convention — then trailing tokens, for a
+   * forwarded-email subject that names the carrier last) and returns the
+   * first that resolves confidently. */
+  private inferProviderFromFilename(filename: string): string | null {
+    for (const candidate of inferProviderNameCandidatesFromFilename(filename)) {
+      const resolved = this.inferProviderCandidate(candidate);
+      if (resolved) return resolved;
+    }
+    return null;
   }
 
+  /** Only returns a provider when either (a) it's an existing
+   * ProviderMaster name directly (case-insensitive exact match — catches
+   * a canonical name like "TNS" that has no separate alias-cache entry of
+   * its own, since aliases are normally registered only for *variant*
+   * spellings) or (b) the alias resolver already confidently matches it —
+   * the same exact/substring-match logic every other ingestion path
+   * trusts (see ProviderResolverService). Never a guess: an unrecognized
+   * candidate is reported back rather than spawning a new ProviderMaster
+   * row from filename text alone. */
+  private inferProviderCandidate(candidate: string): string | null {
+    const trimmed = candidate.trim();
+    if (!trimmed) return null;
+    const directMatch = this.providerNames.get(trimmed.toLowerCase());
+    if (directMatch) return directMatch;
+    const normalized = this.providerResolver.normalize(trimmed);
+    if (!normalized) return null;
+    const providerId = this.providerResolver.matchAlias(normalized);
+    return providerId ? trimmed : null;
+  }
+
+  /** Tries every label of the sender's domain except the TLD — a domain
+   * like "team.telstra.com" needs the second label, not the first, to
+   * reach the actual carrier name. */
   private inferProviderFromEmailDomain(email: string | null): string | null {
     if (!email) return null;
-    const domain = email.split("@")[1]?.split(".")[0];
-    if (!domain) return null;
-    return this.inferProvider(domain);
+    const labels = email.split("@")[1]?.split(".").slice(0, -1) ?? [];
+    for (const label of labels) {
+      const resolved = this.inferProviderCandidate(label);
+      if (resolved) return resolved;
+    }
+    return null;
   }
 }

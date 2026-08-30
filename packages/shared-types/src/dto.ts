@@ -204,6 +204,9 @@ export interface MnoConnectivitySnapshot {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
+  // The operator's own AS Number for BGP peering with its GRX/IPX
+  // carrier(s), as declared in the IR.21 GRX/IPX routing section.
+  asNumber: string | null;
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];

@@ -134,6 +134,10 @@ model MnoMasterConnectivity {
   sccpPointCodes          String[]
   grxIpxProviders         String[]
   lteIpxProviders         String[]
+  // The operator's own Autonomous System Number for BGP peering with its
+  // GRX/IPX carrier(s) — declared once per MNO in the GRX/IPX routing
+  // section, not per-provider (see Ir21XmlParserService).
+  asNumber                String?
   interPmnIpRanges        String[]
   diameterEdgeAgentFqdn   String?
   authoritativeDnsIps     String[]

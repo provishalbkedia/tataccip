@@ -297,6 +297,7 @@ export class MnoService {
             sccpPointCodes: mno.connectivity.sccpPointCodes,
             grxIpxProviders: mno.connectivity.grxIpxProviders,
             lteIpxProviders: mno.connectivity.lteIpxProviders,
+            asNumber: mno.connectivity.asNumber,
             interPmnIpRanges: mno.connectivity.interPmnIpRanges,
             diameterEdgeAgentFqdn: mno.connectivity.diameterEdgeAgentFqdn,
             authoritativeDnsIps: mno.connectivity.authoritativeDnsIps,

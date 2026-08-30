@@ -18,6 +18,12 @@ export interface ParsedIr21Document {
   sccpPointCodes: string[];
   grxIpxProviders: string[];
   lteIpxProviders: string[];
+  // The operator's own AS Number for BGP peering with its GRX/IPX
+  // carrier(s) — declared once per MNO in the GRX/IPX routing section, not
+  // per-provider. Tag naming varies across schema versions/vendor tooling
+  // like everything else this parser reads (see the class doc comment);
+  // matched defensively rather than against one exact tag.
+  asNumber: string | null;
   interPmnIpRanges: string[];
   diameterEdgeAgentFqdn: string | null;
   authoritativeDnsIps: string[];
@@ -168,6 +174,7 @@ export class Ir21XmlParserService {
       sccpPointCodes: sccp.pointCodes,
       grxIpxProviders: collectProviderNames(grxScope, [/^providername$/i]),
       lteIpxProviders: this.extractDsxDiameterProviders(lteScope, signallingScope),
+      asNumber: firstText(grxScope, [/^as_?number$/i, /autonomoussystemnumber/i, /^asn$/i]),
       interPmnIpRanges: collectTexts(grxScope, [/^ipaddressrange$/i]),
       diameterEdgeAgentFqdn:
         firstText(lteScope, [/^fqdn$/i]) ?? firstText(lteScope, [/diameteredgeagent/i, /deahostname/i]),

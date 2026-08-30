@@ -283,7 +283,7 @@ export class ReachlistZipBatchService {
     }
 
     if (synthetic.length === 0) {
-      return this.skip(filename, fileType, "SKIPPED_NO_DATA", note ?? "No rows resolved to a known operator.");
+      return { ...this.skip(filename, fileType, "SKIPPED_NO_DATA", note ?? "No rows resolved to a known operator."), inferredProvider: provider };
     }
 
     const raw = await this.uploadService.ingestReachlistRowsRaw(synthetic, filename, replace);

@@ -358,6 +358,7 @@ function MnoSearchPageInner() {
             },
             { field: "tadigCode", headerName: "TADIG" },
             { field: "networkType", headerName: "Network Type" },
+            { field: "asNumber", headerName: "AS Number (GRX/IPX)" },
             {
               field: "lastEffectiveDate",
               headerName: "Last Effective Date",

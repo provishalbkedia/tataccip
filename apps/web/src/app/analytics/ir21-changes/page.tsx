@@ -308,21 +308,29 @@ function ChurnProviderAutocomplete({
  * fixed as a bug). Unlike the Gainer/Loser cards, this card's own headline
  * is a plain count with no single "current entry" to default to, so this
  * control has no forced default selection -- it shows a match only when
- * the shared `search` state happens to equal one entry's own TADIG. */
+ * the shared `search` state happens to equal one entry's own operator
+ * name. Matching (and filling the shared search box) by name rather than
+ * TADIG is a deliberate readability choice -- "Croatian Telecom" over
+ * "HRVCN" -- accepted with eyes open that 6 operator names in the current
+ * dataset are shared by two different MNOs each (e.g. two "Movistar"
+ * entities), so for those the table can include a second, unrelated
+ * MNO's rows alongside the one actually selected. TADIG stays the
+ * `isOptionEqualToValue` identity below since it's still the only value
+ * guaranteed unique per option, just not what's typed or stored. */
 function SwitchingOperatorAutocomplete({
   entries,
-  selectedTadig,
+  selectedOperatorName,
   onSelect,
   onClear,
 }: {
   entries: SwitchingEntry[];
-  selectedTadig: string;
+  selectedOperatorName: string;
   onSelect: (entry: SwitchingEntry) => void;
   onClear: () => void;
 }) {
   const label = (entry: SwitchingEntry, rank: number) => `${rank}. ${entry.operatorName} (${entry.tadigCode}) — ${entry.changeCount} switches`;
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
-  const selected = options.find((o) => o.entry.tadigCode === selectedTadig) ?? null;
+  const selected = options.find((o) => o.entry.operatorName === selectedOperatorName) ?? null;
 
   return (
     <Box onClick={(e) => e.stopPropagation()}>
@@ -494,7 +502,11 @@ export default function Ir21ChangesPage() {
     setProvider(null);
     setProviderRole(null);
     setProviderInput("");
-    setSearch(entry.tadigCode);
+    // Filled with the operator name, not TADIG -- see
+    // SwitchingOperatorAutocomplete's own doc comment for the readability
+    // tradeoff this accepts (a handful of same-named operators can match
+    // more broadly than the one specific TADIG selected).
+    setSearch(entry.operatorName);
     // Not narrowed to changeType=REPLACED -- see handleSwitchingClick's own
     // comment below; that exact narrowing was already fixed as a bug
     // (REPLACED events are rare, so it routinely produced an empty table).
@@ -643,7 +655,7 @@ export default function Ir21ChangesPage() {
                   </Typography>
                   <SwitchingOperatorAutocomplete
                     entries={summary?.topSwitchingOperators ?? []}
-                    selectedTadig={search}
+                    selectedOperatorName={search}
                     onSelect={selectSwitchingOperator}
                     onClear={clearSwitchingSelection}
                   />

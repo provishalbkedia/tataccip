@@ -17,6 +17,7 @@ export interface Ir21RoutingChangeQuery {
   service?: string;
   changeType?: string;
   providerId?: string;
+  providerRole?: string;
   region?: string;
   search?: string;
 }
@@ -39,12 +40,26 @@ export class Ir21RoutingChangesService {
     const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
     const providerId = query.providerId ? parseInt(query.providerId, 10) : undefined;
 
+    // A plain provider filter (no role) matches either side of a change --
+    // useful for "show me everything involving X". The Top Gainer/Loser
+    // KPI cards instead pass a role so the click narrows to specifically
+    // the rows that make that provider a gainer or a loser, not just any
+    // row that mentions it.
+    const providerFilter =
+      providerId && !isNaN(providerId)
+        ? query.providerRole === "gainer"
+          ? { newProviderId: providerId, changeType: { in: ["ADDED", "REPLACED"] as RoutingChangeType[] } }
+          : query.providerRole === "loser"
+            ? { oldProviderId: providerId, changeType: { in: ["REMOVED", "REPLACED"] as RoutingChangeType[] } }
+            : { OR: [{ oldProviderId: providerId }, { newProviderId: providerId }] }
+        : {};
+
     const rows = await this.prisma.ir21RoutingChange.findMany({
       where: {
         ...(since ? { effectiveDate: { gte: since } } : {}),
         ...(query.service && query.service !== "ALL" ? { serviceName: query.service as ServiceName } : {}),
         ...(query.changeType && query.changeType !== "ALL" ? { changeType: query.changeType as RoutingChangeType } : {}),
-        ...(providerId && !isNaN(providerId) ? { OR: [{ oldProviderId: providerId }, { newProviderId: providerId }] } : {}),
+        ...providerFilter,
         ...(query.search
           ? {
               OR: [
@@ -86,14 +101,14 @@ export class Ir21RoutingChangesService {
   async summary(query: Ir21RoutingChangeQuery): Promise<Ir21RoutingChangeSummary> {
     const rows = await this.fetchFiltered(query);
 
-    // Net delta per provider, not two independent raw-count lists: a
-    // provider can be both newProvider on some rows (a gain) and
-    // oldProvider on others (a loss) within the same window, and the
-    // meaningful GTM signal is the NET of the two, not just whichever
-    // count happens to be larger in isolation.
+    // Gross gains/losses per provider, not just their net -- a provider
+    // can be net-positive overall (more wins than losses) while still
+    // genuinely losing real accounts, and a carrier-relations audience
+    // specifically wants to see those losses surface even when the
+    // provider's portfolio is still growing. netDelta is kept alongside
+    // for context, but ranking is on the gross count:
     //   gains  = ADDED (newProvider) + REPLACED (newProvider)
     //   losses = REMOVED (oldProvider) + REPLACED (oldProvider)
-    //   netDelta = gains - losses
     const churn = new Map<number, { name: string; gains: number; losses: number }>();
     const operators = new Map<number, { name: string; tadig: string; count: number }>();
 
@@ -116,26 +131,26 @@ export class Ir21RoutingChangesService {
     const churnList = [...churn.entries()].map(([id, v]) => ({
       providerId: id,
       providerName: v.name,
+      grossGains: v.gains,
+      grossLosses: v.losses,
       netDelta: v.gains - v.losses,
     }));
 
-    // Only a provider that genuinely lost more than it gained counts as a
-    // "loser" -- a provider with zero losses this period (the common case
-    // right after a fresh baseline, before any real churn has had a chance
-    // to happen) is never force-fit into the loser slot just to avoid an
+    const topGainingProviders = [...churnList]
+      .filter((c) => c.grossGains > 0)
+      .sort((a, b) => b.grossGains - a.grossGains)
+      .slice(0, 5);
+
+    // Only a provider with at least one real loss counts as a "loser" --
+    // a provider with zero losses this period (the common case right
+    // after a fresh baseline, before any real churn has had a chance to
+    // happen) is never force-fit into the loser slot just to avoid an
     // empty list; the frontend shows an explicit "no losses this period"
     // state instead of fabricating one.
-    const topGainingProviders = churnList
-      .filter((c) => c.netDelta > 0)
-      .sort((a, b) => b.netDelta - a.netDelta)
-      .slice(0, 5)
-      .map((c) => ({ providerId: c.providerId, providerName: c.providerName, netGain: c.netDelta }));
-
-    const topLosingProviders = churnList
-      .filter((c) => c.netDelta < 0)
-      .sort((a, b) => a.netDelta - b.netDelta)
-      .slice(0, 5)
-      .map((c) => ({ providerId: c.providerId, providerName: c.providerName, netLoss: -c.netDelta }));
+    const topLosingProviders = [...churnList]
+      .filter((c) => c.grossLosses > 0)
+      .sort((a, b) => b.grossLosses - a.grossLosses)
+      .slice(0, 5);
 
     const top = <V extends { count: number }>(map: Map<number, V>, n: number) =>
       [...map.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, n);

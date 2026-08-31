@@ -196,6 +196,7 @@ export default function Ir21ChangesPage() {
   const [provider, setProvider] = React.useState<ProviderSuggestion | null>(null);
   const [providerInput, setProviderInput] = React.useState("");
   const [providerOptions, setProviderOptions] = React.useState<ProviderSuggestion[]>([]);
+  const [providerRole, setProviderRole] = React.useState<"gainer" | "loser" | null>(null);
   const [activeKpi, setActiveKpi] = React.useState<"churn" | "gainer" | "loser" | "switching" | null>(null);
 
   const [summary, setSummary] = React.useState<Ir21RoutingChangeSummary | null>(null);
@@ -209,9 +210,10 @@ export default function Ir21ChangesPage() {
     if (service) params.set("service", service);
     if (changeType) params.set("changeType", changeType);
     if (provider) params.set("providerId", String(provider.id));
+    if (provider && providerRole) params.set("providerRole", providerRole);
     if (search) params.set("search", search);
     return params.toString();
-  }, [timeframe, region, service, changeType, provider, search]);
+  }, [timeframe, region, service, changeType, provider, providerRole, search]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -251,6 +253,7 @@ export default function Ir21ChangesPage() {
   const handleChurnClick = () => {
     setActiveKpi("churn");
     setProvider(null);
+    setProviderRole(null);
     setProviderInput("");
     setSearch("");
     setChangeType("");
@@ -259,24 +262,25 @@ export default function Ir21ChangesPage() {
     if (!topGainer) return;
     setActiveKpi("gainer");
     setProvider({ id: topGainer.providerId, providerName: topGainer.providerName, matchedAlias: null });
+    setProviderRole("gainer");
     setProviderInput(topGainer.providerName);
-    // Left at "All" rather than restricted to ADDED+REPLACED: this filter
-    // is a single-select (see the Change toggle below), and a genuinely
-    // net-positive provider can still have occasional REMOVED events —
-    // hiding those would give a falsely spotless picture. The provider
-    // filter alone already does the primary narrowing GTM wants here.
+    // changeType stays unset -- the backend's providerRole=gainer filter
+    // already scopes to ADDED+REPLACED-as-newProvider server-side, so
+    // there's no need to also drive the (single-select) Change toggle.
     setChangeType("");
   };
   const handleLoserClick = () => {
     if (!topLoser) return;
     setActiveKpi("loser");
     setProvider({ id: topLoser.providerId, providerName: topLoser.providerName, matchedAlias: null });
+    setProviderRole("loser");
     setProviderInput(topLoser.providerName);
     setChangeType("");
   };
   const handleSwitchingClick = () => {
     setActiveKpi("switching");
     setProvider(null);
+    setProviderRole(null);
     setProviderInput("");
     setSearch("");
     // REPLACED is the one change type that's definitionally a "switch" —
@@ -308,18 +312,18 @@ export default function Ir21ChangesPage() {
           />
           <KpiCard
             label="Top Provider Gainer"
-            value={loading ? "…" : topGainer ? `${topGainer.providerName} (+${topGainer.netGain})` : "No gains this period"}
+            value={loading ? "…" : topGainer ? `${topGainer.providerName} (+${topGainer.grossGains} gains | Net: ${topGainer.netDelta >= 0 ? "+" : ""}${topGainer.netDelta})` : "No gains this period"}
             color="#2E7D32"
-            tooltip="Wholesale carrier with the highest net increase in declared routing contracts (new wins + replacements minus removals) in this period."
+            tooltip="Wholesale carrier with the highest gross additions and contract wins (ADDED + REPLACED-as-new-provider) across all MNO declarations in this period. Net delta (gains minus losses) shown alongside for context."
             active={activeKpi === "gainer"}
             disabled={!topGainer}
             onClick={handleGainerClick}
           />
           <KpiCard
             label="Top Provider Loser"
-            value={loading ? "…" : topLoser ? `${topLoser.providerName} (-${topLoser.netLoss})` : "No losses this period"}
+            value={loading ? "…" : topLoser ? `${topLoser.providerName} (-${topLoser.grossLosses} losses | Net: ${topLoser.netDelta >= 0 ? "+" : ""}${topLoser.netDelta})` : "No losses recorded"}
             color="#C62828"
-            tooltip="Wholesale carrier with the highest net loss in declared routing contracts (removals + replaced-by-competitor events) in this period. Empty when every provider's gains outweigh its losses — a common state right after a fresh IR.21 baseline, before real switching activity accumulates."
+            tooltip="Wholesale carrier with the highest gross losses and competitor replacements (REMOVED + REPLACED-as-old-provider) across all MNO declarations in this period — ranked by gross losses, not net position, so a provider that's still net-positive overall can still show up here if it genuinely lost some accounts. Empty only when zero providers have any recorded loss at all in this period."
             active={activeKpi === "loser"}
             disabled={!topLoser}
             onClick={handleLoserClick}
@@ -348,6 +352,7 @@ export default function Ir21ChangesPage() {
                 if (!v) return;
                 setTimeframe(v);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
@@ -371,6 +376,7 @@ export default function Ir21ChangesPage() {
                 if (!v) return;
                 setRegion(v === "ALL" ? "" : v);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
@@ -395,6 +401,7 @@ export default function Ir21ChangesPage() {
                 if (!v) return;
                 setService(v === "ALL" ? "" : v);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
@@ -417,6 +424,7 @@ export default function Ir21ChangesPage() {
                 if (!v) return;
                 setChangeType(v === "ALL" ? "" : v);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
@@ -439,6 +447,7 @@ export default function Ir21ChangesPage() {
               onChange={(_, v) => {
                 setProvider(v);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               getOptionLabel={(o) => o.providerName}
               isOptionEqualToValue={(o, v) => o.id === v.id}
@@ -452,6 +461,7 @@ export default function Ir21ChangesPage() {
               onChange={(e) => {
                 setSearch(e.target.value);
                 setActiveKpi(null);
+                setProviderRole(null);
               }}
               sx={{ minWidth: 240 }}
             />

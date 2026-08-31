@@ -671,6 +671,13 @@ export interface Ir21RoutingChangeFilters {
   service?: ServiceName | "ALL";
   changeType?: RoutingChangeType | "ALL";
   providerId?: number;
+  // Direction-scoped providerId filter, set only by the Top Gainer/Loser
+  // KPI cards' click-through -- "gainer" narrows to rows where providerId
+  // is the newProvider on an ADDED/REPLACED row, "loser" to rows where
+  // it's the oldProvider on a REMOVED/REPLACED row. Ignored without a
+  // providerId; the plain provider-name filter (no role) matches either
+  // side, unchanged.
+  providerRole?: "gainer" | "loser";
   region?: Region;
   search?: string;
 }
@@ -700,7 +707,13 @@ export interface Ir21RoutingChangeSummary {
   removedCount: number;
   replacedCount: number;
   activeSwitchingOperatorCount: number;
-  topGainingProviders: { providerId: number; providerName: string; netGain: number }[];
-  topLosingProviders: { providerId: number; providerName: string; netLoss: number }[];
+  // Ranked by gross gains (ADDED + REPLACED-as-newProvider) descending --
+  // not net delta, so a provider that's still net-positive overall but
+  // lost some accounts can appear on both this list and topLosingProviders
+  // at once. netDelta (gains - losses) is carried alongside for context.
+  topGainingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number }[];
+  // Ranked by gross losses descending; only includes a provider when its
+  // grossLosses > 0 -- never force-filled just to avoid an empty list.
+  topLosingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number }[];
   topSwitchingOperators: { mnoId: number; operatorName: string; tadigCode: string; changeCount: number }[];
 }

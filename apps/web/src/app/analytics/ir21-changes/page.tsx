@@ -358,14 +358,16 @@ function KpiAutocompleteHint() {
  * entirely, since TADIG is always unique. */
 function SwitchingOperatorAutocomplete({
   entries,
-  selectedOperatorName,
+  searchText,
   onSelect,
   onClear,
+  onTextChange,
 }: {
   entries: SwitchingEntry[];
-  selectedOperatorName: string;
+  searchText: string;
   onSelect: (entry: SwitchingEntry) => void;
   onClear: () => void;
+  onTextChange: (text: string) => void;
 }) {
   const label = (entry: SwitchingEntry, rank: number) => `${rank}. ${entry.operatorName} (${entry.tadigCode}) — ${entry.changeCount} switches`;
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
@@ -374,7 +376,7 @@ function SwitchingOperatorAutocomplete({
   // this control needs to reflect a value typed or synced there in either
   // form for the two-way sync to actually hold for both of that field's
   // documented uses.
-  const selected = options.find((o) => o.entry.operatorName === selectedOperatorName || o.entry.tadigCode === selectedOperatorName) ?? null;
+  const selected = options.find((o) => o.entry.operatorName === searchText || o.entry.tadigCode === searchText) ?? null;
 
   return (
     <Box onClick={(e) => e.stopPropagation()}>
@@ -384,6 +386,21 @@ function SwitchingOperatorAutocomplete({
         fullWidth
         options={options}
         value={selected}
+        // Controlled by the same shared `search` state the plain "Search
+        // Operator / TADIG" box below reads and writes -- this is what
+        // makes partial/in-progress typing there mirror up here live, not
+        // just a completed exact match. `value` above still only resolves
+        // to a real "selected" option on an exact name/TADIG match; the
+        // raw text mirrors regardless, same as the field it's synced with.
+        inputValue={searchText}
+        onInputChange={(_, v, reason) => {
+          // Only forward genuine user keystrokes -- MUI also fires this
+          // with reason "reset" whenever `inputValue` changes for any
+          // other reason (a selection, or this same prop being set from
+          // outside), and blindly forwarding those would fight the
+          // shared state instead of just following it.
+          if (reason === "input") onTextChange(v);
+        }}
         disabled={entries.length === 0}
         noOptionsText="No switching operators this period"
         clearOnEscape
@@ -716,9 +733,14 @@ export default function Ir21ChangesPage() {
                   </Typography>
                   <SwitchingOperatorAutocomplete
                     entries={summary?.topSwitchingOperators ?? []}
-                    selectedOperatorName={search}
+                    searchText={search}
                     onSelect={selectSwitchingOperator}
                     onClear={clearSwitchingSelection}
+                    onTextChange={(text) => {
+                      setSearch(text);
+                      setActiveKpi(null);
+                      setProviderRole(null);
+                    }}
                   />
                 </>
               )

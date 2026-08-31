@@ -29,6 +29,16 @@ export const theme = createTheme({
       "Arial",
       "sans-serif",
     ].join(","),
+    // MUI's stock scale (body2 14px, caption 12px) reads small on a large
+    // desktop monitor -- this app leans on body2 and caption for most
+    // actual data (table cells, KPI stats, form labels), not just
+    // auxiliary hint text, so a modest bump here raises the whole app's
+    // baseline readability without touching per-page code. body1/h* stay
+    // at MUI's defaults; only the variants doing the heavy lifting move.
+    body2: { fontSize: "0.9375rem" }, // 14px -> 15px
+    caption: { fontSize: "0.8125rem" }, // 12px -> 13px
+    subtitle2: { fontSize: "0.9375rem" }, // 14px -> 15px
+    overline: { fontSize: "0.75rem" }, // unchanged (12px) -- deliberately small-caps label text
   },
   components: {
     MuiAppBar: {

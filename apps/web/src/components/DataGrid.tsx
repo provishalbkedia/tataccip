@@ -305,6 +305,14 @@ export default function DataGrid<T>({
             width: "100%",
             overflowX: "auto",
             WebkitOverflowScrolling: "touch",
+            // Quartz theme's own default (14px) reads small on a large
+            // desktop monitor for what's usually the densest, most-read
+            // content on the page -- bumped a point, with matching row/
+            // header height bumps so the extra text height doesn't feel
+            // cramped against AG Grid's own default vertical padding.
+            ["--ag-font-size" as string]: "15px",
+            ["--ag-row-height" as string]: "44px",
+            ["--ag-header-height" as string]: "48px",
           }}
         >
           <AgGridReact

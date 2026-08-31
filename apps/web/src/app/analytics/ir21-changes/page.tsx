@@ -345,16 +345,17 @@ function KpiAutocompleteHint() {
  * selectSwitchingOperator below for why forcing REPLACED there was already
  * fixed as a bug). Unlike the Gainer/Loser cards, this card's own headline
  * is a plain count with no single "current entry" to default to, so this
- * control has no forced default selection -- it shows a match only when
- * the shared `search` state happens to equal one entry's own operator
- * name. Matching (and filling the shared search box) by name rather than
- * TADIG is a deliberate readability choice -- "Croatian Telecom" over
- * "HRVCN" -- accepted with eyes open that 6 operator names in the current
- * dataset are shared by two different MNOs each (e.g. two "Movistar"
- * entities), so for those the table can include a second, unrelated
- * MNO's rows alongside the one actually selected. TADIG stays the
- * `isOptionEqualToValue` identity below since it's still the only value
- * guaranteed unique per option, just not what's typed or stored. */
+ * control has no forced default selection -- it shows a match when the
+ * shared `search` state equals one entry's operator name *or* its TADIG,
+ * since the field it's synced with is explicitly labeled "Search Operator
+ * / TADIG" and accepts either. Filling that shared box (selectSwitchingOperator,
+ * below) still writes the name, not the TADIG -- a deliberate readability
+ * choice, "Croatian Telecom" over "HRVCN" -- accepted with eyes open that
+ * 6 operator names in the current dataset are shared by two different
+ * MNOs each (e.g. two "Movistar" entities), so for those the table can
+ * include a second, unrelated MNO's rows alongside the one actually
+ * selected; typing or syncing in a TADIG instead avoids that ambiguity
+ * entirely, since TADIG is always unique. */
 function SwitchingOperatorAutocomplete({
   entries,
   selectedOperatorName,
@@ -368,7 +369,12 @@ function SwitchingOperatorAutocomplete({
 }) {
   const label = (entry: SwitchingEntry, rank: number) => `${rank}. ${entry.operatorName} (${entry.tadigCode}) — ${entry.changeCount} switches`;
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
-  const selected = options.find((o) => o.entry.operatorName === selectedOperatorName) ?? null;
+  // Matches on TADIG too, not just operator name -- the shared "Search
+  // Operator / TADIG" box below is explicitly a TADIG search as well, and
+  // this control needs to reflect a value typed or synced there in either
+  // form for the two-way sync to actually hold for both of that field's
+  // documented uses.
+  const selected = options.find((o) => o.entry.operatorName === selectedOperatorName || o.entry.tadigCode === selectedOperatorName) ?? null;
 
   return (
     <Box onClick={(e) => e.stopPropagation()}>
@@ -501,13 +507,19 @@ export default function Ir21ChangesPage() {
   const uniqueOperatorCount = React.useMemo(() => new Set(rows.map((r) => r.mnoId)).size, [rows]);
 
   // The KPI card headline (ChurnKpiValue) and its ranked search control
-  // (ChurnProviderAutocomplete) both show whichever entry the user last
-  // picked for that role -- defaulting to the #1 ranked entry until they
-  // pick a different one. A manual pick via the plain "Wholesale Provider"
-  // Autocomplete below never sets providerRole, so it correctly leaves
-  // both cards showing their own #1 default rather than a guess.
-  const displayedGainer = providerRole === "gainer" && provider ? (summary?.topGainingProviders.find((e) => e.providerId === provider.id) ?? topGainer) : topGainer;
-  const displayedLoser = providerRole === "loser" && provider ? (summary?.topLosingProviders.find((e) => e.providerId === provider.id) ?? topLoser) : topLoser;
+  // (ChurnProviderAutocomplete) both show whichever provider is currently
+  // selected -- matched purely by provider.id, independent of
+  // providerRole. This is what makes the sync bidirectional: picking a
+  // provider from the plain "Wholesale Provider" Autocomplete below (which
+  // never sets providerRole, since a generic pick has no gainer/loser
+  // direction) still shows up in whichever card(s) that provider actually
+  // ranks in -- both, if it's genuinely both a gainer and a loser this
+  // period. providerRole is now purely a table-query concern (which
+  // direction of events to show), decoupled from which card highlights
+  // the selection. A selected provider absent from a given list falls
+  // back to that card's own #1 default rather than showing empty.
+  const displayedGainer = (provider && summary?.topGainingProviders.find((e) => e.providerId === provider.id)) || topGainer;
+  const displayedLoser = (provider && summary?.topLosingProviders.find((e) => e.providerId === provider.id)) || topLoser;
 
   const selectGainer = (entry: ChurnEntry) => {
     setActiveKpi("gainer");

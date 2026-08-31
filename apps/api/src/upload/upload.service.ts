@@ -80,13 +80,18 @@ export class UploadService {
   /** Full platform reset: wipes every MnoMaster row and everything a
    * foreign key requires be gone first (Ir21Connectivity,
    * MnoMasterConnectivity, ProviderReachlist, DataDiscrepancy,
-   * MnoProviderOverride, MnoNormalizationAudit) — back to a day-zero empty
-   * operator universe, ready for a fresh IR.21 baseline. ProviderMaster /
-   * ProviderAlias / UnmappedProviderVariant are deliberately left alone —
-   * they're provider-side data, not "IR.21" or "MNO master" data, so a
-   * provider registered today stays registered (just with zero MNOs)
-   * after this runs. Wrapped in one transaction so a failure partway
-   * through can't leave the platform half-wiped. */
+   * MnoProviderOverride, MnoNormalizationAudit, Ir21RoutingChange) — back
+   * to a day-zero empty operator universe, ready for a fresh IR.21
+   * baseline. ProviderMaster / ProviderAlias / UnmappedProviderVariant are
+   * deliberately left alone — they're provider-side data, not "IR.21" or
+   * "MNO master" data, so a provider registered today stays registered
+   * (just with zero MNOs) after this runs. Wrapped in one transaction so a
+   * failure partway through can't leave the platform half-wiped.
+   *
+   * Ir21RoutingChange must be cleared here too: it has a required (non-
+   * cascading) foreign key to MnoMaster, so deleting MnoMaster rows while
+   * their routing-change history still references them fails the whole
+   * transaction with a foreign key violation. */
   async resetIr21AndMnoDatabase(resetBy: string): Promise<{ mnosDeleted: number }> {
     const mnosDeleted = await this.prisma.mnoMaster.count();
     await this.prisma.$transaction([
@@ -96,6 +101,7 @@ export class UploadService {
       this.prisma.mnoMasterConnectivity.deleteMany({}),
       this.prisma.mnoProviderOverride.deleteMany({}),
       this.prisma.mnoNormalizationAudit.deleteMany({}),
+      this.prisma.ir21RoutingChange.deleteMany({}),
       this.prisma.mnoMaster.deleteMany({}),
       // The "Active IR.21 Baseline" banner reads whichever UploadHistory
       // row still has this flag set — without clearing it, the banner

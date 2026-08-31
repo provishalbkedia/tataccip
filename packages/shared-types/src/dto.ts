@@ -1,4 +1,4 @@
-import { AuthProvider, DiscrepancyType, ProviderStatsSource, Role, ServiceName, UploadStatus, VariantStatus } from "./enums";
+import { AuthProvider, DiscrepancyType, ProviderStatsSource, Region, Role, RoutingChangeType, ServiceName, UploadStatus, VariantStatus } from "./enums";
 
 export interface LoginRequest {
   email: string;
@@ -654,4 +654,53 @@ export interface ResolveMnoNormalizationRequest {
 export interface ResolveMnoNormalizationResult {
   audit: MnoNormalizationAuditRow;
   recordsCreated: number;
+}
+
+// IR.21 Market Intelligence & Routing Change Tracker -- see
+// UploadService.applyServiceConnectivity for how each row is detected
+// (Ir21RoutingChange), and MnoRoutingChangeAnalyticsService for how
+// summary/feed are computed. Scoped to the single canonical per-service
+// provider Ir21Connectivity tracks (its own @@unique constraint) -- not
+// the fuller primary+backup declared-name lists MnoMasterConnectivity
+// carries for display, which aren't independently resolved to a stable
+// providerId per entry.
+export type RoutingChangeTimeframe = "1m" | "3m" | "6m" | "12m" | "all";
+
+export interface Ir21RoutingChangeFilters {
+  timeframe?: RoutingChangeTimeframe;
+  service?: ServiceName | "ALL";
+  changeType?: RoutingChangeType | "ALL";
+  providerId?: number;
+  region?: Region;
+  search?: string;
+}
+
+export interface Ir21RoutingChangeRow {
+  id: string;
+  mnoId: number;
+  tadigCode: string;
+  mnoName: string;
+  country: string;
+  region: Region | null;
+  serviceName: ServiceName;
+  changeType: RoutingChangeType;
+  oldProviderId: number | null;
+  oldProviderName: string | null;
+  newProviderId: number | null;
+  newProviderName: string | null;
+  sourceFile: string;
+  effectiveDate: string;
+  ingestedAt: string;
+  hasPdfDocument: boolean;
+}
+
+export interface Ir21RoutingChangeSummary {
+  totalChurnEvents: number;
+  addedCount: number;
+  removedCount: number;
+  replacedCount: number;
+  activeSwitchingOperatorCount: number;
+  topGainingProviders: { providerId: number; providerName: string; netGain: number }[];
+  topLosingProviders: { providerId: number; providerName: string; netLoss: number }[];
+  topSwitchingOperators: { mnoId: number; operatorName: string; tadigCode: string; changeCount: number }[];
 }

@@ -30,6 +30,7 @@ import CellTowerIcon from "@mui/icons-material/CellTower";
 import BusinessIcon from "@mui/icons-material/Business";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
+import TimelineIcon from "@mui/icons-material/Timeline";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
@@ -43,6 +44,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
   { href: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
   { href: "/search/mno", label: "Operator Search", icon: <CellTowerIcon /> },
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
+  { href: "/analytics/ir21-changes", label: "Market Intelligence", icon: <TimelineIcon /> },
   { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon /> },
   { href: "/help", label: "Platform Guide & Help", icon: <MenuBookIcon /> },
 ];

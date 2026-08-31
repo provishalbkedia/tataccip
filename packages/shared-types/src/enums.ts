@@ -59,6 +59,14 @@ export const ProviderStatsSource = {
 } as const;
 export type ProviderStatsSource = (typeof ProviderStatsSource)[keyof typeof ProviderStatsSource];
 
+// Ir21RoutingChange.changeType — see UploadService.applyServiceConnectivity.
+export const RoutingChangeType = {
+  ADDED: "ADDED",
+  REMOVED: "REMOVED",
+  REPLACED: "REPLACED",
+} as const;
+export type RoutingChangeType = (typeof RoutingChangeType)[keyof typeof RoutingChangeType];
+
 // The platform's 4-region + Non-Terrestrial grouping for Operator Search —
 // see apps/api/src/common/utils/region-mapper.ts for the country->region
 // mapping this classifies MnoMaster.country into.

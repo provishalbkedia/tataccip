@@ -112,6 +112,7 @@ model MnoMaster {
   connectivity     MnoMasterConnectivity?
   providerOverrides MnoProviderOverride[]
   normalizationAudits MnoNormalizationAudit[]
+  routingChanges   Ir21RoutingChange[]
 
   @@index([operatorName])
   @@index([country])
@@ -179,6 +180,8 @@ model ProviderMaster {
   unmappedVariants UnmappedProviderVariant[]
   overrides        MnoProviderOverride[]
   normalizationAudits MnoNormalizationAudit[]
+  routingChangesAsOld Ir21RoutingChange[] @relation("Ir21RoutingChangeOldProvider")
+  routingChangesAsNew Ir21RoutingChange[] @relation("Ir21RoutingChangeNewProvider")
 }
 
 // A known raw-string spelling of a provider name (from an IR.21 XML export,
@@ -322,6 +325,54 @@ model Ir21Connectivity {
   service  Service        @relation(fields: [serviceId], references: [id])
 
   @@unique([mnoId, serviceId])
+}
+
+enum RoutingChangeType {
+  ADDED
+  REMOVED
+  REPLACED
+}
+
+// A detected change in an MNO's single canonical (per-service) IR.21-
+// declared provider -- computed by comparing the incoming XML's resolved
+// provider against whatever Ir21Connectivity already held for that (MNO,
+// service) immediately before this upload overwrites it (see
+// UploadService.applyServiceConnectivity). Scoped to the one provider
+// Ir21Connectivity actually tracks per service (its own @@unique
+// constraint), not the fuller primary+backup declared-name lists
+// MnoMasterConnectivity carries for display -- those aren't independently
+// resolved to a stable providerId per entry the way this needs.
+//
+// Write-once audit trail: an unchanged (MNO, service) on a re-upload
+// produces no row here at all, so this only grows with genuine churn, not
+// with every re-upload's dead weight. tadigCode/mnoName/country are
+// denormalized on purpose -- a point-in-time snapshot of what the MNO was
+// called when the change happened, not a live join that would silently
+// reflect a later rename.
+model Ir21RoutingChange {
+  id              String            @id @default(uuid())
+  mnoId           Int
+  tadigCode       String
+  mnoName         String
+  country         String
+  serviceName     ServiceName
+  changeType      RoutingChangeType
+  oldProviderId   Int?
+  oldProviderName String?
+  newProviderId   Int?
+  newProviderName String?
+  sourceFile      String
+  effectiveDate   DateTime
+  ingestedAt      DateTime          @default(now())
+
+  mno         MnoMaster       @relation(fields: [mnoId], references: [id])
+  oldProvider ProviderMaster? @relation("Ir21RoutingChangeOldProvider", fields: [oldProviderId], references: [id])
+  newProvider ProviderMaster? @relation("Ir21RoutingChangeNewProvider", fields: [newProviderId], references: [id])
+
+  @@index([mnoId])
+  @@index([serviceName])
+  @@index([changeType])
+  @@index([effectiveDate])
 }
 
 // Multiple providers may each independently claim the same (MNO, service)

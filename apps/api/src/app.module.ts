@@ -11,6 +11,7 @@ import { ProviderAliasModule } from "./provider-alias/provider-alias.module";
 import { ProviderOverrideModule } from "./provider-override/provider-override.module";
 import { UserModule } from "./user/user.module";
 import { MnoNormalizationModule } from "./mno-normalization/mno-normalization.module";
+import { AnalyticsModule } from "./analytics/analytics.module";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { MnoNormalizationModule } from "./mno-normalization/mno-normalization.mo
     ProviderOverrideModule,
     UserModule,
     MnoNormalizationModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
 })

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { ServiceName, UploadStatus } from "@prisma/client";
+import { RoutingChangeType, ServiceName, UploadStatus } from "@prisma/client";
 import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
@@ -696,6 +696,8 @@ export class UploadService {
       services,
       filename,
       effectiveDate,
+      mno.operatorName,
+      mno.country,
     );
     unmapped += await this.applyServiceConnectivity(
       mno.id,
@@ -706,6 +708,8 @@ export class UploadService {
       services,
       filename,
       effectiveDate,
+      mno.operatorName,
+      mno.country,
     );
     // LTE/Diameter (DSX) is a distinct declared carrier from the GRX/IPX
     // data-roaming provider above — see Ir21XmlParserService.
@@ -720,6 +724,8 @@ export class UploadService {
       services,
       filename,
       effectiveDate,
+      mno.operatorName,
+      mno.country,
     );
 
     const snapshotFields = {
@@ -777,7 +783,15 @@ export class UploadService {
    * string like "SCCP Carrier" doesn't clobber a deliberately-overridden
    * MNO on every re-upload), otherwise through the normal resolver.
    * Returns 1 if the raw string went unmapped (queued for admin triage), 0
-   * otherwise — folded into applyParsedIr21's running `unmapped` count. */
+   * otherwise — folded into applyParsedIr21's running `unmapped` count.
+   *
+   * Also records an Ir21RoutingChange whenever this upload's resolved
+   * provider for this (MNO, service) differs from whatever
+   * Ir21Connectivity already held immediately beforehand — read once up
+   * front, before any upsert below can overwrite it. Deliberately skipped
+   * when the raw declared string is present but doesn't resolve to a known
+   * provider (ambiguous — not a confirmed removal, just a resolution gap
+   * already queued for admin triage via the `unmapped` return above). */
   private async applyServiceConnectivity(
     mnoId: number,
     senderTadig: string,
@@ -787,8 +801,37 @@ export class UploadService {
     services: Map<ServiceName, number>,
     filename: string,
     effectiveDate: Date,
+    mnoName: string,
+    country: string,
   ): Promise<number> {
     const serviceId = services.get(serviceName)!;
+    const existing = await this.prisma.ir21Connectivity.findUnique({
+      where: { mnoId_serviceId: { mnoId, serviceId } },
+      select: { providerId: true, provider: { select: { providerName: true } } },
+    });
+    const oldProviderId = existing?.providerId ?? null;
+    const oldProviderName = existing?.provider.providerName ?? null;
+
+    const recordChange = async (newProviderId: number | null, newProviderName: string | null) => {
+      if (oldProviderId === newProviderId) return;
+      const changeType: RoutingChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";
+      await this.prisma.ir21RoutingChange.create({
+        data: {
+          mnoId,
+          tadigCode: senderTadig,
+          mnoName,
+          country,
+          serviceName,
+          changeType,
+          oldProviderId,
+          oldProviderName,
+          newProviderId,
+          newProviderName,
+          sourceFile: filename,
+          effectiveDate,
+        },
+      });
+    };
 
     if (override) {
       await this.prisma.ir21Connectivity.upsert({
@@ -803,10 +846,23 @@ export class UploadService {
           isManualOverride: true,
         },
       });
+      const overrideProvider = await this.prisma.providerMaster.findUnique({
+        where: { id: override.overrideProviderId },
+        select: { providerName: true },
+      });
+      await recordChange(override.overrideProviderId, overrideProvider?.providerName ?? null);
       return 0;
     }
 
-    if (!rawCandidate) return 0;
+    if (!rawCandidate) {
+      // This upload's file doesn't declare this service at all -- a
+      // genuine drop when one was previously on file. The existing
+      // Ir21Connectivity row is deliberately left in place (a pre-existing
+      // behavior, not something this change touches); only the audit
+      // trail reflects the drop.
+      await recordChange(null, null);
+      return 0;
+    }
 
     const resolved = await this.providerResolver.resolve(rawCandidate, serviceName, senderTadig);
     if (resolved.status !== "resolved") return 1;
@@ -816,6 +872,11 @@ export class UploadService {
       update: { providerId: resolved.providerId, sourceFile: filename, effectiveDate, isManualOverride: false },
       create: { mnoId, providerId: resolved.providerId, serviceId, sourceFile: filename, effectiveDate },
     });
+    const newProvider = await this.prisma.providerMaster.findUnique({
+      where: { id: resolved.providerId },
+      select: { providerName: true },
+    });
+    await recordChange(resolved.providerId, newProvider?.providerName ?? null);
     return 0;
   }
 

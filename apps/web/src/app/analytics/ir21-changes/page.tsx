@@ -245,8 +245,27 @@ export default function Ir21ChangesPage() {
   const [activeKpi, setActiveKpi] = React.useState<"churn" | "gainer" | "loser" | "switching" | null>(null);
 
   const [summary, setSummary] = React.useState<Ir21RoutingChangeSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Ir21RoutingChangeRow[]>([]);
   const [loading, setLoading] = React.useState(true);
+
+  // The 4 KPI cards intentionally use a narrower scope than the table below
+  // (timeframe/region/service/search only -- never changeType, provider, or
+  // providerRole) so they always show the overall picture for whatever
+  // top-level scope is selected. Without this split, clicking any one KPI
+  // (e.g. "Active Switching Operators", which narrows the table to REPLACED
+  // events) would also recompute the *other* three cards against that same
+  // narrow slice -- REPLACED events are rare enough that this routinely
+  // collapsed every card to "no data" even when the overall dataset had
+  // hundreds of real events in the selected window.
+  const overviewQueryString = React.useMemo(() => {
+    const params = new URLSearchParams();
+    if (timeframe !== "all") params.set("timeframe", timeframe);
+    if (region) params.set("region", region);
+    if (service) params.set("service", service);
+    if (search) params.set("search", search);
+    return params.toString();
+  }, [timeframe, region, service, search]);
 
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
@@ -262,16 +281,22 @@ export default function Ir21ChangesPage() {
 
   React.useEffect(() => {
     let cancelled = false;
+    setSummaryLoading(true);
+    api
+      .get<Ir21RoutingChangeSummary>(`/analytics/ir21-changes/summary?${overviewQueryString}`)
+      .then((s) => !cancelled && setSummary(s))
+      .finally(() => !cancelled && setSummaryLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [overviewQueryString]);
+
+  React.useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    Promise.all([
-      api.get<Ir21RoutingChangeSummary>(`/analytics/ir21-changes/summary?${queryString}`),
-      api.get<Ir21RoutingChangeRow[]>(`/analytics/ir21-changes/feed?${queryString}`),
-    ])
-      .then(([s, f]) => {
-        if (cancelled) return;
-        setSummary(s);
-        setRows(f);
-      })
+    api
+      .get<Ir21RoutingChangeRow[]>(`/analytics/ir21-changes/feed?${queryString}`)
+      .then((f) => !cancelled && setRows(f))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -349,7 +374,7 @@ export default function Ir21ChangesPage() {
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <KpiCard
             label="Total Churn Events"
-            value={loading ? "…" : summary?.totalChurnEvents ?? 0}
+            value={summaryLoading ? "…" : summary?.totalChurnEvents ?? 0}
             color="#0A2540"
             tooltip="Total number of routing modifications (carrier additions, removals, and replacements across SCCP, DSX, IPX) declared across IR.21 filings within the selected period."
             active={activeKpi === "churn"}
@@ -358,7 +383,7 @@ export default function Ir21ChangesPage() {
           <KpiCard
             label="Top Provider Gainer"
             value={
-              loading ? (
+              summaryLoading ? (
                 "…"
               ) : topGainer ? (
                 <ChurnKpiValue
@@ -381,7 +406,7 @@ export default function Ir21ChangesPage() {
           <KpiCard
             label="Top Provider Loser"
             value={
-              loading ? (
+              summaryLoading ? (
                 "…"
               ) : topLoser ? (
                 <ChurnKpiValue
@@ -403,7 +428,7 @@ export default function Ir21ChangesPage() {
           />
           <KpiCard
             label="Active Switching Operators"
-            value={loading ? "…" : summary?.activeSwitchingOperatorCount ?? 0}
+            value={summaryLoading ? "…" : summary?.activeSwitchingOperatorCount ?? 0}
             color="#EF6C00"
             tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click to filter the table to REPLACED events specifically."
             active={activeKpi === "switching"}

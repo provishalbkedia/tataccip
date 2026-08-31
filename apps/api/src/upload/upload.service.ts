@@ -18,6 +18,14 @@ const TADIG_REGEX = /^[A-Z0-9]{5}$/;
 
 type UploadedFile = { buffer: Buffer; originalname: string };
 
+/** mnoId_serviceId -> the provider that was linked immediately before a
+ * "Replace Active Dataset" upload wiped Ir21Connectivity. See
+ * uploadIr21XmlBatch's replaceActiveDataset branch and
+ * applyServiceConnectivity's oldProviderId resolution for why this exists —
+ * without it, every MNO looks like a brand-new addition on every replace
+ * upload, even when nothing actually changed. */
+type PreWipeConnectivitySnapshot = Map<string, { providerId: number; providerName: string | null }>;
+
 @Injectable()
 export class UploadService {
   private readonly logger = new Logger(UploadService.name);
@@ -534,7 +542,25 @@ export class UploadService {
     uploadedBy: string,
     replaceActiveDataset = false,
   ): Promise<BulkXmlUploadResult> {
+    // Snapshot the connectivity state that's about to be wiped -- without
+    // this, applyServiceConnectivity's "what was this MNO+service pointing
+    // at before?" lookup always comes back empty right after the delete, so
+    // every MNO in the new batch looks like a brand-new addition even when
+    // its provider hasn't actually changed. Re-uploading the same (or a
+    // mostly-unchanged) zip via Replace Active Dataset would otherwise
+    // regenerate a full new batch of duplicate "ADDED" audit rows every
+    // single time -- verified against production: TURTS (Vodafone Turkey)
+    // had 3 byte-identical ADDED rows per service, same effectiveDate,
+    // three different ingestedAt timestamps, one per replace upload.
+    const preWipeSnapshot: PreWipeConnectivitySnapshot = new Map();
     if (replaceActiveDataset) {
+      const priorRows = await this.prisma.ir21Connectivity.findMany({
+        select: { mnoId: true, serviceId: true, providerId: true, provider: { select: { providerName: true } } },
+      });
+      for (const row of priorRows) {
+        preWipeSnapshot.set(`${row.mnoId}_${row.serviceId}`, { providerId: row.providerId, providerName: row.provider.providerName });
+      }
+
       await this.prisma.$transaction([
         this.prisma.ir21Connectivity.deleteMany({}),
         this.prisma.mnoMasterConnectivity.deleteMany({}),
@@ -562,7 +588,7 @@ export class UploadService {
 
       try {
         const pdfMatch = this.matchPdfForTadig(parsed.senderTadig, pdfFiles);
-        unmappedVariantsFound += await this.applyParsedIr21(parsed, file.originalname, services, pdfMatch);
+        unmappedVariantsFound += await this.applyParsedIr21(parsed, file.originalname, services, pdfMatch, preWipeSnapshot);
         filesProcessed++;
         mnosUpdated++;
       } catch (e) {
@@ -653,6 +679,7 @@ export class UploadService {
     filename: string,
     services: Map<ServiceName, number>,
     pdfMatch?: UploadedFile,
+    preWipeSnapshot?: PreWipeConnectivitySnapshot,
   ): Promise<number> {
     let unmapped = 0;
     const [mccStr, mncStr] = (parsed.mccMncPairs[0] ?? "").split("-");
@@ -699,6 +726,7 @@ export class UploadService {
       effectiveDate,
       mno.operatorName,
       mno.country,
+      preWipeSnapshot,
     );
     unmapped += await this.applyServiceConnectivity(
       mno.id,
@@ -711,6 +739,7 @@ export class UploadService {
       effectiveDate,
       mno.operatorName,
       mno.country,
+      preWipeSnapshot,
     );
     // LTE/Diameter (DSX) is a distinct declared carrier from the GRX/IPX
     // data-roaming provider above — see Ir21XmlParserService.
@@ -727,6 +756,7 @@ export class UploadService {
       effectiveDate,
       mno.operatorName,
       mno.country,
+      preWipeSnapshot,
     );
 
     // Backfills any provider switch this file's own <ChangeHistory> log
@@ -801,7 +831,15 @@ export class UploadService {
    * front, before any upsert below can overwrite it. Deliberately skipped
    * when the raw declared string is present but doesn't resolve to a known
    * provider (ambiguous — not a confirmed removal, just a resolution gap
-   * already queued for admin triage via the `unmapped` return above). */
+   * already queued for admin triage via the `unmapped` return above).
+   *
+   * `preWipeSnapshot` covers a "Replace Active Dataset" upload: its caller
+   * wipes Ir21Connectivity before reprocessing, so the live lookup below
+   * always comes back empty and would otherwise make every MNO look like a
+   * fresh addition on every replace upload -- even one that changed
+   * nothing. When the live row is missing and a snapshot was captured
+   * before that wipe, the snapshot's value is used as the true "before"
+   * state instead. */
   private async applyServiceConnectivity(
     mnoId: number,
     senderTadig: string,
@@ -813,14 +851,16 @@ export class UploadService {
     effectiveDate: Date,
     mnoName: string,
     country: string,
+    preWipeSnapshot?: PreWipeConnectivitySnapshot,
   ): Promise<number> {
     const serviceId = services.get(serviceName)!;
     const existing = await this.prisma.ir21Connectivity.findUnique({
       where: { mnoId_serviceId: { mnoId, serviceId } },
       select: { providerId: true, provider: { select: { providerName: true } } },
     });
-    const oldProviderId = existing?.providerId ?? null;
-    const oldProviderName = existing?.provider.providerName ?? null;
+    const snapshotEntry = existing ? undefined : preWipeSnapshot?.get(`${mnoId}_${serviceId}`);
+    const oldProviderId = existing?.providerId ?? snapshotEntry?.providerId ?? null;
+    const oldProviderName = existing?.provider.providerName ?? snapshotEntry?.providerName ?? null;
 
     const recordChange = async (newProviderId: number | null, newProviderName: string | null) => {
       if (oldProviderId === newProviderId) return;

@@ -144,6 +144,12 @@ export interface MnoSummary {
   // Populated once this MNO has had an IR.21 XML ingested; empty/null for
   // MNOs known only via seed data or a reach-list mention.
   networkType: string | null;
+  // Whether this MNO has a parsed IR.21 XML declaration on file
+  // (MnoMasterConnectivity present) -- false for a legacy row auto-created
+  // from a Reach List upload before MNO normalization was enforced. Powers
+  // the Operator Search dataset-scope filter (IR.21 Verified / Reach List
+  // Only / All) and its per-row source badge.
+  hasIr21Declaration: boolean;
   // IR.21's GRX/IPX ASN table splits on "Network Owner": the operator's
   // own AS Number(s) vs. a specific provider's own ASN ("ProviderName:
   // ASN" strings).

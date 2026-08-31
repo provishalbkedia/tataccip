@@ -88,8 +88,9 @@ export class MnoService {
     mnc?: string;
     region?: string;
     onlyWithProviders?: boolean;
+    datasetScope?: "ir21" | "reachlist" | "all";
   }): Promise<MnoSummary[]> {
-    const { q, tadig, country, mcc, mnc, region, onlyWithProviders = true } = params;
+    const { q, tadig, country, mcc, mnc, region, onlyWithProviders = true, datasetScope = "ir21" } = params;
     const requestedRegions = region
       ? new Set(region.split(",").map((r) => r.trim()).filter((r) => (ALL_REGIONS as string[]).includes(r)))
       : null;
@@ -139,18 +140,32 @@ export class MnoService {
           })
         : rows;
 
+    // "IR.21 Verified" (default) vs "Reach List Only" is a real, meaningful
+    // distinction: whether this MnoMaster row has a parsed IR.21 XML
+    // declaration on file (connectivity relation present) or not (a legacy
+    // row auto-created from a Reach List upload before MNO normalization
+    // was enforced -- see MnoNormalizationAudit for how new unresolved
+    // Reach List rows are handled instead, in a separate admin queue that
+    // never becomes a MnoMaster row at all).
+    const scopedRows =
+      datasetScope === "all"
+        ? regionFilteredRows
+        : datasetScope === "reachlist"
+          ? regionFilteredRows.filter((r) => r.connectivity === null)
+          : regionFilteredRows.filter((r) => r.connectivity !== null);
+
     // Relevance-ranked when there's a free-text query — the alphabetical
     // DB order above stays as-is otherwise (and doubles as the tie-breaker
     // within a rank tier here, since Array.sort is stable).
     const orderedRows = q
-      ? [...regionFilteredRows].sort(
+      ? [...scopedRows].sort(
           (a, b) =>
             operatorMatchRank(q, { operatorName: a.operatorName, tadigCode: a.tadigCode, country: a.country, mccMncList: a.connectivity?.mccMncList }) -
             operatorMatchRank(q, { operatorName: b.operatorName, tadigCode: b.tadigCode, country: b.country, mccMncList: b.connectivity?.mccMncList }),
         )
-      : regionFilteredRows;
+      : scopedRows;
 
-    const mnoIds = regionFilteredRows.map((r) => r.id);
+    const mnoIds = scopedRows.map((r) => r.id);
     const providersByMno = await this.resolvedProvidersByMno(mnoIds);
 
     // An MNO with no resolved provider on any service (no Ir21Connectivity,
@@ -173,6 +188,7 @@ export class MnoService {
         mnc: r.mnc,
         status: r.status,
         networkType: r.connectivity?.networkType ?? null,
+        hasIr21Declaration: r.connectivity !== null,
         mnoAsNumbers: r.connectivity?.mnoAsNumbers ?? [],
         providerAsNumbers: r.connectivity?.providerAsNumbers ?? [],
         sccpProviders: p ? Array.from(p.SCCP) : [],
@@ -284,6 +300,7 @@ export class MnoService {
       mnc: mno.mnc,
       status: mno.status,
       networkType: mno.connectivity?.networkType ?? null,
+      hasIr21Declaration: mno.connectivity !== null,
       mnoAsNumbers: mno.connectivity?.mnoAsNumbers ?? [],
       providerAsNumbers: mno.connectivity?.providerAsNumbers ?? [],
       sccpProviders: Array.from(providers.SCCP),

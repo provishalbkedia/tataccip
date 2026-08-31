@@ -185,6 +185,7 @@ function ProviderComparePageInner() {
               exportFileName={`provider-comparison-${providerList.map((p) => p.providerName).join("-")}.csv`}
               showTopPagination
               height={620}
+              onRowClicked={(row) => router.push(`/search/mno/${row.mnoId}`)}
             />
           </>
         )}

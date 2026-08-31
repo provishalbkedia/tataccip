@@ -36,6 +36,14 @@ import { MnoSuggestion, MnoSummary, Region } from "@ccip/shared-types";
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 
+type DatasetScope = "ir21" | "reachlist" | "all";
+const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist", "all"];
+const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
+  ir21: "IR.21 Verified",
+  reachlist: "Reach List Only",
+  all: "All MNOs",
+};
+
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.AMERICAS]: { bgcolor: "#0B6FBF", color: "#fff" },
   [Region.MEA]: { bgcolor: "#EF6C00", color: "#fff" },
@@ -51,6 +59,17 @@ function RegionCell(params: ICellRendererParams<MnoSummary>) {
   if (!region) return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
   const palette = REGION_CHIP_COLOR[region] ?? REGION_CHIP_COLOR[Region.NON_TERRESTRIAL];
   return <Chip label={region} size="small" sx={{ bgcolor: palette.bgcolor, color: palette.color, fontWeight: 600 }} />;
+}
+
+/** Distinguishes a row with a real IR.21 declaration from a legacy row
+ * known only via a Reach List upload (see hasIr21Declaration). */
+function SourceCell(params: ICellRendererParams<MnoSummary>) {
+  const hasIr21 = params.value as boolean;
+  return hasIr21 ? (
+    <Chip label="IR.21" size="small" color="primary" variant="outlined" />
+  ) : (
+    <Chip label="Reach List Only" size="small" color="warning" variant="outlined" />
+  );
 }
 
 /** stopPropagation so clicking the PDF icon doesn't also trigger the row's
@@ -106,6 +125,7 @@ function MnoSearchPageInner() {
   const [mnc, setMnc] = React.useState("");
   const [region, setRegion] = React.useState<Region | "">("");
   const [onlyWithProviders, setOnlyWithProviders] = React.useState(true);
+  const [datasetScope, setDatasetScope] = React.useState<DatasetScope>("ir21");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
@@ -125,14 +145,17 @@ function MnoSearchPageInner() {
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
     setOnlyWithProviders(searchParams.get("onlyWithProviders") !== "false");
+    const urlDatasetScope = searchParams.get("datasetScope");
+    setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean }) => {
+    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; datasetScope?: DatasetScope }) => {
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
+      const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (tadig) params.set("tadig", tadig);
@@ -143,9 +166,10 @@ function MnoSearchPageInner() {
       // Only written to the URL when off the (true) default, so an
       // ordinary search URL stays clean.
       if (!nextOnlyWithProviders) params.set("onlyWithProviders", "false");
+      if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, onlyWithProviders, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, datasetScope, pathname, router],
   );
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
@@ -264,6 +288,44 @@ function MnoSearchPageInner() {
           </Grid>
         </Paper>
 
+        <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
+            Dataset scope:
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            color="primary"
+            value={datasetScope}
+            onChange={(_, value: DatasetScope | null) => {
+              if (!value) return;
+              setDatasetScope(value);
+              pushParams({ datasetScope: value });
+            }}
+            sx={{
+              "& .MuiToggleButton-root": {
+                borderRadius: "999px !important",
+                textTransform: "none",
+                px: 2,
+                border: "1px solid",
+                borderColor: "divider",
+                minHeight: 40,
+              },
+            }}
+          >
+            {DATASET_SCOPES.map((s) => (
+              <ToggleButton key={s} value={s}>
+                {DATASET_SCOPE_LABELS[s]}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML declaration on file. Reach List Only: known solely from a legacy Reach List upload, before MNO normalization was enforced — see Unresolved Reach List Aliases in Admin for newer unresolved rows, which aren't operator records yet at all.">
+            <Typography variant="caption" color="text.secondary" sx={{ cursor: "help" }}>
+              (?)
+            </Typography>
+          </Tooltip>
+        </Box>
+
         <Box sx={{ mb: 3, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
           <ToggleButtonGroup
             exclusive
@@ -327,6 +389,7 @@ function MnoSearchPageInner() {
           rowData={results}
           columnDefs={[
             { field: "operatorName", headerName: "Operator Name", flex: 1.5 },
+            { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 150, sortable: false, filter: false },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
             { field: "country", headerName: "Country" },
             {

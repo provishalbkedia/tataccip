@@ -136,10 +136,13 @@ export class Ir21RoutingChangesService {
       netDelta: v.gains - v.losses,
     }));
 
+    // Unsliced -- the frontend's Top Gainer/Loser KPI cards show entry [0]
+    // as the headline figure but also expose the full ranked list in a
+    // dropdown so a carrier-relations reviewer can pivot the table to any
+    // provider's gains/losses, not just the single top one.
     const topGainingProviders = [...churnList]
       .filter((c) => c.grossGains > 0)
-      .sort((a, b) => b.grossGains - a.grossGains)
-      .slice(0, 5);
+      .sort((a, b) => b.grossGains - a.grossGains);
 
     // Only a provider with at least one real loss counts as a "loser" --
     // a provider with zero losses this period (the common case right
@@ -149,8 +152,7 @@ export class Ir21RoutingChangesService {
     // state instead of fabricating one.
     const topLosingProviders = [...churnList]
       .filter((c) => c.grossLosses > 0)
-      .sort((a, b) => b.grossLosses - a.grossLosses)
-      .slice(0, 5);
+      .sort((a, b) => b.grossLosses - a.grossLosses);
 
     const top = <V extends { count: number }>(map: Map<number, V>, n: number) =>
       [...map.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, n);

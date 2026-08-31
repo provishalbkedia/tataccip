@@ -9,9 +9,13 @@ import {
   Card,
   CardContent,
   Chip,
+  FormControl,
   Grid,
   IconButton,
+  MenuItem,
   Paper,
+  Select,
+  type SelectChangeEvent,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -230,6 +234,72 @@ function ChurnKpiValue({
   );
 }
 
+type ChurnEntry = Ir21RoutingChangeSummary["topGainingProviders"][number];
+
+/** Ranked dropdown embedded in the Gainer/Loser KPI cards, letting a
+ * reviewer pivot straight to any provider's gain/loss events -- not just
+ * the single top-ranked one ChurnKpiValue headlines above it. Selecting an
+ * entry drives the same `provider`/`providerRole` state the plain
+ * "Wholesale Provider" Autocomplete below reads and writes, so the two
+ * stay in sync without separate wiring: whichever entry is "selected" here
+ * is exactly whichever the card's own headline is currently showing.
+ * `e.stopPropagation()` on the wrapper keeps opening the menu from also
+ * firing the card's own onClick (which would otherwise jump the selection
+ * back to the #1 entry every time). */
+function ChurnProviderSelect({
+  entries,
+  metric,
+  role,
+  selectedProviderId,
+  onSelect,
+  tone,
+  emptyLabel,
+}: {
+  entries: ChurnEntry[];
+  metric: "grossGains" | "grossLosses";
+  role: "gainer" | "loser";
+  selectedProviderId?: number;
+  onSelect: (entry: ChurnEntry) => void;
+  tone: "success" | "error";
+  emptyLabel: string;
+}) {
+  const value = selectedProviderId !== undefined ? String(selectedProviderId) : "";
+
+  return (
+    <FormControl size="small" fullWidth sx={{ mt: 1 }} onClick={(e) => e.stopPropagation()}>
+      <Select
+        displayEmpty
+        value={value}
+        disabled={entries.length === 0}
+        onChange={(e: SelectChangeEvent) => {
+          const id = Number(e.target.value);
+          const entry = entries.find((x) => x.providerId === id);
+          if (entry) onSelect(entry);
+        }}
+        sx={{
+          fontSize: "0.75rem",
+          bgcolor: "background.paper",
+          "& .MuiSelect-select": { py: 0.5, px: 1 },
+          "& .MuiOutlinedInput-notchedOutline": { borderColor: tone === "success" ? "success.main" : "error.main" },
+        }}
+        MenuProps={{ PaperProps: { style: { maxHeight: 320 } } }}
+      >
+        {entries.length === 0 ? (
+          <MenuItem disabled value="">
+            {emptyLabel}
+          </MenuItem>
+        ) : (
+          entries.map((entry, i) => (
+            <MenuItem key={entry.providerId} value={String(entry.providerId)} sx={{ fontSize: "0.8125rem" }}>
+              {`${i + 1}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${metric === "grossGains" ? entry.grossGains : entry.grossLosses} ${role === "gainer" ? "gains" : "losses"} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`}
+            </MenuItem>
+          ))
+        )}
+      </Select>
+    </FormControl>
+  );
+}
+
 export default function Ir21ChangesPage() {
   const router = useRouter();
 
@@ -320,6 +390,33 @@ export default function Ir21ChangesPage() {
   const topGainer = summary?.topGainingProviders[0];
   const topLoser = summary?.topLosingProviders[0];
 
+  // The KPI card headline (ChurnKpiValue) and its ranked dropdown
+  // (ChurnProviderSelect) both show whichever entry the user last picked
+  // for that role -- defaulting to the #1 ranked entry until they pick a
+  // different one. A manual pick via the plain "Wholesale Provider"
+  // Autocomplete below never sets providerRole, so it correctly leaves
+  // both cards showing their own #1 default rather than a guess.
+  const displayedGainer = providerRole === "gainer" && provider ? (summary?.topGainingProviders.find((e) => e.providerId === provider.id) ?? topGainer) : topGainer;
+  const displayedLoser = providerRole === "loser" && provider ? (summary?.topLosingProviders.find((e) => e.providerId === provider.id) ?? topLoser) : topLoser;
+
+  const selectGainer = (entry: ChurnEntry) => {
+    setActiveKpi("gainer");
+    setProvider({ id: entry.providerId, providerName: entry.providerName, matchedAlias: null });
+    setProviderRole("gainer");
+    setProviderInput(entry.providerName);
+    // changeType stays unset -- the backend's providerRole=gainer filter
+    // already scopes to ADDED+REPLACED-as-newProvider server-side, so
+    // there's no need to also drive the (single-select) Change toggle.
+    setChangeType("");
+  };
+  const selectLoser = (entry: ChurnEntry) => {
+    setActiveKpi("loser");
+    setProvider({ id: entry.providerId, providerName: entry.providerName, matchedAlias: null });
+    setProviderRole("loser");
+    setProviderInput(entry.providerName);
+    setChangeType("");
+  };
+
   const handleChurnClick = () => {
     setActiveKpi("churn");
     setProvider(null);
@@ -330,22 +427,11 @@ export default function Ir21ChangesPage() {
   };
   const handleGainerClick = () => {
     if (!topGainer) return;
-    setActiveKpi("gainer");
-    setProvider({ id: topGainer.providerId, providerName: topGainer.providerName, matchedAlias: null });
-    setProviderRole("gainer");
-    setProviderInput(topGainer.providerName);
-    // changeType stays unset -- the backend's providerRole=gainer filter
-    // already scopes to ADDED+REPLACED-as-newProvider server-side, so
-    // there's no need to also drive the (single-select) Change toggle.
-    setChangeType("");
+    selectGainer(topGainer);
   };
   const handleLoserClick = () => {
     if (!topLoser) return;
-    setActiveKpi("loser");
-    setProvider({ id: topLoser.providerId, providerName: topLoser.providerName, matchedAlias: null });
-    setProviderRole("loser");
-    setProviderInput(topLoser.providerName);
-    setChangeType("");
+    selectLoser(topLoser);
   };
   const handleSwitchingClick = () => {
     setActiveKpi("switching");
@@ -391,20 +477,31 @@ export default function Ir21ChangesPage() {
             value={
               summaryLoading ? (
                 "…"
-              ) : topGainer ? (
-                <ChurnKpiValue
-                  providerName={topGainer.providerName}
-                  statLabel="gains"
-                  statCount={topGainer.grossGains}
-                  netDelta={topGainer.netDelta}
-                  tone="success"
-                />
+              ) : displayedGainer ? (
+                <>
+                  <ChurnKpiValue
+                    providerName={displayedGainer.providerName}
+                    statLabel="gains"
+                    statCount={displayedGainer.grossGains}
+                    netDelta={displayedGainer.netDelta}
+                    tone="success"
+                  />
+                  <ChurnProviderSelect
+                    entries={summary?.topGainingProviders ?? []}
+                    metric="grossGains"
+                    role="gainer"
+                    selectedProviderId={displayedGainer.providerId}
+                    onSelect={selectGainer}
+                    tone="success"
+                    emptyLabel="No gains this period"
+                  />
+                </>
               ) : (
                 "No gains this period"
               )
             }
             color="#2E7D32"
-            tooltip="Wholesale carrier with the highest gross additions and contract wins (ADDED + REPLACED-as-new-provider) across all MNO declarations in this period. Net delta (gains minus losses) shown alongside for context."
+            tooltip="Wholesale carrier with the highest gross additions and contract wins (ADDED + REPLACED-as-new-provider) across all MNO declarations in this period. Net delta (gains minus losses) shown alongside for context. Use the dropdown to explore the full ranked list."
             active={activeKpi === "gainer"}
             disabled={!topGainer}
             onClick={handleGainerClick}
@@ -414,20 +511,31 @@ export default function Ir21ChangesPage() {
             value={
               summaryLoading ? (
                 "…"
-              ) : topLoser ? (
-                <ChurnKpiValue
-                  providerName={topLoser.providerName}
-                  statLabel="losses"
-                  statCount={topLoser.grossLosses}
-                  netDelta={topLoser.netDelta}
-                  tone="error"
-                />
+              ) : displayedLoser ? (
+                <>
+                  <ChurnKpiValue
+                    providerName={displayedLoser.providerName}
+                    statLabel="losses"
+                    statCount={displayedLoser.grossLosses}
+                    netDelta={displayedLoser.netDelta}
+                    tone="error"
+                  />
+                  <ChurnProviderSelect
+                    entries={summary?.topLosingProviders ?? []}
+                    metric="grossLosses"
+                    role="loser"
+                    selectedProviderId={displayedLoser.providerId}
+                    onSelect={selectLoser}
+                    tone="error"
+                    emptyLabel="No losses recorded"
+                  />
+                </>
               ) : (
                 "No losses recorded"
               )
             }
             color="#C62828"
-            tooltip="Wholesale carrier with the highest gross losses and competitor replacements (REMOVED + REPLACED-as-old-provider) across all MNO declarations in this period — ranked by gross losses, not net position, so a provider that's still net-positive overall can still show up here if it genuinely lost some accounts. Empty only when zero providers have any recorded loss at all in this period."
+            tooltip="Wholesale carrier with the highest gross losses and competitor replacements (REMOVED + REPLACED-as-old-provider) across all MNO declarations in this period — ranked by gross losses, not net position, so a provider that's still net-positive overall can still show up here if it genuinely lost some accounts. Empty only when zero providers have any recorded loss at all in this period. Use the dropdown to explore the full ranked list."
             active={activeKpi === "loser"}
             disabled={!topLoser}
             onClick={handleLoserClick}

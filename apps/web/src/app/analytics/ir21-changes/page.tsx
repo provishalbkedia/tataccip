@@ -199,12 +199,14 @@ function ChurnKpiValue({
   providerName,
   statLabel,
   statCount,
+  operatorsCount,
   netDelta,
   tone,
 }: {
   providerName: string;
   statLabel: string;
   statCount: number;
+  operatorsCount: number;
   netDelta: number;
   tone: "success" | "error";
 }) {
@@ -218,7 +220,7 @@ function ChurnKpiValue({
           size="small"
           color={tone}
           variant="outlined"
-          label={`${tone === "success" ? "+" : "-"}${statCount} ${statLabel}`}
+          label={`${tone === "success" ? "+" : "-"}${statCount} ${statLabel} (${operatorsCount} operator${operatorsCount === 1 ? "" : "s"})`}
           sx={{ fontWeight: 600 }}
         />
         <Typography variant="caption" color="text.secondary">
@@ -274,8 +276,12 @@ function ChurnProviderAutocomplete({
   tone: "success" | "error";
   emptyLabel: string;
 }) {
-  const label = (entry: ChurnEntry, rank: number) =>
-    `${rank}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${metric === "grossGains" ? entry.grossGains : entry.grossLosses} ${role === "gainer" ? "gains" : "losses"} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
+  const label = (entry: ChurnEntry, rank: number) => {
+    const count = metric === "grossGains" ? entry.grossGains : entry.grossLosses;
+    const noun = role === "gainer" ? "gains" : "losses";
+    const opNoun = `operator${entry.uniqueOperatorsCount === 1 ? "" : "s"}`;
+    return `${rank}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${count} ${noun} across ${entry.uniqueOperatorsCount} ${opNoun} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
+  };
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
   const selected = options.find((o) => o.entry.providerId === selectedProviderId) ?? null;
 
@@ -453,6 +459,14 @@ export default function Ir21ChangesPage() {
   const topGainer = summary?.topGainingProviders[0];
   const topLoser = summary?.topLosingProviders[0];
 
+  // Distinct MNO count behind the currently filtered table rows -- an
+  // operator with changes on all three services (SCCP/DSX/IPX) is 3 rows
+  // but 1 operator, so this is never just `rows.length`. Derived client-
+  // side from the already-fetched feed (not a separate API round trip) so
+  // it updates instantly with every filter change, per the task's own
+  // "client-side computation" requirement.
+  const uniqueOperatorCount = React.useMemo(() => new Set(rows.map((r) => r.mnoId)).size, [rows]);
+
   // The KPI card headline (ChurnKpiValue) and its ranked search control
   // (ChurnProviderAutocomplete) both show whichever entry the user last
   // picked for that role -- defaulting to the #1 ranked entry until they
@@ -584,6 +598,7 @@ export default function Ir21ChangesPage() {
                     providerName={displayedGainer.providerName}
                     statLabel="gains"
                     statCount={displayedGainer.grossGains}
+                    operatorsCount={displayedGainer.uniqueOperatorsCount}
                     netDelta={displayedGainer.netDelta}
                     tone="success"
                   />
@@ -619,6 +634,7 @@ export default function Ir21ChangesPage() {
                     providerName={displayedLoser.providerName}
                     statLabel="losses"
                     statCount={displayedLoser.grossLosses}
+                    operatorsCount={displayedLoser.uniqueOperatorsCount}
                     netDelta={displayedLoser.netDelta}
                     tone="error"
                   />
@@ -797,13 +813,16 @@ export default function Ir21ChangesPage() {
               sx={{ minWidth: 240 }}
             />
             <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
-              {loading ? "Loading…" : `${rows.length} change(s)`}
+              {loading
+                ? "Loading…"
+                : `${rows.length} change(s) across ${uniqueOperatorCount} unique operator${uniqueOperatorCount === 1 ? "" : "s"}`}
             </Typography>
           </Box>
         </Paper>
 
         <DataGrid<Ir21RoutingChangeRow>
           rowData={rows}
+          renderRowCount={(rowCount) => `${rowCount} change(s) across ${uniqueOperatorCount} operator${uniqueOperatorCount === 1 ? "" : "s"}`}
           columnDefs={[
             { field: "effectiveDate", headerName: "Date", cellRenderer: DateCell, minWidth: 130 },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },

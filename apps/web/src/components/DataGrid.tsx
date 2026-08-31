@@ -39,6 +39,7 @@ function PaginationBar({
   onLast,
   onPageSizeChange,
   isAllSelected,
+  renderRowCount,
 }: {
   pageInfo: PageInfo;
   onFirst: () => void;
@@ -47,6 +48,7 @@ function PaginationBar({
   onLast: () => void;
   onPageSizeChange: (value: number) => void;
   isAllSelected: boolean;
+  renderRowCount?: (rowCount: number) => React.ReactNode;
 }) {
   const from = pageInfo.rowCount === 0 ? 0 : pageInfo.page * pageInfo.pageSize + 1;
   const to = Math.min((pageInfo.page + 1) * pageInfo.pageSize, pageInfo.rowCount);
@@ -54,7 +56,7 @@ function PaginationBar({
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
       <Typography variant="body2" color="text.secondary">
-        Showing {from}–{to} of {pageInfo.rowCount}
+        Showing {from}–{to} of {renderRowCount ? renderRowCount(pageInfo.rowCount) : pageInfo.rowCount}
       </Typography>
       <Select
         size="small"
@@ -107,6 +109,7 @@ export default function DataGrid<T>({
   showTopPagination = false,
   suppressRowClickSelection,
   clearSelectionSignal,
+  renderRowCount,
 }: {
   rowData: T[];
   // Column groups (ColGroupDef, with nested `children`) are accepted too —
@@ -140,6 +143,11 @@ export default function DataGrid<T>({
   // sync with the other automatically. The bottom bar (our own, replacing
   // AG Grid's native one) always renders regardless of this flag.
   showTopPagination?: boolean;
+  // Replaces the bare row count in "Showing X–Y of {N}" with custom
+  // content -- e.g. "178 change(s) across 72 unique operators" on the
+  // Market Intelligence page. Omit for the default plain number (every
+  // other page using this grid is unaffected).
+  renderRowCount?: (rowCount: number) => React.ReactNode;
 }) {
   const gridRef = React.useRef<AgGridReact<T>>(null);
   const [pageInfo, setPageInfo] = React.useState<PageInfo>({ page: 0, totalPages: 1, pageSize: 20, rowCount: 0 });
@@ -244,6 +252,7 @@ export default function DataGrid<T>({
     onNext: () => gridRef.current?.api.paginationGoToNextPage(),
     onLast: () => gridRef.current?.api.paginationGoToLastPage(),
     onPageSizeChange: handlePageSizeChange,
+    renderRowCount,
   };
 
   return (

@@ -109,18 +109,25 @@ export class Ir21RoutingChangesService {
     // for context, but ranking is on the gross count:
     //   gains  = ADDED (newProvider) + REPLACED (newProvider)
     //   losses = REMOVED (oldProvider) + REPLACED (oldProvider)
-    const churn = new Map<number, { name: string; gains: number; losses: number }>();
+    // gainMnoIds/lossMnoIds are Sets, not counts -- the same MNO can
+    // generate more than one gain (or loss) event for a provider within
+    // one period (e.g. ADDED on SCCP and separately on DSX), and
+    // uniqueOperatorsCount below needs the distinct account count, not the
+    // raw event count grossGains/grossLosses already report.
+    const churn = new Map<number, { name: string; gains: number; losses: number; gainMnoIds: Set<number>; lossMnoIds: Set<number> }>();
     const operators = new Map<number, { name: string; tadig: string; count: number }>();
 
     for (const r of rows) {
       if (r.newProviderId && r.newProviderName) {
-        const e = churn.get(r.newProviderId) ?? { name: r.newProviderName, gains: 0, losses: 0 };
+        const e = churn.get(r.newProviderId) ?? { name: r.newProviderName, gains: 0, losses: 0, gainMnoIds: new Set<number>(), lossMnoIds: new Set<number>() };
         e.gains++;
+        e.gainMnoIds.add(r.mnoId);
         churn.set(r.newProviderId, e);
       }
       if (r.oldProviderId && r.oldProviderName) {
-        const e = churn.get(r.oldProviderId) ?? { name: r.oldProviderName, gains: 0, losses: 0 };
+        const e = churn.get(r.oldProviderId) ?? { name: r.oldProviderName, gains: 0, losses: 0, gainMnoIds: new Set<number>(), lossMnoIds: new Set<number>() };
         e.losses++;
+        e.lossMnoIds.add(r.mnoId);
         churn.set(r.oldProviderId, e);
       }
       const opEntry = operators.get(r.mnoId) ?? { name: r.mnoName, tadig: r.tadigCode, count: 0 };
@@ -134,15 +141,25 @@ export class Ir21RoutingChangesService {
       grossGains: v.gains,
       grossLosses: v.losses,
       netDelta: v.gains - v.losses,
+      uniqueGainOperators: v.gainMnoIds.size,
+      uniqueLossOperators: v.lossMnoIds.size,
     }));
 
     // Unsliced -- the frontend's Top Gainer/Loser KPI cards show entry [0]
     // as the headline figure but also expose the full ranked list in a
     // dropdown so a carrier-relations reviewer can pivot the table to any
     // provider's gains/losses, not just the single top one.
+    //
+    // uniqueOperatorsCount is context-relative -- gains-side for the
+    // gainer list, losses-side for the loser list -- since a raw gross
+    // count (e.g. 178 gains) conflates one operator switching to a
+    // provider on all three services with 178 distinct operators each
+    // switching once; the KPI cards need the distinct-account figure
+    // alongside the event count, not instead of it.
     const topGainingProviders = [...churnList]
       .filter((c) => c.grossGains > 0)
-      .sort((a, b) => b.grossGains - a.grossGains);
+      .sort((a, b) => b.grossGains - a.grossGains)
+      .map(({ uniqueGainOperators, uniqueLossOperators: _uniqueLossOperators, ...rest }) => ({ ...rest, uniqueOperatorsCount: uniqueGainOperators }));
 
     // Only a provider with at least one real loss counts as a "loser" --
     // a provider with zero losses this period (the common case right
@@ -152,7 +169,8 @@ export class Ir21RoutingChangesService {
     // state instead of fabricating one.
     const topLosingProviders = [...churnList]
       .filter((c) => c.grossLosses > 0)
-      .sort((a, b) => b.grossLosses - a.grossLosses);
+      .sort((a, b) => b.grossLosses - a.grossLosses)
+      .map(({ uniqueLossOperators, uniqueGainOperators: _uniqueGainOperators, ...rest }) => ({ ...rest, uniqueOperatorsCount: uniqueLossOperators }));
 
     return {
       totalChurnEvents: rows.length,

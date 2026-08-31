@@ -711,9 +711,14 @@ export interface Ir21RoutingChangeSummary {
   // not net delta, so a provider that's still net-positive overall but
   // lost some accounts can appear on both this list and topLosingProviders
   // at once. netDelta (gains - losses) is carried alongside for context.
-  topGainingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number }[];
+  // uniqueOperatorsCount is the distinct MNO/account count behind
+  // grossGains -- one operator switching to a provider on all three
+  // services (SCCP/DSX/IPX) counts as 3 gains but 1 operator.
+  topGainingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number; uniqueOperatorsCount: number }[];
   // Ranked by gross losses descending; only includes a provider when its
   // grossLosses > 0 -- never force-filled just to avoid an empty list.
-  topLosingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number }[];
+  // uniqueOperatorsCount here is the distinct-account count behind
+  // grossLosses (same reasoning as topGainingProviders above).
+  topLosingProviders: { providerId: number; providerName: string; grossGains: number; grossLosses: number; netDelta: number; uniqueOperatorsCount: number }[];
   topSwitchingOperators: { mnoId: number; operatorName: string; tadigCode: string; changeCount: number }[];
 }

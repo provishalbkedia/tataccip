@@ -154,9 +154,6 @@ export class Ir21RoutingChangesService {
       .filter((c) => c.grossLosses > 0)
       .sort((a, b) => b.grossLosses - a.grossLosses);
 
-    const top = <V extends { count: number }>(map: Map<number, V>, n: number) =>
-      [...map.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, n);
-
     return {
       totalChurnEvents: rows.length,
       addedCount: rows.filter((r) => r.changeType === "ADDED").length,
@@ -165,12 +162,17 @@ export class Ir21RoutingChangesService {
       activeSwitchingOperatorCount: operators.size,
       topGainingProviders,
       topLosingProviders,
-      topSwitchingOperators: top(operators, 5).map(([id, v]) => ({
-        mnoId: id,
-        operatorName: v.name,
-        tadigCode: v.tadig,
-        changeCount: v.count,
-      })),
+      // Unsliced, same reasoning as topGainingProviders/topLosingProviders
+      // above -- the "Active Switching Operators" KPI card's own search
+      // control needs the full ranked list, not just the top few.
+      topSwitchingOperators: [...operators.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([id, v]) => ({
+          mnoId: id,
+          operatorName: v.name,
+          tadigCode: v.tadig,
+          changeCount: v.count,
+        })),
     };
   }
 }

@@ -9,13 +9,9 @@ import {
   Card,
   CardContent,
   Chip,
-  FormControl,
   Grid,
   IconButton,
-  MenuItem,
   Paper,
-  Select,
-  type SelectChangeEvent,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -235,23 +231,37 @@ function ChurnKpiValue({
 }
 
 type ChurnEntry = Ir21RoutingChangeSummary["topGainingProviders"][number];
+type SwitchingEntry = Ir21RoutingChangeSummary["topSwitchingOperators"][number];
 
-/** Ranked dropdown embedded in the Gainer/Loser KPI cards, letting a
- * reviewer pivot straight to any provider's gain/loss events -- not just
- * the single top-ranked one ChurnKpiValue headlines above it. Selecting an
- * entry drives the same `provider`/`providerRole` state the plain
- * "Wholesale Provider" Autocomplete below reads and writes, so the two
- * stay in sync without separate wiring: whichever entry is "selected" here
- * is exactly whichever the card's own headline is currently showing.
- * `e.stopPropagation()` on the wrapper keeps opening the menu from also
- * firing the card's own onClick (which would otherwise jump the selection
- * back to the #1 entry every time). */
-function ChurnProviderSelect({
+const kpiAutocompleteSx = (tone: "success" | "error" | "warning") => ({
+  mt: 1,
+  bgcolor: "#F4F6F8",
+  "& .MuiOutlinedInput-root": {
+    fontSize: "0.75rem",
+    py: "2px !important",
+    "& fieldset": { borderColor: tone === "success" ? "success.main" : tone === "error" ? "error.main" : "#0A2540" },
+  },
+});
+
+/** Searchable ranked selector embedded in the Gainer/Loser KPI cards,
+ * letting a reviewer type a carrier name (or rank number -- MUI's default
+ * filter matches anywhere in the rendered option label) to jump straight
+ * to any provider's gain/loss events, not just the single top-ranked one
+ * ChurnKpiValue headlines above it. Selecting an entry drives the same
+ * `provider`/`providerRole` state the plain "Wholesale Provider"
+ * Autocomplete below reads and writes, so the two stay in sync without
+ * separate wiring: whichever entry is "selected" here is exactly whichever
+ * the card's own headline is currently showing. `e.stopPropagation()` on
+ * the wrapper keeps opening/typing in the field from also firing the
+ * card's own onClick (which would otherwise jump the selection back to the
+ * #1 entry every time). */
+function ChurnProviderAutocomplete({
   entries,
   metric,
   role,
   selectedProviderId,
   onSelect,
+  onClear,
   tone,
   emptyLabel,
 }: {
@@ -260,43 +270,78 @@ function ChurnProviderSelect({
   role: "gainer" | "loser";
   selectedProviderId?: number;
   onSelect: (entry: ChurnEntry) => void;
+  onClear: () => void;
   tone: "success" | "error";
   emptyLabel: string;
 }) {
-  const value = selectedProviderId !== undefined ? String(selectedProviderId) : "";
+  const label = (entry: ChurnEntry, rank: number) =>
+    `${rank}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${metric === "grossGains" ? entry.grossGains : entry.grossLosses} ${role === "gainer" ? "gains" : "losses"} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
+  const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
+  const selected = options.find((o) => o.entry.providerId === selectedProviderId) ?? null;
 
   return (
-    <FormControl size="small" fullWidth sx={{ mt: 1 }} onClick={(e) => e.stopPropagation()}>
-      <Select
-        displayEmpty
-        value={value}
+    <Box onClick={(e) => e.stopPropagation()}>
+      <Autocomplete
+        size="small"
+        fullWidth
+        options={options}
+        value={selected}
         disabled={entries.length === 0}
-        onChange={(e: SelectChangeEvent) => {
-          const id = Number(e.target.value);
-          const entry = entries.find((x) => x.providerId === id);
-          if (entry) onSelect(entry);
-        }}
-        sx={{
-          fontSize: "0.75rem",
-          bgcolor: "background.paper",
-          "& .MuiSelect-select": { py: 0.5, px: 1 },
-          "& .MuiOutlinedInput-notchedOutline": { borderColor: tone === "success" ? "success.main" : "error.main" },
-        }}
-        MenuProps={{ PaperProps: { style: { maxHeight: 320 } } }}
-      >
-        {entries.length === 0 ? (
-          <MenuItem disabled value="">
-            {emptyLabel}
-          </MenuItem>
-        ) : (
-          entries.map((entry, i) => (
-            <MenuItem key={entry.providerId} value={String(entry.providerId)} sx={{ fontSize: "0.8125rem" }}>
-              {`${i + 1}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${metric === "grossGains" ? entry.grossGains : entry.grossLosses} ${role === "gainer" ? "gains" : "losses"} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`}
-            </MenuItem>
-          ))
-        )}
-      </Select>
-    </FormControl>
+        noOptionsText={emptyLabel}
+        clearOnEscape
+        disableClearable={false}
+        getOptionLabel={(o) => o.label}
+        isOptionEqualToValue={(o, v) => o.entry.providerId === v.entry.providerId}
+        onChange={(_, v) => (v ? onSelect(v.entry) : onClear())}
+        renderInput={(params) => <TextField {...params} placeholder={entries.length === 0 ? emptyLabel : "Search provider…"} />}
+        sx={kpiAutocompleteSx(tone)}
+      />
+    </Box>
+  );
+}
+
+/** Same searchable ranked pattern as ChurnProviderAutocomplete, embedded in
+ * the "Active Switching Operators" card -- lets a reviewer type an
+ * operator name or TADIG to isolate one operator's full switching history
+ * (every ADDED/REMOVED/REPLACED event, not narrowed to REPLACED-only; see
+ * selectSwitchingOperator below for why forcing REPLACED there was already
+ * fixed as a bug). Unlike the Gainer/Loser cards, this card's own headline
+ * is a plain count with no single "current entry" to default to, so this
+ * control has no forced default selection -- it shows a match only when
+ * the shared `search` state happens to equal one entry's own TADIG. */
+function SwitchingOperatorAutocomplete({
+  entries,
+  selectedTadig,
+  onSelect,
+  onClear,
+}: {
+  entries: SwitchingEntry[];
+  selectedTadig: string;
+  onSelect: (entry: SwitchingEntry) => void;
+  onClear: () => void;
+}) {
+  const label = (entry: SwitchingEntry, rank: number) => `${rank}. ${entry.operatorName} (${entry.tadigCode}) — ${entry.changeCount} switches`;
+  const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
+  const selected = options.find((o) => o.entry.tadigCode === selectedTadig) ?? null;
+
+  return (
+    <Box onClick={(e) => e.stopPropagation()}>
+      <Autocomplete
+        size="small"
+        fullWidth
+        options={options}
+        value={selected}
+        disabled={entries.length === 0}
+        noOptionsText="No switching operators this period"
+        clearOnEscape
+        disableClearable={false}
+        getOptionLabel={(o) => o.label}
+        isOptionEqualToValue={(o, v) => o.entry.tadigCode === v.entry.tadigCode}
+        onChange={(_, v) => (v ? onSelect(v.entry) : onClear())}
+        renderInput={(params) => <TextField {...params} placeholder="Search operator / TADIG…" />}
+        sx={kpiAutocompleteSx("warning")}
+      />
+    </Box>
   );
 }
 
@@ -328,14 +373,24 @@ export default function Ir21ChangesPage() {
   // narrow slice -- REPLACED events are rare enough that this routinely
   // collapsed every card to "no data" even when the overall dataset had
   // hundreds of real events in the selected window.
+  //
+  // `search` is deliberately excluded here too, even though it's a
+  // top-level filter row control like timeframe/region/service: searching
+  // for one operator (by hand, or via the Active Switching Operators
+  // card's own autocomplete below, which fills this same field) is a
+  // drill-down into a single entity, not a dataset-scope change -- the
+  // exact same reasoning that keeps changeType/provider/providerRole out
+  // of this query. Without this exclusion, picking one operator from that
+  // card's dropdown would shrink its own options list down to just the
+  // operator you picked, making every other operator unreachable without
+  // first clearing the search box.
   const overviewQueryString = React.useMemo(() => {
     const params = new URLSearchParams();
     if (timeframe !== "all") params.set("timeframe", timeframe);
     if (region) params.set("region", region);
     if (service) params.set("service", service);
-    if (search) params.set("search", search);
     return params.toString();
-  }, [timeframe, region, service, search]);
+  }, [timeframe, region, service]);
 
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
@@ -390,10 +445,10 @@ export default function Ir21ChangesPage() {
   const topGainer = summary?.topGainingProviders[0];
   const topLoser = summary?.topLosingProviders[0];
 
-  // The KPI card headline (ChurnKpiValue) and its ranked dropdown
-  // (ChurnProviderSelect) both show whichever entry the user last picked
-  // for that role -- defaulting to the #1 ranked entry until they pick a
-  // different one. A manual pick via the plain "Wholesale Provider"
+  // The KPI card headline (ChurnKpiValue) and its ranked search control
+  // (ChurnProviderAutocomplete) both show whichever entry the user last
+  // picked for that role -- defaulting to the #1 ranked entry until they
+  // pick a different one. A manual pick via the plain "Wholesale Provider"
   // Autocomplete below never sets providerRole, so it correctly leaves
   // both cards showing their own #1 default rather than a guess.
   const displayedGainer = providerRole === "gainer" && provider ? (summary?.topGainingProviders.find((e) => e.providerId === provider.id) ?? topGainer) : topGainer;
@@ -415,6 +470,40 @@ export default function Ir21ChangesPage() {
     setProviderRole("loser");
     setProviderInput(entry.providerName);
     setChangeType("");
+  };
+  // Clearing either card's own search control only resets that role's
+  // drill-down (falling back to the #1 default via displayedGainer/
+  // displayedLoser above) -- it deliberately leaves timeframe, region,
+  // service, and search untouched, per Task 3's two-way sync requirement.
+  const clearGainerSelection = () => {
+    if (providerRole !== "gainer") return;
+    setActiveKpi(null);
+    setProvider(null);
+    setProviderRole(null);
+    setProviderInput("");
+  };
+  const clearLoserSelection = () => {
+    if (providerRole !== "loser") return;
+    setActiveKpi(null);
+    setProvider(null);
+    setProviderRole(null);
+    setProviderInput("");
+  };
+  const selectSwitchingOperator = (entry: SwitchingEntry) => {
+    setActiveKpi("switching");
+    setProvider(null);
+    setProviderRole(null);
+    setProviderInput("");
+    setSearch(entry.tadigCode);
+    // Not narrowed to changeType=REPLACED -- see handleSwitchingClick's own
+    // comment below; that exact narrowing was already fixed as a bug
+    // (REPLACED events are rare, so it routinely produced an empty table).
+    // This shows the operator's full switching history instead.
+    setChangeType("");
+  };
+  const clearSwitchingSelection = () => {
+    setSearch("");
+    setActiveKpi(null);
   };
 
   const handleChurnClick = () => {
@@ -486,12 +575,13 @@ export default function Ir21ChangesPage() {
                     netDelta={displayedGainer.netDelta}
                     tone="success"
                   />
-                  <ChurnProviderSelect
+                  <ChurnProviderAutocomplete
                     entries={summary?.topGainingProviders ?? []}
                     metric="grossGains"
                     role="gainer"
                     selectedProviderId={displayedGainer.providerId}
                     onSelect={selectGainer}
+                    onClear={clearGainerSelection}
                     tone="success"
                     emptyLabel="No gains this period"
                   />
@@ -520,12 +610,13 @@ export default function Ir21ChangesPage() {
                     netDelta={displayedLoser.netDelta}
                     tone="error"
                   />
-                  <ChurnProviderSelect
+                  <ChurnProviderAutocomplete
                     entries={summary?.topLosingProviders ?? []}
                     metric="grossLosses"
                     role="loser"
                     selectedProviderId={displayedLoser.providerId}
                     onSelect={selectLoser}
+                    onClear={clearLoserSelection}
                     tone="error"
                     emptyLabel="No losses recorded"
                   />
@@ -542,9 +633,25 @@ export default function Ir21ChangesPage() {
           />
           <KpiCard
             label="Active Switching Operators"
-            value={summaryLoading ? "…" : summary?.activeSwitchingOperatorCount ?? 0}
+            value={
+              summaryLoading ? (
+                "…"
+              ) : (
+                <>
+                  <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }}>
+                    {summary?.activeSwitchingOperatorCount ?? 0}
+                  </Typography>
+                  <SwitchingOperatorAutocomplete
+                    entries={summary?.topSwitchingOperators ?? []}
+                    selectedTadig={search}
+                    onSelect={selectSwitchingOperator}
+                    onClear={clearSwitchingSelection}
+                  />
+                </>
+              )
+            }
             color="#EF6C00"
-            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click to show every change event for those operators in the table below."
+            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click the card to show every change event for those operators, or search an operator directly in the box below."
             active={activeKpi === "switching"}
             onClick={handleSwitchingClick}
           />

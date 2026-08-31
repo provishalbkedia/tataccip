@@ -73,8 +73,41 @@ function SourceCell(params: ICellRendererParams<MnoSummary>) {
   );
 }
 
+/** Clickable operator name -- the row itself now toggles checkbox selection
+ * on click (see the DataGrid invocation below), so navigation to the
+ * detail page moves here instead of a whole-row onRowClicked, the same
+ * "name is the link, the rest of the row selects" pattern used on
+ * Provider Search. stopPropagation keeps this from also toggling the
+ * row's checkbox. */
+function OperatorNameCell(params: ICellRendererParams<MnoSummary>) {
+  const router = useRouter();
+  if (!params.data) return <>{params.value}</>;
+  const id = params.data.id;
+  const go = () => router.push(`/search/mno/${id}`);
+  return (
+    <span
+      role="link"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        go();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.stopPropagation();
+        go();
+      }}
+      style={{ color: "#0B6FBF", fontWeight: 600, cursor: "pointer" }}
+      onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+      onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+    >
+      {params.value}
+    </span>
+  );
+}
+
 /** stopPropagation so clicking the PDF icon doesn't also trigger the row's
- * own onRowClicked navigation to the detail page. */
+ * own checkbox-selection toggle. */
 function PdfCell(params: ICellRendererParams<MnoSummary>) {
   if (!params.data?.hasPdfDocument) {
     return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
@@ -380,8 +413,8 @@ function MnoSearchPageInner() {
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
             {results.length} result(s) — Showing operator connectivity footprint strictly as declared in official
-            GSMA IR.21 documents. Click a row for connectivity details, or check the box on 2–5 rows to compare
-            selected operators side by side.
+            GSMA IR.21 documents. Click anywhere on a row (or its checkbox) to select 2–5 for side-by-side
+            comparison, or click an operator&apos;s name to open its connectivity details.
           </Typography>
           <Tooltip title="Select 2 to 5 operators to launch the side-by-side Interconnect Parity Comparison Drawer.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
@@ -390,7 +423,7 @@ function MnoSearchPageInner() {
         <DataGrid<MnoSummary>
           rowData={results}
           columnDefs={[
-            { field: "operatorName", headerName: "Operator Name", flex: 1.5 },
+            { field: "operatorName", headerName: "Operator Name", flex: 1.5, cellRenderer: OperatorNameCell },
             { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 150, sortable: false, filter: false },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
             { field: "country", headerName: "Country" },
@@ -431,10 +464,8 @@ function MnoSearchPageInner() {
             },
           ]}
           rowSelection="multiRow"
-          suppressRowClickSelection
           onSelectionChanged={setSelected}
           clearSelectionSignal={clearSignal}
-          onRowClicked={(row) => router.push(`/search/mno/${row.id}`)}
           showTopPagination
           exportFileName="operator-search-results"
         />

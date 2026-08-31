@@ -9,6 +9,14 @@ export const theme = createTheme({
     background: { default: "#F4F6F8", paper: "#FFFFFF" },
     text: { primary: "#0A2540", secondary: "#5A6B7B" },
     divider: "#E1E6EB",
+    // Codified from the hex values already hardcoded ad hoc across the app
+    // (KPI cards, status badges, admin match-status chips) -- making them
+    // the real palette means `color="success"` etc. now renders exactly
+    // what every page already visually expects, and future code can
+    // reference theme.palette.success.main instead of repeating the hex.
+    success: { main: "#2E7D32", light: "#4CAF50", dark: "#1B5E20", contrastText: "#FFFFFF" },
+    error: { main: "#C62828", light: "#E57373", dark: "#8E0000", contrastText: "#FFFFFF" },
+    warning: { main: "#EF6C00", light: "#FFA726", dark: "#B34700", contrastText: "#FFFFFF" },
   },
   shape: { borderRadius: 8 },
   typography: {
@@ -55,6 +63,34 @@ export const theme = createTheme({
         root: ({ theme }) => ({
           [theme.breakpoints.down("sm")]: { minHeight: 44 },
         }),
+      },
+    },
+    // Enterprise-grade elevation: a subtle shadow instead of MUI's default
+    // heavier drop shadow, plus a quick hover transition for any card that
+    // turns out to be clickable (KpiCard, comparison-selection cards, ...)
+    // — harmless on static cards too, since the shadow only shifts, it
+    // doesn't require an onClick to look intentional. Applies once here
+    // rather than per-page, so every Card across the app (KPI tiles, Help
+    // guide sections, comparison cards) picks it up automatically.
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          transition: "box-shadow 180ms ease-in-out, transform 180ms ease-in-out",
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        elevation1: { boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+      },
+    },
+    // Slightly bolder label weight than MUI's default reads as a proper
+    // status/coverage badge (Active / Planned / Limited, Matched / IR.21
+    // Only / Reach List Only, ...) rather than a plain text pill.
+    MuiChip: {
+      styleOverrides: {
+        root: { fontWeight: 600 },
       },
     },
   },

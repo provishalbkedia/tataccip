@@ -8,6 +8,7 @@ import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import ClearIcon from "@mui/icons-material/Clear";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -52,6 +53,7 @@ function ProviderSearchPageInner() {
   const [service, setService] = React.useState<ServiceFilter | null>(null);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
   const [selected, setSelected] = React.useState<ProviderSummary[]>([]);
+  const [clearSignal, setClearSignal] = React.useState(0);
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — fires on initial load, on an explicit Search/toggle
@@ -119,7 +121,34 @@ function ProviderSearchPageInner() {
 
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
     const cols: ColDef<ProviderSummary>[] = [
-      { field: "providerName", headerName: "Provider Name", flex: 1.5 },
+      {
+        field: "providerName",
+        headerName: "Provider Name",
+        flex: 1.5,
+        cellRenderer: (p: { value: string; data?: ProviderSummary }) =>
+          p.data ? (
+            <span
+              role="link"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/search/provider/${p.data!.id}?source=${p.data!.source ?? source}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.stopPropagation();
+                router.push(`/search/provider/${p.data!.id}?source=${p.data!.source ?? source}`);
+              }}
+              style={{ color: "#0B6FBF", fontWeight: 600, cursor: "pointer", textDecoration: "none" }}
+              onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+              onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+            >
+              {p.value}
+            </span>
+          ) : (
+            p.value
+          ),
+      },
       { field: "providerType", headerName: "Type" },
       { field: "headquarters", headerName: "Headquarters" },
       { field: "website", headerName: "Website", flex: 1.2 },
@@ -139,7 +168,7 @@ function ProviderSearchPageInner() {
       { field: "stats.ipxCount", headerName: "IPX" },
     );
     return cols;
-  }, [source]);
+  }, [source, router]);
 
   return (
     <RequireAuth>
@@ -196,8 +225,9 @@ function ProviderSearchPageInner() {
 
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <Typography variant="body2" color="text.secondary">
-            {uniqueProviderCount} result(s) — click a row for coverage stats, or check the box on 2-5 rows to
-            compare selected providers side by side. {SOURCE_HELPER_TEXT[source]}
+            {uniqueProviderCount} result(s) — click anywhere on a row (or its checkbox) to select 2-5 for
+            side-by-side comparison, or click a provider&apos;s name to open its coverage stats.{" "}
+            {SOURCE_HELPER_TEXT[source]}
           </Typography>
           {service && (
             <Chip
@@ -213,9 +243,8 @@ function ProviderSearchPageInner() {
           rowData={results}
           columnDefs={columnDefs}
           rowSelection="multiRow"
-          suppressRowClickSelection
           onSelectionChanged={setSelected}
-          onRowClicked={(row) => router.push(`/search/provider/${row.id}?source=${row.source ?? source}`)}
+          clearSelectionSignal={clearSignal}
           showTopPagination
           exportFileName="provider-search-results"
         />
@@ -277,18 +306,31 @@ function ProviderSearchPageInner() {
               {uniqueSelected.length} Provider(s) Selected: {uniqueSelected.map((p) => p.providerName).join(", ")}
               {uniqueSelected.length > 5 && " — max 5, deselect some to compare"}
             </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<CompareArrowsIcon />}
-              disabled={uniqueSelected.length > 5}
-              onClick={() =>
-                router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)
-              }
-              sx={{ width: { xs: "100%", sm: "auto" } }}
-            >
-              Compare Selected Providers (Matrix)
-            </Button>
+            <Box sx={{ display: "flex", gap: 1, width: { xs: "100%", sm: "auto" } }}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<CompareArrowsIcon />}
+                disabled={uniqueSelected.length > 5}
+                onClick={() =>
+                  router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)
+                }
+                sx={{ flex: { xs: 1, sm: "0 0 auto" } }}
+              >
+                Compare Selected Providers (Matrix)
+              </Button>
+              <Button
+                size="small"
+                startIcon={<ClearIcon />}
+                onClick={() => {
+                  setSelected([]);
+                  setClearSignal((n) => n + 1);
+                }}
+                sx={{ flex: { xs: "0 0 auto", sm: "0 0 auto" } }}
+              >
+                Clear Selection
+              </Button>
+            </Box>
           </Paper>
         )}
       </AppShell>

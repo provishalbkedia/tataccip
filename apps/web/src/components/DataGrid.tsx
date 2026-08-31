@@ -282,7 +282,22 @@ export default function DataGrid<T>({
           )}
         </Box>
       )}
-      <Box sx={{ "& .ag-paging-panel": { display: "none !important" } }}>
+      <Box
+        sx={{
+          "& .ag-paging-panel": { display: "none !important" },
+          // Selection cue for rowSelection-enabled grids (Provider/Operator
+          // Search): an accent left border plus a light tint, not just AG
+          // Grid's own faint default highlight -- immediate and unambiguous
+          // at a glance across a dense table, with a quick transition so it
+          // doesn't feel like a hard flash.
+          "& .ag-row-selected": {
+            backgroundColor: "rgba(11, 111, 191, 0.08) !important",
+            boxShadow: "inset 3px 0 0 0 #0B6FBF",
+            transition: "background-color 180ms ease-in-out, box-shadow 180ms ease-in-out",
+          },
+          "& .ag-row": { transition: "background-color 180ms ease-in-out" },
+        }}
+      >
         <div
           className="ag-theme-quartz"
           style={{

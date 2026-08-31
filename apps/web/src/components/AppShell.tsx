@@ -22,6 +22,8 @@ import {
   Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -39,6 +41,8 @@ import OnlineUsersBadge from "./OnlineUsersBadge";
 import DisclaimerModal from "./DisclaimerModal";
 
 const DRAWER_WIDTH = 240;
+const DRAWER_WIDTH_COLLAPSED = 72;
+const NAV_COLLAPSED_STORAGE_KEY = "ccip-nav-collapsed";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: Role[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
@@ -56,6 +60,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [accountAnchor, setAccountAnchor] = React.useState<HTMLElement | null>(null);
   const [warmingUp, setWarmingUp] = React.useState(false);
   const [disclaimerOpen, setDisclaimerOpen] = React.useState(false);
+  // Desktop-only rail collapse (icons-only), independent of the mobile
+  // temporary drawer's open/close state below. Persisted so the choice
+  // survives a reload — read after mount (not as useState's initializer)
+  // to avoid a server/client markup mismatch, since localStorage doesn't
+  // exist during SSR.
+  const [collapsed, setCollapsed] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) === "1");
+    } catch {
+      // Private browsing / storage blocked — default (expanded) stands.
+    }
+  }, []);
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // Same as above — collapse still works for this session either way.
+      }
+      return next;
+    });
+  }, []);
 
   const handleWarmUp = React.useCallback(async () => {
     setWarmingUp(true);
@@ -68,21 +96,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
 
-  const navList = (
+  // `railCollapsed` only ever applies to the permanent desktop drawer — the
+  // mobile temporary drawer always renders this with railCollapsed=false,
+  // since a collapsed icons-only rail defeats the point of a drawer the
+  // user just explicitly opened to see the nav.
+  const renderNavList = (railCollapsed: boolean) => (
     <List sx={{ mt: 1 }}>
-      {visibleItems.map((item) => (
-        <ListItemButton
-          key={item.href}
-          component={Link}
-          href={item.href}
-          onClick={() => setMobileOpen(false)}
-          selected={pathname === item.href || pathname.startsWith(item.href + "/")}
-          sx={{ minHeight: 48 }}
-        >
-          <ListItemIcon>{item.icon}</ListItemIcon>
-          <ListItemText primary={item.label} />
-        </ListItemButton>
-      ))}
+      {visibleItems.map((item) => {
+        const button = (
+          <ListItemButton
+            key={item.href}
+            component={Link}
+            href={item.href}
+            onClick={() => setMobileOpen(false)}
+            selected={pathname === item.href || pathname.startsWith(item.href + "/")}
+            sx={{ minHeight: 48, justifyContent: railCollapsed ? "center" : "flex-start", px: railCollapsed ? 1.5 : 2 }}
+          >
+            <ListItemIcon sx={{ minWidth: railCollapsed ? 0 : 40, justifyContent: "center" }}>{item.icon}</ListItemIcon>
+            {!railCollapsed && <ListItemText primary={item.label} />}
+          </ListItemButton>
+        );
+        return railCollapsed ? (
+          <Tooltip key={item.href} title={item.label} placement="right">
+            {button}
+          </Tooltip>
+        ) : (
+          button
+        );
+      })}
     </List>
   );
 
@@ -186,19 +227,45 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Toolbar>
       </AppBar>
 
-      {/* Desktop/tablet: persistent sidebar */}
+      {/* Desktop/tablet: persistent sidebar, collapsible to an icons-only
+         rail. Width transitions on both the Drawer and its paper use the
+         same MUI transition mixin the component ships for exactly this —
+         matches the easing/duration MUI's own collapsing nav examples use,
+         rather than a hand-picked one that might drift from it. */}
       <Drawer
         variant="permanent"
-        sx={{
+        sx={(theme) => ({
           display: { xs: "none", md: "block" },
-          width: DRAWER_WIDTH,
+          width: collapsed ? DRAWER_WIDTH_COLLAPSED : DRAWER_WIDTH,
           flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: DRAWER_WIDTH, boxSizing: "border-box", display: "flex", flexDirection: "column" },
-        }}
+          transition: theme.transitions.create("width", {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+          [`& .MuiDrawer-paper`]: {
+            width: collapsed ? DRAWER_WIDTH_COLLAPSED : DRAWER_WIDTH,
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            overflowX: "hidden",
+            transition: theme.transitions.create("width", {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.enteringScreen,
+            }),
+          },
+        })}
       >
         <Toolbar />
-        {navList}
-        {drawerFooter}
+        {renderNavList(collapsed)}
+        <Box sx={{ flexGrow: 1 }} />
+        <Box sx={{ display: "flex", justifyContent: collapsed ? "center" : "flex-end", px: 1, py: 1 }}>
+          <Tooltip title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            <IconButton onClick={toggleCollapsed} size="small" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+              {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+        {!collapsed && drawerFooter}
       </Drawer>
 
       {/* Mobile/tablet: slide-over drawer */}
@@ -218,13 +285,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <Toolbar />
-        {navList}
+        {renderNavList(false)}
         {drawerFooter}
       </Drawer>
 
       <Box
         component="main"
-        sx={{ flexGrow: 1, bgcolor: "background.default", minHeight: "100vh", width: { xs: "100%", md: `calc(100% - ${DRAWER_WIDTH}px)` } }}
+        sx={(theme) => ({
+          flexGrow: 1,
+          bgcolor: "background.default",
+          minHeight: "100vh",
+          width: { xs: "100%", md: `calc(100% - ${collapsed ? DRAWER_WIDTH_COLLAPSED : DRAWER_WIDTH}px)` },
+          transition: theme.transitions.create("width", {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+        })}
       >
         <Toolbar />
         <Box sx={{ p: { xs: 1.5, sm: 3 } }}>{children}</Box>

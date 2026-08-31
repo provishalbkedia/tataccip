@@ -353,10 +353,16 @@ export default function Ir21ChangesPage() {
     setProviderRole(null);
     setProviderInput("");
     setSearch("");
-    // REPLACED is the one change type that's definitionally a "switch" —
-    // an ADDED or REMOVED event doesn't by itself mean the operator
-    // switched away from something.
-    setChangeType(RoutingChangeType.REPLACED);
+    // The backend counts an MNO as an "active switching operator" the
+    // moment it has *any* routing change (ADDED, REMOVED, or REPLACED) in
+    // the period -- see Ir21RoutingChangesService.summary's `operators`
+    // map, which isn't scoped to REPLACED. Narrowing the table to
+    // changeType=REPLACED here (an earlier version of this handler did)
+    // showed almost nothing, since a literal carrier-for-carrier
+    // replacement is rare -- most switching activity is an ADDED or
+    // REMOVED event. Leaving changeType clear shows every event for every
+    // operator the KPI is actually counting, matching its own number.
+    setChangeType("");
   };
 
   return (
@@ -430,7 +436,7 @@ export default function Ir21ChangesPage() {
             label="Active Switching Operators"
             value={summaryLoading ? "…" : summary?.activeSwitchingOperatorCount ?? 0}
             color="#EF6C00"
-            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click to filter the table to REPLACED events specifically."
+            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click to show every change event for those operators in the table below."
             active={activeKpi === "switching"}
             onClick={handleSwitchingClick}
           />

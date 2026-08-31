@@ -7,7 +7,8 @@ import { normalizeCountryToIso3 } from "./country-normalize";
 import { buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
-import { Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
+import { Ir21ChangeHistoryItem, Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
+import { interpretChangeHistoryDescription } from "./ir21-change-history.util";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
 import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UploadResult } from "@ccip/shared-types";
@@ -728,6 +729,15 @@ export class UploadService {
       mno.country,
     );
 
+    // Backfills any provider switch this file's own <ChangeHistory> log
+    // documents as having already happened -- e.g. a carrier switch made
+    // years before this platform's own live-diff tracking (above) started
+    // recording anything. Live-diff can only ever detect a transition
+    // between two uploads; it has no way to see one that happened entirely
+    // before the very first upload of this MNO. See applyServiceConnectivity's
+    // own doc comment and Ir21XmlParserService.changeHistory.
+    await this.backfillChangeHistory(mno.id, parsed.senderTadig, parsed.changeHistory, filename, mno.operatorName, mno.country);
+
     const snapshotFields = {
       tadigCode: mno.tadigCode,
       operatorName: mno.operatorName,
@@ -878,6 +888,106 @@ export class UploadService {
     });
     await recordChange(resolved.providerId, newProvider?.providerName ?? null);
     return 0;
+  }
+
+  /** Recovers provider switches an IR.21 file's own <ChangeHistory> log
+   * documents but this platform's live-diff (applyServiceConnectivity's
+   * recordChange, above) could never have seen -- verified against a real
+   * Dialog Axiata (LKADG) file whose DSX ChangeHistory records "2026-06-18
+   * LTE Roaming - Remove IPX Provider - TATA" / "... Add new IPX
+   * Interconnection - BICS", an event live-diff missed entirely because the
+   * very first upload of this MNO started from an empty Ir21Connectivity
+   * baseline (nothing to diff TATA's presence against).
+   *
+   * Read-only provider resolution only (matchAlias, no auto-create/no
+   * unmapped-queueing) -- these are supplementary historical facts, not a
+   * primary declaration, so an unresolvable candidate is silently dropped
+   * rather than queued for admin triage. Two safeguards keep this from
+   * corrupting the gross gain/loss counts the Market Intelligence page
+   * ranks providers by:
+   *   1. Exact-dedup on (service, changeType, oldProviderId, newProviderId,
+   *      day) so re-uploading the same file's unchanged history never
+   *      re-inserts the same event twice.
+   *   2. If history's "new" side is a provider this MNO+service already has
+   *      an ADDED/REPLACED row for (most commonly: live-diff's own row from
+   *      *this* upload, since the file's most recent history entry and the
+   *      live-diff transition are usually the same real-world event seen
+   *      twice), that half is dropped so the addition is never counted
+   *      twice -- a REPLACED entry degrades to a REMOVED-only row in that
+   *      case, which is exactly the missing half (Tata's removal) that
+   *      live-diff had no way to record on a fresh baseline. */
+  private async backfillChangeHistory(
+    mnoId: number,
+    senderTadig: string,
+    items: Ir21ChangeHistoryItem[],
+    filename: string,
+    mnoName: string,
+    country: string,
+  ): Promise<void> {
+    if (items.length === 0) return;
+
+    const existingRows = await this.prisma.ir21RoutingChange.findMany({
+      where: { mnoId },
+      select: { serviceName: true, changeType: true, oldProviderId: true, newProviderId: true, effectiveDate: true },
+    });
+
+    const seen = new Set(
+      existingRows.map(
+        (r) => `${r.serviceName}|${r.changeType}|${r.oldProviderId ?? ""}|${r.newProviderId ?? ""}|${r.effectiveDate.toISOString().slice(0, 10)}`,
+      ),
+    );
+    const hasAdditionRecorded = new Set(
+      existingRows
+        .filter((r) => r.newProviderId !== null && (r.changeType === "ADDED" || r.changeType === "REPLACED"))
+        .map((r) => `${r.serviceName}|${r.newProviderId}`),
+    );
+
+    for (const item of items) {
+      const interpreted = interpretChangeHistoryDescription(item.description);
+      if (!interpreted) continue;
+
+      const effectiveDate = new Date(item.date);
+      if (isNaN(effectiveDate.getTime())) continue;
+
+      let oldProviderId = interpreted.oldName ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.oldName)) ?? null) : null;
+      let newProviderId = interpreted.newName ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.newName)) ?? null) : null;
+      if (oldProviderId === null && newProviderId === null) continue;
+
+      if (newProviderId !== null && hasAdditionRecorded.has(`${item.serviceName}|${newProviderId}`)) {
+        newProviderId = null;
+      }
+      if (oldProviderId === null && newProviderId === null) continue;
+
+      const changeType: RoutingChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";
+      const dedupKey = `${item.serviceName}|${changeType}|${oldProviderId ?? ""}|${newProviderId ?? ""}|${item.date}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+      if (newProviderId !== null && changeType !== "REMOVED") {
+        hasAdditionRecorded.add(`${item.serviceName}|${newProviderId}`);
+      }
+
+      const [oldProvider, newProvider] = await Promise.all([
+        oldProviderId ? this.prisma.providerMaster.findUnique({ where: { id: oldProviderId }, select: { providerName: true } }) : null,
+        newProviderId ? this.prisma.providerMaster.findUnique({ where: { id: newProviderId }, select: { providerName: true } }) : null,
+      ]);
+
+      await this.prisma.ir21RoutingChange.create({
+        data: {
+          mnoId,
+          tadigCode: senderTadig,
+          mnoName,
+          country,
+          serviceName: item.serviceName,
+          changeType,
+          oldProviderId,
+          oldProviderName: oldProvider?.providerName ?? null,
+          newProviderId,
+          newProviderName: newProvider?.providerName ?? null,
+          sourceFile: filename,
+          effectiveDate,
+        },
+      });
+    }
   }
 
   /** Best-effort DSX backfill for MNOs ingested before the widened LTE/

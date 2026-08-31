@@ -33,6 +33,25 @@ export interface ParsedIr21Document {
   roamingCoordinatorEmail: string | null;
   ts24x7Email: string | null;
   distributionEmail: string | null;
+  // Every GSMA IR.21 export carries its own <ChangeHistory> log per section
+  // (SCCP/GRX-IPX/LTE), recording provider additions/removals that happened
+  // *before* this file was ever uploaded here -- e.g. a carrier switch made
+  // years ago, well before this platform's own live-diff tracking existed.
+  // Live-diff (comparing this upload against the DB's prior state) can only
+  // ever see transitions that happen *between* two uploads; it has no way to
+  // see a switch that happened entirely within the gap before the very first
+  // upload. This field surfaces that same history so upload.service.ts can
+  // backfill it into Ir21RoutingChange instead of losing it. See
+  // Ir21_xml_parser's real-file verification: LKADG's ChangeHistory records
+  // "2026-06-18 LTE Roaming - Remove IPX Provider - TATA", which pure
+  // snapshot diffing on a fresh baseline could never have recovered.
+  changeHistory: Ir21ChangeHistoryItem[];
+}
+
+export interface Ir21ChangeHistoryItem {
+  serviceName: "SCCP" | "IPX" | "DSX";
+  date: string;
+  description: string;
 }
 
 function isLeaf(v: unknown): v is string | number {
@@ -216,7 +235,32 @@ export class Ir21XmlParserService {
       authoritativeDnsIps: collectTexts(dnsScope, [/^ipaddress$/i]),
       epcRealms: collectTexts(lteScope, [/^epcrealmsforroaming$/i]),
       ...this.extractContactEmails(contactScope, doc),
+      changeHistory: [
+        ...this.extractChangeHistory(sccpScope, "SCCP"),
+        ...this.extractChangeHistory(grxScope, "IPX"),
+        ...this.extractChangeHistory(lteScope, "DSX"),
+      ],
     };
+  }
+
+  /** Every <ChangeHistoryItem> (Date + Description pair) nested anywhere
+   * under one section's scope -- scoped per-section (not document-wide) so
+   * an SCCP change entry is never misattributed to DSX or vice versa.
+   * Interpretation of the free-text Description (which action, which
+   * provider) deliberately happens elsewhere (ir21-change-history.util.ts)
+   * — this method only extracts the raw Date/Description pairs. */
+  private extractChangeHistory(scope: unknown, serviceName: "SCCP" | "IPX" | "DSX"): Ir21ChangeHistoryItem[] {
+    const blocks = collectByKey(scope, [/^changehistory$/i]).map((b) => b.value);
+    const out: Ir21ChangeHistoryItem[] = [];
+    for (const block of blocks) {
+      const items = collectByKey(block, [/^changehistoryitem$/i]).flatMap((m) => asArray(m.value));
+      for (const item of items) {
+        const date = firstText(item, [/^date$/i]);
+        const description = firstText(item, [/^description$/i]);
+        if (date && description) out.push({ serviceName, date, description });
+      }
+    }
+    return out;
   }
 
   /** Pairs MCC with MNC from whichever block they're found in

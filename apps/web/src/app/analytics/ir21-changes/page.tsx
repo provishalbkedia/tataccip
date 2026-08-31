@@ -168,20 +168,65 @@ function KpiCard({
       >
         <CardContent>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="overline" color="text.secondary">
+            <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.4 }}>
               {label}
             </Typography>
             <Tooltip title={tooltip}>
               <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
             </Tooltip>
-            {active && <Chip label="Filtered" size="small" color="primary" sx={{ ml: "auto", height: 20 }} />}
+            {active && <Chip label="Filtered" size="small" color="primary" sx={{ ml: "auto", height: 20, flexShrink: 0 }} />}
           </Box>
-          <Typography variant="h6" fontWeight={700} noWrap title={typeof value === "string" ? value : undefined}>
-            {value}
-          </Typography>
+          {typeof value === "string" ? (
+            <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5, wordBreak: "break-word", overflowWrap: "break-word" }}>
+              {value}
+            </Typography>
+          ) : (
+            value
+          )}
         </CardContent>
       </Card>
     </Grid>
+  );
+}
+
+/** Provider name + gross/net stats for the Gainer/Loser KPI cards, laid out
+ * as a wrapping name line plus a separate stat chip row instead of one long
+ * interpolated string -- a name like "Tata Communications" combined with
+ * "(+38 gains | Net: +37)" routinely exceeds a quarter-width desktop card
+ * (and any width on mobile) as a single noWrap line, which is what forced
+ * the old ellipsis truncation. */
+function ChurnKpiValue({
+  providerName,
+  statLabel,
+  statCount,
+  netDelta,
+  tone,
+}: {
+  providerName: string;
+  statLabel: string;
+  statCount: number;
+  netDelta: number;
+  tone: "success" | "error";
+}) {
+  return (
+    <Box sx={{ mt: 0.5 }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ wordBreak: "break-word", overflowWrap: "break-word", lineHeight: 1.3 }}>
+        {providerName}
+      </Typography>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 0.5 }}>
+        <Chip
+          size="small"
+          color={tone}
+          variant="outlined"
+          label={`${tone === "success" ? "+" : "-"}${statCount} ${statLabel}`}
+          sx={{ fontWeight: 600 }}
+        />
+        <Typography variant="caption" color="text.secondary">
+          Net: {netDelta >= 0 ? "+" : ""}
+          {netDelta}
+        </Typography>
+      </Box>
+    </Box>
   );
 }
 
@@ -312,7 +357,21 @@ export default function Ir21ChangesPage() {
           />
           <KpiCard
             label="Top Provider Gainer"
-            value={loading ? "…" : topGainer ? `${topGainer.providerName} (+${topGainer.grossGains} gains | Net: ${topGainer.netDelta >= 0 ? "+" : ""}${topGainer.netDelta})` : "No gains this period"}
+            value={
+              loading ? (
+                "…"
+              ) : topGainer ? (
+                <ChurnKpiValue
+                  providerName={topGainer.providerName}
+                  statLabel="gains"
+                  statCount={topGainer.grossGains}
+                  netDelta={topGainer.netDelta}
+                  tone="success"
+                />
+              ) : (
+                "No gains this period"
+              )
+            }
             color="#2E7D32"
             tooltip="Wholesale carrier with the highest gross additions and contract wins (ADDED + REPLACED-as-new-provider) across all MNO declarations in this period. Net delta (gains minus losses) shown alongside for context."
             active={activeKpi === "gainer"}
@@ -321,7 +380,21 @@ export default function Ir21ChangesPage() {
           />
           <KpiCard
             label="Top Provider Loser"
-            value={loading ? "…" : topLoser ? `${topLoser.providerName} (-${topLoser.grossLosses} losses | Net: ${topLoser.netDelta >= 0 ? "+" : ""}${topLoser.netDelta})` : "No losses recorded"}
+            value={
+              loading ? (
+                "…"
+              ) : topLoser ? (
+                <ChurnKpiValue
+                  providerName={topLoser.providerName}
+                  statLabel="losses"
+                  statCount={topLoser.grossLosses}
+                  netDelta={topLoser.netDelta}
+                  tone="error"
+                />
+              ) : (
+                "No losses recorded"
+              )
+            }
             color="#C62828"
             tooltip="Wholesale carrier with the highest gross losses and competitor replacements (REMOVED + REPLACED-as-old-provider) across all MNO declarations in this period — ranked by gross losses, not net position, so a provider that's still net-positive overall can still show up here if it genuinely lost some accounts. Empty only when zero providers have any recorded loss at all in this period."
             active={activeKpi === "loser"}

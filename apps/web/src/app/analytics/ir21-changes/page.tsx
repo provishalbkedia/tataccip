@@ -131,6 +131,20 @@ function PdfCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   );
 }
 
+/** AG Grid `headerComponent` -- renders a column's own header text plus an
+ * MUI info-icon tooltip, matching KpiCard's own icon pattern. AG Grid
+ * passes the configured `headerName` through `displayName`. */
+function TooltipColumnHeader(props: { displayName: string; tooltipText: string }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <span>{props.displayName}</span>
+      <Tooltip title={props.tooltipText}>
+        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15 }} />
+      </Tooltip>
+    </Box>
+  );
+}
+
 function KpiCard({
   label,
   value,
@@ -220,7 +234,7 @@ function ChurnKpiValue({
           size="small"
           color={tone}
           variant="outlined"
-          label={`${tone === "success" ? "+" : "-"}${statCount} ${statLabel} (${operatorsCount} operator${operatorsCount === 1 ? "" : "s"})`}
+          label={`${operatorsCount} operator${operatorsCount === 1 ? "" : "s"} (${tone === "success" ? "+" : "-"}${statCount} ${statLabel})`}
           sx={{ fontWeight: 600 }}
         />
         <Typography variant="caption" color="text.secondary">
@@ -236,7 +250,7 @@ type ChurnEntry = Ir21RoutingChangeSummary["topGainingProviders"][number];
 type SwitchingEntry = Ir21RoutingChangeSummary["topSwitchingOperators"][number];
 
 const kpiAutocompleteSx = (tone: "success" | "error" | "warning") => ({
-  mt: 1,
+  mt: 0.5,
   bgcolor: "#F4F6F8",
   "& .MuiOutlinedInput-root": {
     fontSize: "0.75rem",
@@ -278,15 +292,16 @@ function ChurnProviderAutocomplete({
 }) {
   const label = (entry: ChurnEntry, rank: number) => {
     const count = metric === "grossGains" ? entry.grossGains : entry.grossLosses;
-    const noun = role === "gainer" ? "gains" : "losses";
+    const noun = role === "gainer" ? "Service Gain" : "Service Loss";
     const opNoun = `operator${entry.uniqueOperatorsCount === 1 ? "" : "s"}`;
-    return `${rank}. ${entry.providerName} (${role === "gainer" ? "+" : "-"}${count} ${noun} across ${entry.uniqueOperatorsCount} ${opNoun} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
+    return `${rank}. ${entry.providerName} — ${entry.uniqueOperatorsCount} ${opNoun} (${role === "gainer" ? "+" : "-"}${count} ${noun} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
   };
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
   const selected = options.find((o) => o.entry.providerId === selectedProviderId) ?? null;
 
   return (
     <Box onClick={(e) => e.stopPropagation()}>
+      <KpiAutocompleteHint />
       <Autocomplete
         size="small"
         fullWidth
@@ -302,6 +317,23 @@ function ChurnProviderAutocomplete({
         renderInput={(params) => <TextField {...params} placeholder={entries.length === 0 ? emptyLabel : "Search provider…"} />}
         sx={kpiAutocompleteSx(tone)}
       />
+    </Box>
+  );
+}
+
+/** Shared hint row for every searchable KPI-card control (Gainer, Loser,
+ * Active Switching Operators) -- identical tooltip text across all three
+ * per the platform's UX spec, so it's centralized here rather than
+ * repeated at each call site. */
+function KpiAutocompleteHint() {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 1 }}>
+      <Typography variant="caption" color="text.secondary">
+        Search &amp; filter
+      </Typography>
+      <Tooltip title="Type or select any ranked carrier/MNO to isolate their specific churn feed and re-scope the results table below.">
+        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 14 }} />
+      </Tooltip>
     </Box>
   );
 }
@@ -340,6 +372,7 @@ function SwitchingOperatorAutocomplete({
 
   return (
     <Box onClick={(e) => e.stopPropagation()}>
+      <KpiAutocompleteHint />
       <Autocomplete
         size="small"
         fullWidth
@@ -583,7 +616,7 @@ export default function Ir21ChangesPage() {
             label="Total Churn Events"
             value={summaryLoading ? "…" : summary?.totalChurnEvents ?? 0}
             color="#0A2540"
-            tooltip="Total number of routing modifications (carrier additions, removals, and replacements across SCCP, DSX, IPX) declared across IR.21 filings within the selected period."
+            tooltip="Total count of routing modifications (carrier additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period."
             active={activeKpi === "churn"}
             onClick={handleChurnClick}
           />
@@ -596,7 +629,7 @@ export default function Ir21ChangesPage() {
                 <>
                   <ChurnKpiValue
                     providerName={displayedGainer.providerName}
-                    statLabel="gains"
+                    statLabel="Service Gain"
                     statCount={displayedGainer.grossGains}
                     operatorsCount={displayedGainer.uniqueOperatorsCount}
                     netDelta={displayedGainer.netDelta}
@@ -618,7 +651,7 @@ export default function Ir21ChangesPage() {
               )
             }
             color="#2E7D32"
-            tooltip="Wholesale carrier with the highest gross additions and contract wins (ADDED + REPLACED-as-new-provider) across all MNO declarations in this period. Net delta (gains minus losses) shown alongside for context. Use the dropdown to explore the full ranked list."
+            tooltip="Wholesale carrier that achieved the highest gross new routing wins and competitor replacements across all MNO filings in this timeframe."
             active={activeKpi === "gainer"}
             disabled={!topGainer}
             onClick={handleGainerClick}
@@ -632,7 +665,7 @@ export default function Ir21ChangesPage() {
                 <>
                   <ChurnKpiValue
                     providerName={displayedLoser.providerName}
-                    statLabel="losses"
+                    statLabel="Service Loss"
                     statCount={displayedLoser.grossLosses}
                     operatorsCount={displayedLoser.uniqueOperatorsCount}
                     netDelta={displayedLoser.netDelta}
@@ -654,7 +687,7 @@ export default function Ir21ChangesPage() {
               )
             }
             color="#C62828"
-            tooltip="Wholesale carrier with the highest gross losses and competitor replacements (REMOVED + REPLACED-as-old-provider) across all MNO declarations in this period — ranked by gross losses, not net position, so a provider that's still net-positive overall can still show up here if it genuinely lost some accounts. Empty only when zero providers have any recorded loss at all in this period. Use the dropdown to explore the full ranked list."
+            tooltip="Wholesale carrier that experienced the highest gross lost routes and removals across all MNO filings in this timeframe."
             active={activeKpi === "loser"}
             disabled={!topLoser}
             onClick={handleLoserClick}
@@ -679,7 +712,7 @@ export default function Ir21ChangesPage() {
               )
             }
             color="#EF6C00"
-            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click the card to show every change event for those operators, or search an operator directly in the box below."
+            tooltip="Count of unique MNOs / TADIG entities that modified at least one signaling or data roaming route during this period."
             active={activeKpi === "switching"}
             onClick={handleSwitchingClick}
           />
@@ -687,9 +720,14 @@ export default function Ir21ChangesPage() {
 
         <Paper sx={{ p: 2, mb: 2 }}>
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Timeframe:
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                Timeframe:
+              </Typography>
+              <Tooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
+                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+              </Tooltip>
+            </Box>
             <ToggleButtonGroup
               exclusive
               size="small"
@@ -831,7 +869,19 @@ export default function Ir21ChangesPage() {
             { field: "tadigCode", headerName: "TADIG", maxWidth: 100 },
             { field: "serviceName", headerName: "Service", cellRenderer: ServiceCell, maxWidth: 110 },
             { field: "changeType", headerName: "Change Action", cellRenderer: ChangeTypeCell, minWidth: 150 },
-            { headerName: "Routing Modification Details", cellRenderer: DetailsCell, flex: 1.6, minWidth: 240, sortable: false, filter: false },
+            {
+              headerName: "Routing Modification Details",
+              cellRenderer: DetailsCell,
+              flex: 1.6,
+              minWidth: 240,
+              sortable: false,
+              filter: false,
+              headerComponent: TooltipColumnHeader,
+              headerComponentParams: {
+                tooltipText:
+                  "Green (+ ADDED) indicates a newly declared route; Red (- REMOVED) indicates a decommissioned route; Amber (⇄ REPLACED) indicates a direct carrier switch.",
+              },
+            },
             { field: "hasPdfDocument", headerName: "IR.21 PDF", cellRenderer: PdfCell, sortable: false, filter: false, minWidth: 100, flex: 0.6 },
           ]}
           onRowClicked={(row) => router.push(`/search/mno/${row.mnoId}`)}

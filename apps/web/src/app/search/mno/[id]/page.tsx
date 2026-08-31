@@ -16,10 +16,12 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
@@ -159,9 +161,14 @@ export default function MnoDetailPage() {
                     </Typography>
                     <Typography variant="body1">{mno.tadigCode}</Typography>
                     {mno.secondaryTadigs.length > 0 && (
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Also: {mno.secondaryTadigs.join(", ")}
-                      </Typography>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Also: {mno.secondaryTadigs.join(", ")}
+                        </Typography>
+                        <Tooltip title="Indicates alternate or legacy TADIG codes mapped to this canonical operator.">
+                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 14 }} />
+                        </Tooltip>
+                      </Box>
                     )}
                   </Grid>
                   <Grid item xs={6} sm={2}>

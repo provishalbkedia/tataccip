@@ -39,6 +39,7 @@ import BusinessIcon from "@mui/icons-material/Business";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import TimelineIcon from "@mui/icons-material/Timeline";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/lib/auth-context";
@@ -163,6 +164,122 @@ function OverviewTab() {
           from the Reach List), or matching cleanly — giving carrier-relations teams concrete leverage in wholesale
           negotiations and routing audits instead of a manual cross-check across two spreadsheets.
         </Tip>
+
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ mt: 1 }}>
+          Interconnect Parity Logic
+        </Typography>
+        <Grid container spacing={1.5}>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip label="Matched" color="success" size="small" />
+              <Typography variant="caption" color="text.secondary">
+                In IR.21 <em>and</em> on the Reach List
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip label="IR.21 Only" color="info" size="small" />
+              <Typography variant="caption" color="text.secondary">
+                Declared, not commercially claimed
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip label="Reach List Only" color="warning" size="small" />
+              <Typography variant="caption" color="text.secondary">
+                Claimed, not officially declared
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Section>
+    </Box>
+  );
+}
+
+function MarketIntelligenceTab() {
+  return (
+    <Box role="tabpanel" className="guide-tabpanel">
+      <Section title="Market Intelligence &amp; Routing Changes Tracker — /analytics/ir21-changes">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Tracks every provider addition, removal, and direct replacement declared across successive IR.21
+          re-uploads, per operator and per service (SCCP / DSX / IPX) — built for commercial and carrier-relations
+          review of who is winning and losing wholesale accounts over time.
+        </Typography>
+
+        <TechAccordion title="Delta Detection Engine" defaultExpanded>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Two complementary mechanisms feed the change log, because they can see different things:
+          </Typography>
+          <Bullets
+            items={[
+              <>
+                <strong>Live snapshot diffing</strong> — every re-upload resolves each operator&apos;s declared
+                provider per service and compares it against whatever the platform already had on file
+                immediately beforehand. A change is recorded only when the resolved provider actually differs —
+                classified as <strong>ADDED</strong> (nothing on file before), <strong>REMOVED</strong> (this
+                upload dropped the service entirely), or <strong>REPLACED</strong> (a different provider now).
+                A &quot;Replace Active Dataset&quot; upload snapshots the prior state before wiping the table it
+                is about to rebuild, specifically so this comparison still works correctly on a full rebaseline —
+                without that snapshot, every operator would look like a brand-new addition on every rebaseline,
+                even one where nothing actually changed.
+              </>,
+              <>
+                <strong>Native GSMA <code>&lt;ChangeHistory&gt;</code> extraction</strong> — every IR.21 XML
+                carries its own historical change log per section, documenting provider switches that happened
+                years before this platform ever tracked anything (live diffing can only ever see a transition
+                between two uploads it was present for). A conservative parser interprets each log entry&apos;s
+                free text, resolves the named carrier through the same alias table every other ingestion path
+                uses, and backfills it — skipping any addition already captured by live diffing, so the same
+                real-world event is never counted twice.
+              </>,
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Account &amp; Route Metrics">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            A single operator can change providers on more than one service in the same period — three separate
+            route events, but one operator account won or lost. Every count on this page distinguishes the two:
+          </Typography>
+          <Bullets
+            items={[
+              <>
+                <strong>Operators (primary)</strong> — the distinct MNO/TADIG count behind a figure, e.g.{" "}
+                <code>82 operators (+178 Service Gain)</code> means 178 individual route changes landed across
+                82 different operator accounts.
+              </>,
+              <>
+                <strong>Service Gain / Service Loss (secondary)</strong> — the raw route-event count itself,
+                shown alongside the operator count rather than instead of it.
+              </>,
+              <>
+                <strong>Net</strong> — gross gains minus gross losses for that provider across the selected
+                period; a provider can be net-positive overall while still genuinely losing real accounts, so
+                Top Provider Loser ranks by gross losses, not net position.
+              </>,
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Interactive KPI Autocompletes">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            The Top Provider Gainer, Top Provider Loser, and Active Switching Operators cards each embed a
+            searchable, ranked dropdown — type a carrier or operator name (or a rank number) to jump straight to
+            it, not just the single top-ranked entry the card headlines.
+          </Typography>
+          <Bullets
+            items={[
+              "Selecting a provider from the Gainer or Loser dropdown updates that card's own headline, fills the Wholesale Provider filter below, and re-scopes the table to specifically that provider's gain or loss events.",
+              "Selecting an operator from the Active Switching Operators dropdown fills the Search Operator / TADIG box and scopes the table to that operator's full change history.",
+              "The four KPI cards always reflect the overall Timeframe/Region/Service scope — clicking or searching within one card narrows the table below without collapsing the other cards' own numbers.",
+            ]}
+          />
+        </TechAccordion>
+
+        <GoTo label="Open Market Intelligence" route="/analytics/ir21-changes" />
       </Section>
     </Box>
   );
@@ -182,15 +299,38 @@ const MNO_COLUMNS: [string, string][] = [
   ["11. Status", "Operational status as declared."],
 ];
 
-function OperatorSearchTab() {
+function OperatorTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Operator (MNO) Search — /search/mno">
+      <Section title="Operator (MNO) Search &amp; Detail Deep-Dive — /search/mno">
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           The default landing point for reconciliation work: every operator CCIP knows about, one row each, laid
           out in a fixed 11-column reference layout.
         </Typography>
-        <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2 }}>
+
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Dataset scope filtering
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>IR.21 Verified</strong> — only operators with a parsed IR.21 XML declaration on file
+              (default). This is the platform&apos;s ground-truth baseline.
+            </>,
+            <>
+              <strong>Reach List Only</strong> — operators known solely from a legacy Reach List upload, from
+              before MNO normalization was enforced. A newer unresolved Reach List row no longer creates one of
+              these at all — see the Unresolved Reach List Aliases queue in Admin instead.
+            </>,
+            <>
+              <strong>All MNOs</strong> — the unified view across both. A companion &quot;Only with listed
+              providers&quot; toggle hides any operator with nothing to show in the SCCP/DSX/IPX columns, on by
+              default.
+            </>,
+          ]}
+        />
+
+        <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2, mt: 2 }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -226,22 +366,17 @@ function OperatorSearchTab() {
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
           Multi-operator comparison
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Check 2 to 5 operators via the row checkboxes to open the Operator Comparison Matrix — a side-by-side
           breakdown of every wholesale carrier connected to any of them, split by IR.21 Declared vs. Reach List
           Claimed per service, with its own CSV export.
         </Typography>
 
-        <GoTo label="Open Operator Search" route="/search/mno" />
-      </Section>
-    </Box>
-  );
-}
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+          Operator Detail — /search/mno/[id]
+        </Typography>
 
-function OperatorDetailTab() {
-  return (
-    <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Operator Detail — /search/mno/[id]">
         <TechAccordion title="Interconnect Comparison Grid" defaultExpanded>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             The first thing on the page: a per-service (SCCP / DSX / IPX) breakdown comparing every provider the
@@ -316,6 +451,8 @@ function OperatorDetailTab() {
             ]}
           />
         </TechAccordion>
+
+        <GoTo label="Open Operator Search" route="/search/mno" />
       </Section>
     </Box>
   );
@@ -324,7 +461,7 @@ function OperatorDetailTab() {
 function ProviderSearchTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Provider Search — /search/provider">
+      <Section title="Wholesale Provider Search &amp; Benchmarking — /search/provider">
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           The canonical carrier master: raw declared strings from source documents are normalized and consolidated
           down to the platform&apos;s true wholesale provider list, so &quot;BICS&quot;, &quot;Belgacom&quot;, and
@@ -363,7 +500,7 @@ function AdminTab() {
 
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Data Ingestion &amp; Admin Engine — /admin/upload">
+      <Section title="Advanced Data Ingestion &amp; Normalization — /admin/upload">
         <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
           {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
         </Box>
@@ -507,7 +644,7 @@ const DISCLAIMER_CLAUSES = [
 function GovernanceTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Platform Governance &amp; Technical Resilience">
+      <Section title="Governance, Security &amp; Liability Terms">
         <TechAccordion title="Cloud Run warm-up" defaultExpanded>
           <Typography variant="body2" color="text.secondary">
             The backend runs on an auto-scaling Cloud Run instance that can go idle and take a few seconds to wake
@@ -541,11 +678,11 @@ function GovernanceTab() {
 // ---------- Page ----------
 
 const TABS = [
-  { label: "Overview & Mission", icon: <DashboardIcon fontSize="small" />, Panel: OverviewTab },
-  { label: "Operator Search", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorSearchTab },
-  { label: "Operator Detail", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorDetailTab },
+  { label: "Overview & Architecture", icon: <DashboardIcon fontSize="small" />, Panel: OverviewTab },
+  { label: "Market Intelligence", icon: <TimelineIcon fontSize="small" />, Panel: MarketIntelligenceTab },
+  { label: "Operator Search & Detail", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorTab },
   { label: "Provider Search", icon: <BusinessIcon fontSize="small" />, Panel: ProviderSearchTab },
-  { label: "Admin & Ingestion", icon: <UploadFileIcon fontSize="small" />, Panel: AdminTab },
+  { label: "Data Ingestion", icon: <UploadFileIcon fontSize="small" />, Panel: AdminTab },
   { label: "Governance", icon: <ShieldOutlinedIcon fontSize="small" />, Panel: GovernanceTab },
 ];
 

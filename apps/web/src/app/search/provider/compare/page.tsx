@@ -3,8 +3,9 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ColDef, ColGroupDef } from "ag-grid-community";
-import { Alert, Box, Button, MenuItem, Paper, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, MenuItem, Paper, TextField, Tooltip, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -15,6 +16,19 @@ type FilterMode = "all" | "common" | "gaps";
 
 function checkOrDash(p: { value: boolean }) {
   return p.value ? "✓" : "-";
+}
+
+/** AG Grid `headerComponent` for the pinned "MNO" column -- explains that
+ * row names are clickable links to the operator's own detail page. */
+function OperatorLinkHeader(props: { displayName: string }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <span>{props.displayName}</span>
+      <Tooltip title="Click any MNO name to open its complete technical routing profile, DPC point codes, and IP ranges.">
+        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15 }} />
+      </Tooltip>
+    </Box>
+  );
 }
 
 export default function ProviderComparePage() {
@@ -102,7 +116,7 @@ function ProviderComparePageInner() {
   const columnDefs = React.useMemo<(ColDef<ProviderCompareMatrixItem> | ColGroupDef<ProviderCompareMatrixItem>)[]>(() => {
     const base: ColDef<ProviderCompareMatrixItem>[] = [
       { field: "country", headerName: "Country", pinned: "left", maxWidth: 110 },
-      { field: "operatorName", headerName: "MNO", pinned: "left", flex: 1.2, minWidth: 160 },
+      { field: "operatorName", headerName: "MNO", pinned: "left", flex: 1.2, minWidth: 160, headerComponent: OperatorLinkHeader },
       { field: "tadigCode", headerName: "TADIG", pinned: "left", maxWidth: 100 },
     ];
 
@@ -144,11 +158,16 @@ function ProviderComparePageInner() {
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           Multi-Provider Comparison Matrix
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          {providerList.length > 0
-            ? `Comparing ${providerList.map((p) => p.providerName).join(" vs. ")} — every MNO covered by at least one, split by IR.21 vs Reach List per service.`
-            : "Select 2-5 providers from Provider Search to compare their footprints."}
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            {providerList.length > 0
+              ? `Comparing ${providerList.map((p) => p.providerName).join(" vs. ")} — every MNO covered by at least one, split by IR.21 vs Reach List per service.`
+              : "Select 2-5 providers from Provider Search to compare their footprints."}
+          </Typography>
+          <Tooltip title="Checkmarks denote active declared or claimed connectivity across SCCP (Signaling), DSX (LTE Diameter), and IPX (Data Roaming).">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
+          </Tooltip>
+        </Box>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

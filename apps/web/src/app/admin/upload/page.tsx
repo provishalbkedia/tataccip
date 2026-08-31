@@ -37,6 +37,7 @@ import LanIcon from "@mui/icons-material/Lan";
 import DownloadIcon from "@mui/icons-material/Download";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -147,6 +148,14 @@ function UploadCard({
         </Typography>
         {formatGuide && (
           <Box sx={{ mb: 2, p: 1.5, bgcolor: "action.hover", borderRadius: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1 }}>
+              <Typography variant="caption" fontWeight={700} color="text.secondary">
+                Accepted formats
+              </Typography>
+              <Tooltip title="Format 1 accepts standard 5-column sheets; Format 2 accepts wide competitor matrices with dynamic wholesale carrier columns.">
+                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15 }} />
+              </Tooltip>
+            </Box>
             {formatGuide.formats.map((f) => (
               <Box key={f.title} sx={{ mb: f === formatGuide.formats[formatGuide.formats.length - 1] ? 0 : 1.5 }}>
                 <Typography variant="caption" fontWeight={700} display="block">
@@ -558,9 +567,14 @@ function ReachlistZipBatchCard({ onUploaded, isAdmin }: { onUploaded: () => void
   return (
     <Card>
       <CardContent>
-        <Typography variant="h6" fontWeight={700}>
-          Multi-Carrier Reach List ZIP Upload (Batch Ingestion)
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="h6" fontWeight={700}>
+            Multi-Carrier Reach List ZIP Upload (Batch Ingestion)
+          </Typography>
+          <Tooltip title="Upload a single .zip archive containing heterogeneous carrier files (.xlsx, .xls, .pdf, .msg). The engine automatically classifies formats, identifies providers, and normalizes routes.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+          </Tooltip>
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Upload a single .zip archive containing several carriers&apos; own reach-list exports at once —
           each file is identified by its own filename (e.g. &quot;BICS SS7.xlsx&quot;, &quot;Comfone
@@ -756,9 +770,14 @@ function DeleteAllReachlistCard({ onDeleted, isAdmin }: { onDeleted: () => void;
   return (
     <Card sx={{ borderColor: "error.main", borderWidth: 1, borderStyle: "solid" }}>
       <CardContent>
-        <Typography variant="h6" fontWeight={700} color="error.main">
-          Delete All Reach List Data
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="h6" fontWeight={700} color="error.main">
+            Delete All Reach List Data
+          </Typography>
+          <Tooltip title="Caution: Permanently purges commercial reach list records to allow a clean baseline re-upload. IR.21 technical declarations remain unaffected.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "error.main" }} />
+          </Tooltip>
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Permanently removes every Reach List record platform-wide, regardless of which file or upload it
           came from — an unscoped purge, not the per-file &quot;Replace&quot; option on the upload cards

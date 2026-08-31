@@ -26,6 +26,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import ClearIcon from "@mui/icons-material/Clear";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -319,10 +320,8 @@ function MnoSearchPageInner() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML declaration on file. Reach List Only: known solely from a legacy Reach List upload, before MNO normalization was enforced — see Unresolved Reach List Aliases in Admin for newer unresolved rows, which aren't operator records yet at all.">
-            <Typography variant="caption" color="text.secondary" sx={{ cursor: "help" }}>
-              (?)
-            </Typography>
+          <Tooltip title="Toggle between GSMA IR.21 authenticated ground-truth operators, unmapped commercial reach list claims, or the unified database.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
           </Tooltip>
         </Box>
 
@@ -378,12 +377,15 @@ function MnoSearchPageInner() {
           </Tooltip>
         </Box>
 
-        <Box sx={{ mb: 1 }}>
+        <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
             {results.length} result(s) — Showing operator connectivity footprint strictly as declared in official
             GSMA IR.21 documents. Click a row for connectivity details, or check the box on 2–5 rows to compare
             selected operators side by side.
           </Typography>
+          <Tooltip title="Select 2 to 5 operators to launch the side-by-side Interconnect Parity Comparison Drawer.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
+          </Tooltip>
         </Box>
         <DataGrid<MnoSummary>
           rowData={results}

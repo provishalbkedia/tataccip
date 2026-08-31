@@ -19,6 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -130,14 +131,51 @@ function PdfCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   );
 }
 
-function KpiCard({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
+function KpiCard({
+  label,
+  value,
+  color,
+  tooltip,
+  active,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  color: string;
+  tooltip: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <Grid item xs={12} sm={6} md={3}>
-      <Card variant="outlined" sx={{ borderTop: 4, borderColor: color, height: "100%" }}>
+      <Card
+        variant="outlined"
+        onClick={disabled ? undefined : onClick}
+        sx={{
+          borderTop: 4,
+          borderColor: color,
+          height: "100%",
+          cursor: onClick && !disabled ? "pointer" : "default",
+          outline: active ? "2px solid" : "none",
+          outlineColor: "primary.main",
+          outlineOffset: "-1px",
+          opacity: disabled ? 0.6 : 1,
+          transition: "box-shadow 0.15s",
+          "&:hover": onClick && !disabled ? { boxShadow: 3 } : undefined,
+        }}
+      >
         <CardContent>
-          <Typography variant="overline" color="text.secondary">
-            {label}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="overline" color="text.secondary">
+              {label}
+            </Typography>
+            <Tooltip title={tooltip}>
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+            </Tooltip>
+            {active && <Chip label="Filtered" size="small" color="primary" sx={{ ml: "auto", height: 20 }} />}
+          </Box>
           <Typography variant="h6" fontWeight={700} noWrap title={typeof value === "string" ? value : undefined}>
             {value}
           </Typography>
@@ -158,6 +196,7 @@ export default function Ir21ChangesPage() {
   const [provider, setProvider] = React.useState<ProviderSuggestion | null>(null);
   const [providerInput, setProviderInput] = React.useState("");
   const [providerOptions, setProviderOptions] = React.useState<ProviderSuggestion[]>([]);
+  const [activeKpi, setActiveKpi] = React.useState<"churn" | "gainer" | "loser" | "switching" | null>(null);
 
   const [summary, setSummary] = React.useState<Ir21RoutingChangeSummary | null>(null);
   const [rows, setRows] = React.useState<Ir21RoutingChangeRow[]>([]);
@@ -209,6 +248,43 @@ export default function Ir21ChangesPage() {
   const topGainer = summary?.topGainingProviders[0];
   const topLoser = summary?.topLosingProviders[0];
 
+  const handleChurnClick = () => {
+    setActiveKpi("churn");
+    setProvider(null);
+    setProviderInput("");
+    setSearch("");
+    setChangeType("");
+  };
+  const handleGainerClick = () => {
+    if (!topGainer) return;
+    setActiveKpi("gainer");
+    setProvider({ id: topGainer.providerId, providerName: topGainer.providerName, matchedAlias: null });
+    setProviderInput(topGainer.providerName);
+    // Left at "All" rather than restricted to ADDED+REPLACED: this filter
+    // is a single-select (see the Change toggle below), and a genuinely
+    // net-positive provider can still have occasional REMOVED events —
+    // hiding those would give a falsely spotless picture. The provider
+    // filter alone already does the primary narrowing GTM wants here.
+    setChangeType("");
+  };
+  const handleLoserClick = () => {
+    if (!topLoser) return;
+    setActiveKpi("loser");
+    setProvider({ id: topLoser.providerId, providerName: topLoser.providerName, matchedAlias: null });
+    setProviderInput(topLoser.providerName);
+    setChangeType("");
+  };
+  const handleSwitchingClick = () => {
+    setActiveKpi("switching");
+    setProvider(null);
+    setProviderInput("");
+    setSearch("");
+    // REPLACED is the one change type that's definitionally a "switch" —
+    // an ADDED or REMOVED event doesn't by itself mean the operator
+    // switched away from something.
+    setChangeType(RoutingChangeType.REPLACED);
+  };
+
   return (
     <RequireAuth>
       <AppShell>
@@ -222,21 +298,39 @@ export default function Ir21ChangesPage() {
         </Typography>
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          <KpiCard label="Total Churn Events" value={loading ? "…" : summary?.totalChurnEvents ?? 0} color="#0A2540" />
+          <KpiCard
+            label="Total Churn Events"
+            value={loading ? "…" : summary?.totalChurnEvents ?? 0}
+            color="#0A2540"
+            tooltip="Total number of routing modifications (carrier additions, removals, and replacements across SCCP, DSX, IPX) declared across IR.21 filings within the selected period."
+            active={activeKpi === "churn"}
+            onClick={handleChurnClick}
+          />
           <KpiCard
             label="Top Provider Gainer"
-            value={loading ? "…" : topGainer ? `${topGainer.providerName} (+${topGainer.netGain})` : "—"}
+            value={loading ? "…" : topGainer ? `${topGainer.providerName} (+${topGainer.netGain})` : "No gains this period"}
             color="#2E7D32"
+            tooltip="Wholesale carrier with the highest net increase in declared routing contracts (new wins + replacements minus removals) in this period."
+            active={activeKpi === "gainer"}
+            disabled={!topGainer}
+            onClick={handleGainerClick}
           />
           <KpiCard
             label="Top Provider Loser"
-            value={loading ? "…" : topLoser ? `${topLoser.providerName} (-${topLoser.netLoss})` : "—"}
+            value={loading ? "…" : topLoser ? `${topLoser.providerName} (-${topLoser.netLoss})` : "No losses this period"}
             color="#C62828"
+            tooltip="Wholesale carrier with the highest net loss in declared routing contracts (removals + replaced-by-competitor events) in this period. Empty when every provider's gains outweigh its losses — a common state right after a fresh IR.21 baseline, before real switching activity accumulates."
+            active={activeKpi === "loser"}
+            disabled={!topLoser}
+            onClick={handleLoserClick}
           />
           <KpiCard
             label="Active Switching Operators"
             value={loading ? "…" : summary?.activeSwitchingOperatorCount ?? 0}
             color="#EF6C00"
+            tooltip="Number of distinct MNOs / TADIG entities that had at least one routing provider change (switch, add, or drop) within the selected period. Click to filter the table to REPLACED events specifically."
+            active={activeKpi === "switching"}
+            onClick={handleSwitchingClick}
           />
         </Grid>
 
@@ -250,7 +344,11 @@ export default function Ir21ChangesPage() {
               size="small"
               color="primary"
               value={timeframe}
-              onChange={(_, v: Timeframe | null) => v && setTimeframe(v)}
+              onChange={(_, v: Timeframe | null) => {
+                if (!v) return;
+                setTimeframe(v);
+                setActiveKpi(null);
+              }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
               {TIMEFRAMES.map((t) => (
@@ -269,7 +367,11 @@ export default function Ir21ChangesPage() {
               exclusive
               size="small"
               value={region || "ALL"}
-              onChange={(_, v) => v && setRegion(v === "ALL" ? "" : v)}
+              onChange={(_, v) => {
+                if (!v) return;
+                setRegion(v === "ALL" ? "" : v);
+                setActiveKpi(null);
+              }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
               <ToggleButton value="ALL">All</ToggleButton>
@@ -289,7 +391,11 @@ export default function Ir21ChangesPage() {
               exclusive
               size="small"
               value={service || "ALL"}
-              onChange={(_, v) => v && setService(v === "ALL" ? "" : v)}
+              onChange={(_, v) => {
+                if (!v) return;
+                setService(v === "ALL" ? "" : v);
+                setActiveKpi(null);
+              }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
               <ToggleButton value="ALL">All</ToggleButton>
@@ -307,7 +413,11 @@ export default function Ir21ChangesPage() {
               exclusive
               size="small"
               value={changeType || "ALL"}
-              onChange={(_, v) => v && setChangeType(v === "ALL" ? "" : v)}
+              onChange={(_, v) => {
+                if (!v) return;
+                setChangeType(v === "ALL" ? "" : v);
+                setActiveKpi(null);
+              }}
               sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
             >
               <ToggleButton value="ALL">All</ToggleButton>
@@ -326,7 +436,10 @@ export default function Ir21ChangesPage() {
               value={provider}
               inputValue={providerInput}
               onInputChange={(_, v) => setProviderInput(v)}
-              onChange={(_, v) => setProvider(v)}
+              onChange={(_, v) => {
+                setProvider(v);
+                setActiveKpi(null);
+              }}
               getOptionLabel={(o) => o.providerName}
               isOptionEqualToValue={(o, v) => o.id === v.id}
               sx={{ minWidth: 260 }}
@@ -336,7 +449,10 @@ export default function Ir21ChangesPage() {
               size="small"
               label="Search Operator / TADIG"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setActiveKpi(null);
+              }}
               sx={{ minWidth: 240 }}
             />
             <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>

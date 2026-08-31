@@ -86,25 +86,56 @@ export class Ir21RoutingChangesService {
   async summary(query: Ir21RoutingChangeQuery): Promise<Ir21RoutingChangeSummary> {
     const rows = await this.fetchFiltered(query);
 
-    const gains = new Map<number, { name: string; count: number }>();
-    const losses = new Map<number, { name: string; count: number }>();
+    // Net delta per provider, not two independent raw-count lists: a
+    // provider can be both newProvider on some rows (a gain) and
+    // oldProvider on others (a loss) within the same window, and the
+    // meaningful GTM signal is the NET of the two, not just whichever
+    // count happens to be larger in isolation.
+    //   gains  = ADDED (newProvider) + REPLACED (newProvider)
+    //   losses = REMOVED (oldProvider) + REPLACED (oldProvider)
+    //   netDelta = gains - losses
+    const churn = new Map<number, { name: string; gains: number; losses: number }>();
     const operators = new Map<number, { name: string; tadig: string; count: number }>();
 
     for (const r of rows) {
       if (r.newProviderId && r.newProviderName) {
-        const e = gains.get(r.newProviderId) ?? { name: r.newProviderName, count: 0 };
-        e.count++;
-        gains.set(r.newProviderId, e);
+        const e = churn.get(r.newProviderId) ?? { name: r.newProviderName, gains: 0, losses: 0 };
+        e.gains++;
+        churn.set(r.newProviderId, e);
       }
       if (r.oldProviderId && r.oldProviderName) {
-        const e = losses.get(r.oldProviderId) ?? { name: r.oldProviderName, count: 0 };
-        e.count++;
-        losses.set(r.oldProviderId, e);
+        const e = churn.get(r.oldProviderId) ?? { name: r.oldProviderName, gains: 0, losses: 0 };
+        e.losses++;
+        churn.set(r.oldProviderId, e);
       }
       const opEntry = operators.get(r.mnoId) ?? { name: r.mnoName, tadig: r.tadigCode, count: 0 };
       opEntry.count++;
       operators.set(r.mnoId, opEntry);
     }
+
+    const churnList = [...churn.entries()].map(([id, v]) => ({
+      providerId: id,
+      providerName: v.name,
+      netDelta: v.gains - v.losses,
+    }));
+
+    // Only a provider that genuinely lost more than it gained counts as a
+    // "loser" -- a provider with zero losses this period (the common case
+    // right after a fresh baseline, before any real churn has had a chance
+    // to happen) is never force-fit into the loser slot just to avoid an
+    // empty list; the frontend shows an explicit "no losses this period"
+    // state instead of fabricating one.
+    const topGainingProviders = churnList
+      .filter((c) => c.netDelta > 0)
+      .sort((a, b) => b.netDelta - a.netDelta)
+      .slice(0, 5)
+      .map((c) => ({ providerId: c.providerId, providerName: c.providerName, netGain: c.netDelta }));
+
+    const topLosingProviders = churnList
+      .filter((c) => c.netDelta < 0)
+      .sort((a, b) => a.netDelta - b.netDelta)
+      .slice(0, 5)
+      .map((c) => ({ providerId: c.providerId, providerName: c.providerName, netLoss: -c.netDelta }));
 
     const top = <V extends { count: number }>(map: Map<number, V>, n: number) =>
       [...map.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, n);
@@ -115,8 +146,8 @@ export class Ir21RoutingChangesService {
       removedCount: rows.filter((r) => r.changeType === "REMOVED").length,
       replacedCount: rows.filter((r) => r.changeType === "REPLACED").length,
       activeSwitchingOperatorCount: operators.size,
-      topGainingProviders: top(gains, 5).map(([id, v]) => ({ providerId: id, providerName: v.name, netGain: v.count })),
-      topLosingProviders: top(losses, 5).map(([id, v]) => ({ providerId: id, providerName: v.name, netLoss: v.count })),
+      topGainingProviders,
+      topLosingProviders,
       topSwitchingOperators: top(operators, 5).map(([id, v]) => ({
         mnoId: id,
         operatorName: v.name,

@@ -59,22 +59,45 @@ type MnoSummaryWithExclusivity = MnoSummary & {
   soleMasterProvider: string | null;
 };
 
+// Defensive: a blank/whitespace-only entry (""/" "/null/undefined) sitting
+// alongside a real provider name would otherwise count as a second
+// "provider" below -- inflating .length and the union Set's size enough to
+// flip a genuinely exclusive MNO to "shared". The ingestion pipeline
+// already filters junk/blank provider tokens before they reach
+// ProviderMaster (see isJunkProviderName in provider-normalize.ts), so
+// this shouldn't fire in practice -- kept here anyway since exclusivity
+// correctness shouldn't depend on that upstream guarantee holding forever,
+// and it's the single chokepoint every service's array passes through.
+const sanitizeProviders = (providers: (string | null | undefined)[]): string[] =>
+  Array.from(new Set(providers.map((p) => p?.trim()).filter((p): p is string => !!p)));
+
 const soleOf = (providers: string[]) => (providers.length === 1 ? providers[0] : null);
 
 function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
-  const isExclusiveSccp = r.sccpProviders.length === 1;
-  const isExclusiveDsx = r.dsxProviders.length === 1;
-  const isExclusiveIpx = r.ipxProviders.length === 1;
-  const unionUnique = new Set([...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders]);
+  const sccpProviders = sanitizeProviders(r.sccpProviders);
+  const dsxProviders = sanitizeProviders(r.dsxProviders);
+  const ipxProviders = sanitizeProviders(r.ipxProviders);
+
+  const isExclusiveSccp = sccpProviders.length === 1;
+  const isExclusiveDsx = dsxProviders.length === 1;
+  const isExclusiveIpx = ipxProviders.length === 1;
+  const unionUnique = new Set([...sccpProviders, ...dsxProviders, ...ipxProviders]);
   const isFullyExclusive = unionUnique.size === 1;
   return {
     ...r,
+    // Sanitized versions replace the raw arrays so the grid's own
+    // sccpProviders/dsxProviders/ipxProviders display columns (bound by
+    // field name) never render a stray blank entry either -- one cleaned
+    // array feeds both the badges and the plain-text columns.
+    sccpProviders,
+    dsxProviders,
+    ipxProviders,
     isExclusiveSccp,
-    soleSccpProvider: soleOf(r.sccpProviders),
+    soleSccpProvider: soleOf(sccpProviders),
     isExclusiveDsx,
-    soleDsxProvider: soleOf(r.dsxProviders),
+    soleDsxProvider: soleOf(dsxProviders),
     isExclusiveIpx,
-    soleIpxProvider: soleOf(r.ipxProviders),
+    soleIpxProvider: soleOf(ipxProviders),
     isAnyServiceExclusive: isExclusiveSccp || isExclusiveDsx || isExclusiveIpx,
     isFullyExclusive,
     soleMasterProvider: isFullyExclusive ? Array.from(unionUnique)[0] : null,

@@ -9,6 +9,11 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Grid,
   Snackbar,
   Table,
@@ -21,12 +26,21 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
-import { MnoNormalizationAuditRow, MnoSuggestion, Role } from "@ccip/shared-types";
+import { CreateMnoFromAuditResult, MnoNormalizationAuditRow, MnoSuggestion, Role } from "@ccip/shared-types";
+
+/** Rows land here one per (provider, operator) pair -- the same
+ * unresolved operator declared by 3 different wholesale providers is 3
+ * separate audit rows (see UploadService.recordNormalizationAudit).
+ * "Create New MNO" must resolve all of them onto one single new MnoMaster,
+ * not spawn a duplicate per provider -- this groups by the same identity
+ * key the audit table itself is unique on. */
+const groupKey = (r: MnoNormalizationAuditRow) => `${r.rawOperatorName}|${r.rawTadigCode}|${r.country}`;
 
 const STATUS_COLOR: Record<string, "warning" | "info"> = {
   PENDING_REVIEW: "warning",
@@ -74,6 +88,17 @@ export default function MnoNormalizationPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
+  const [confirmCreate, setConfirmCreate] = React.useState<{ groupRows: MnoNormalizationAuditRow[] } | null>(null);
+
+  const groups = React.useMemo(() => {
+    const byKey = new Map<string, MnoNormalizationAuditRow[]>();
+    for (const r of rows) {
+      const key = groupKey(r);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(r);
+    }
+    return byKey;
+  }, [rows]);
 
   const load = React.useCallback(() => {
     api
@@ -92,6 +117,25 @@ export default function MnoNormalizationPage() {
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to resolve");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const createMno = async (groupRows: MnoNormalizationAuditRow[]) => {
+    const primary = groupRows[0];
+    setConfirmCreate(null);
+    setBusyId(primary.id);
+    try {
+      const result = await api.post<CreateMnoFromAuditResult>("/mno-normalization/create-mno", {
+        auditIds: groupRows.map((r) => r.id),
+      });
+      setToast(
+        `Created "${result.operatorName}" (${result.tadigCode}, Reach List Only) — ${result.recordsCreated} record(s) created.`,
+      );
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to create MNO");
     } finally {
       setBusyId(null);
     }
@@ -188,8 +232,19 @@ export default function MnoNormalizationPage() {
                     </TableCell>
                     <TableCell>
                       {isAdmin ? (
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                           <MnoPicker onPick={(mno) => resolve(r, mno)} />
+                          <Tooltip title="This operator never had a GSMA IR.21 filing (e.g. an SMS aggregator, SS7 signaling hub, or MVNO) -- creates it as a new MNO visible only under the 'Reach List Only' dataset scope, not mixed into IR.21-verified coverage.">
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<AddCircleOutlineIcon />}
+                              disabled={busyId === r.id}
+                              onClick={() => setConfirmCreate({ groupRows: groups.get(groupKey(r)) ?? [r] })}
+                            >
+                              Create New MNO
+                            </Button>
+                          </Tooltip>
                           {busyId === r.id && <Typography variant="caption">Saving...</Typography>}
                         </Box>
                       ) : (
@@ -206,6 +261,31 @@ export default function MnoNormalizationPage() {
         )}
 
         <Snackbar open={!!toast} autoHideDuration={5000} onClose={() => setToast(null)} message={toast ?? ""} />
+
+        <Dialog open={!!confirmCreate} onClose={() => setConfirmCreate(null)}>
+          <DialogTitle>Create new MNO?</DialogTitle>
+          <DialogContent>
+            {confirmCreate && (
+              <DialogContentText component="div">
+                Creates <strong>{confirmCreate.groupRows[0].rawOperatorName || confirmCreate.groupRows[0].rawTadigCode}</strong> (
+                {confirmCreate.groupRows[0].country || "unknown country"}) as a new MNO, and attaches its declared
+                service(s) from {confirmCreate.groupRows.length} provider record{confirmCreate.groupRows.length === 1 ? "" : "s"}:{" "}
+                {confirmCreate.groupRows.map((r) => `${r.providerName} (${r.affectedServices.join(", ")})`).join("; ")}.
+                <br />
+                <br />
+                It will appear under the <strong>Reach List Only</strong> dataset scope on MNO / Cust Search — never
+                mixed into IR.21-verified coverage. Use this only when you&apos;ve confirmed this operator genuinely
+                has no GSMA IR.21 filing to map to instead.
+              </DialogContentText>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmCreate(null)}>Cancel</Button>
+            <Button variant="contained" onClick={() => confirmCreate && createMno(confirmCreate.groupRows)}>
+              Create MNO
+            </Button>
+          </DialogActions>
+        </Dialog>
       </AppShell>
     </RequireAuth>
   );

@@ -685,6 +685,24 @@ export interface ResolveMnoNormalizationResult {
   recordsCreated: number;
 }
 
+export interface CreateMnoFromAuditRequest {
+  // Every pending audit row that refers to the same real-world operator
+  // (typically one per wholesale provider that declared it) -- all
+  // resolve onto the single new MNO this call creates.
+  auditIds: string[];
+}
+
+export interface CreateMnoFromAuditResult {
+  mnoId: number;
+  operatorName: string;
+  // Either the group's own raw TADIG (when it was already valid GSMA
+  // format) or a synthesized placeholder -- see
+  // MnoNormalizationService.createFromAudits.
+  tadigCode: string;
+  auditIdsResolved: string[];
+  recordsCreated: number;
+}
+
 // IR.21 Market Intelligence & Routing Change Tracker -- see
 // UploadService.applyServiceConnectivity for how each row is detected
 // (Ir21RoutingChange), and MnoRoutingChangeAnalyticsService for how

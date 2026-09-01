@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
+import { CreateMnoFromAuditRequest } from "@ccip/shared-types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -29,5 +30,11 @@ export class MnoNormalizationController {
     @CurrentUser() user: { email: string },
   ) {
     return this.mnoNormalizationService.resolve(id, dto.mnoId, user.email);
+  }
+
+  @Post("create-mno")
+  @Roles(Role.ADMIN)
+  createMno(@Body() dto: CreateMnoFromAuditRequest, @CurrentUser() user: { email: string }) {
+    return this.mnoNormalizationService.createFromAudits(dto.auditIds, user.email);
   }
 }

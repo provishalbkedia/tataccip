@@ -10,6 +10,7 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
+import { getCountryName } from "@/lib/countries";
 import { ProviderCompareMatrixItem } from "@ccip/shared-types";
 
 type FilterMode = "all" | "common" | "gaps";
@@ -115,8 +116,15 @@ function ProviderComparePageInner() {
 
   const columnDefs = React.useMemo<(ColDef<ProviderCompareMatrixItem> | ColGroupDef<ProviderCompareMatrixItem>)[]>(() => {
     const base: ColDef<ProviderCompareMatrixItem>[] = [
-      { field: "country", headerName: "Country", pinned: "left", maxWidth: 110 },
-      { field: "operatorName", headerName: "MNO", pinned: "left", flex: 1.2, minWidth: 160, headerComponent: OperatorLinkHeader },
+      {
+        field: "country",
+        headerName: "Country",
+        pinned: "left",
+        maxWidth: 160,
+        valueFormatter: (p) => getCountryName(p.value),
+        tooltipValueGetter: (p) => getCountryName(p.value),
+      },
+      { field: "operatorName", headerName: "MNO / Cust", pinned: "left", flex: 1.2, minWidth: 160, headerComponent: OperatorLinkHeader },
       { field: "tadigCode", headerName: "TADIG", pinned: "left", maxWidth: 100 },
     ];
 

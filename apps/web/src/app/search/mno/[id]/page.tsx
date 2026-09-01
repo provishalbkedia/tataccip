@@ -145,7 +145,7 @@ export default function MnoDetailPage() {
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={4}>
                     <Typography variant="overline" color="text.secondary">
-                      Operator
+                      MNO / Cust
                     </Typography>
                     <Typography variant="h6">{mno.operatorName}</Typography>
                   </Grid>

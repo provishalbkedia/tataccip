@@ -46,7 +46,7 @@ const NAV_COLLAPSED_STORAGE_KEY = "ccip-nav-collapsed";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: Role[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
-  { href: "/search/mno", label: "Operator Search", icon: <CellTowerIcon /> },
+  { href: "/search/mno", label: "MNO / Cust Search", icon: <CellTowerIcon /> },
   { href: "/search/provider", label: "Provider Search", icon: <BusinessIcon /> },
   { href: "/analytics/ir21-changes", label: "Market Intelligence", icon: <TimelineIcon /> },
   { href: "/admin", label: "Admin Menu", icon: <AdminPanelSettingsIcon /> },

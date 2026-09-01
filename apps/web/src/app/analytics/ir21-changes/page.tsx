@@ -25,6 +25,7 @@ import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
+import { getCountryName } from "@/lib/countries";
 import {
   Ir21RoutingChangeRow,
   Ir21RoutingChangeSummary,
@@ -67,15 +68,16 @@ const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.NON_TERRESTRIAL]: { bgcolor: "#616161", color: "#fff" },
 };
 
-function relativeTime(iso: string): string {
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1 day ago";
-  if (days < 30) return `${days} days ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`;
-  const years = Math.floor(months / 12);
-  return `${years} year${years > 1 ? "s" : ""} ago`;
+/** Absolute "DD-MMM-YYYY" (e.g. "01-Sep-2026") -- explicit dates for an
+ * audit-style change log read better than a humanized relative time
+ * ("3 days ago"), which forces a hover just to know the actual date and
+ * drifts as the page sits open. Full timestamp still lives in the
+ * Tooltip below for anyone who wants time-of-day precision too. */
+function formatAbsoluteDate(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleString("en-US", { month: "short" });
+  return `${day}-${month}-${d.getFullYear()}`;
 }
 
 function DateCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
@@ -83,7 +85,7 @@ function DateCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   if (!iso) return <span>-</span>;
   return (
     <Tooltip title={new Date(iso).toLocaleString()}>
-      <span>{relativeTime(iso)}</span>
+      <span>{formatAbsoluteDate(iso)}</span>
     </Tooltip>
   );
 }
@@ -234,7 +236,7 @@ function ChurnKpiValue({
           size="small"
           color={tone}
           variant="outlined"
-          label={`${operatorsCount} operator${operatorsCount === 1 ? "" : "s"} (${tone === "success" ? "+" : "-"}${statCount} ${statLabel})`}
+          label={`${operatorsCount} MNO/Cust${operatorsCount === 1 ? "" : "s"} (${tone === "success" ? "+" : "-"}${statCount} ${statLabel})`}
           sx={{ fontWeight: 600 }}
         />
         <Typography variant="caption" color="text.secondary">
@@ -293,7 +295,7 @@ function ChurnProviderAutocomplete({
   const label = (entry: ChurnEntry, rank: number) => {
     const count = metric === "grossGains" ? entry.grossGains : entry.grossLosses;
     const noun = role === "gainer" ? "Service Gain" : "Service Loss";
-    const opNoun = `operator${entry.uniqueOperatorsCount === 1 ? "" : "s"}`;
+    const opNoun = `MNO/Cust${entry.uniqueOperatorsCount === 1 ? "" : "s"}`;
     return `${rank}. ${entry.providerName} — ${entry.uniqueOperatorsCount} ${opNoun} (${role === "gainer" ? "+" : "-"}${count} ${noun} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
   };
   const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
@@ -402,13 +404,13 @@ function SwitchingOperatorAutocomplete({
           if (reason === "input") onTextChange(v);
         }}
         disabled={entries.length === 0}
-        noOptionsText="No switching operators this period"
+        noOptionsText="No switching MNOs / Customers this period"
         clearOnEscape
         disableClearable={false}
         getOptionLabel={(o) => o.label}
         isOptionEqualToValue={(o, v) => o.entry.tadigCode === v.entry.tadigCode}
         onChange={(_, v) => (v ? onSelect(v.entry) : onClear())}
-        renderInput={(params) => <TextField {...params} placeholder="Search operator / TADIG…" />}
+        renderInput={(params) => <TextField {...params} placeholder="Search MNO / Cust / TADIG…" />}
         sx={kpiAutocompleteSx("warning")}
       />
     </Box>
@@ -635,7 +637,7 @@ export default function Ir21ChangesPage() {
           Market Intelligence &amp; Routing Changes
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Tracks changes to each operator&apos;s canonical declared provider per service (SCCP, DSX, IPX) across
+          Tracks changes to each MNO / Customer&apos;s canonical declared provider per service (SCCP, DSX, IPX) across
           successive IR.21 re-uploads — provider additions, removals, and replacements, for commercial and
           carrier-relations review.
         </Typography>
@@ -722,7 +724,7 @@ export default function Ir21ChangesPage() {
             onClick={handleLoserClick}
           />
           <KpiCard
-            label="Active Switching Operators"
+            label="Active Switching MNOs / Custs"
             value={
               summaryLoading ? (
                 "…"
@@ -875,7 +877,7 @@ export default function Ir21ChangesPage() {
             />
             <TextField
               size="small"
-              label="Search Operator / TADIG"
+              label="Search MNO / Cust / TADIG"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -887,19 +889,25 @@ export default function Ir21ChangesPage() {
             <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
               {loading
                 ? "Loading…"
-                : `${rows.length} change(s) across ${uniqueOperatorCount} unique operator${uniqueOperatorCount === 1 ? "" : "s"}`}
+                : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
             </Typography>
           </Box>
         </Paper>
 
         <DataGrid<Ir21RoutingChangeRow>
           rowData={rows}
-          renderRowCount={(rowCount) => `${rowCount} change(s) across ${uniqueOperatorCount} operator${uniqueOperatorCount === 1 ? "" : "s"}`}
+          renderRowCount={(rowCount) => `${rowCount} change(s) across ${uniqueOperatorCount} MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
           columnDefs={[
             { field: "effectiveDate", headerName: "Date", cellRenderer: DateCell, minWidth: 130 },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
-            { field: "country", headerName: "Country", maxWidth: 110 },
-            { field: "mnoName", headerName: "Operator (MNO)", flex: 1.3, minWidth: 180 },
+            {
+              field: "country",
+              headerName: "Country",
+              maxWidth: 160,
+              valueFormatter: (p) => getCountryName(p.value),
+              tooltipValueGetter: (p) => getCountryName(p.value),
+            },
+            { field: "mnoName", headerName: "MNO / Cust", flex: 1.3, minWidth: 180 },
             { field: "tadigCode", headerName: "TADIG", maxWidth: 100 },
             { field: "serviceName", headerName: "Service", cellRenderer: ServiceCell, maxWidth: 110 },
             { field: "changeType", headerName: "Change Action", cellRenderer: ChangeTypeCell, minWidth: 150 },

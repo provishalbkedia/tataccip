@@ -247,13 +247,13 @@ function MarketIntelligenceTab() {
           <Bullets
             items={[
               <>
-                <strong>Operators (primary)</strong> — the distinct MNO/TADIG count behind a figure, e.g.{" "}
-                <code>82 operators (+178 Service Gain)</code> means 178 individual route changes landed across
-                82 different operator accounts.
+                <strong>MNOs / Custs (primary)</strong> — the distinct MNO/TADIG count behind a figure, e.g.{" "}
+                <code>82 MNO/Custs (+178 Service Gain)</code> means 178 individual route changes landed across
+                82 different MNO / Customer accounts.
               </>,
               <>
                 <strong>Service Gain / Service Loss (secondary)</strong> — the raw route-event count itself,
-                shown alongside the operator count rather than instead of it.
+                shown alongside the MNO / Customer count rather than instead of it.
               </>,
               <>
                 <strong>Net</strong> — gross gains minus gross losses for that provider across the selected
@@ -266,14 +266,14 @@ function MarketIntelligenceTab() {
 
         <TechAccordion title="Interactive KPI Autocompletes">
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            The Top Provider Gainer, Top Provider Loser, and Active Switching Operators cards each embed a
-            searchable, ranked dropdown — type a carrier or operator name (or a rank number) to jump straight to
-            it, not just the single top-ranked entry the card headlines.
+            The Top Provider Gainer, Top Provider Loser, and Active Switching MNOs / Custs cards each embed a
+            searchable, ranked dropdown — type a carrier or MNO / Customer name (or a rank number) to jump straight
+            to it, not just the single top-ranked entry the card headlines.
           </Typography>
           <Bullets
             items={[
               "Selecting a provider from the Gainer or Loser dropdown updates that card's own headline, fills the Wholesale Provider filter below, and re-scopes the table to specifically that provider's gain or loss events.",
-              "Selecting an operator from the Active Switching Operators dropdown fills the Search Operator / TADIG box and scopes the table to that operator's full change history.",
+              "Selecting an MNO / Customer from the Active Switching MNOs / Custs dropdown fills the Search MNO / Cust / TADIG box and scopes the table to that MNO / Customer's full change history.",
               "The four KPI cards always reflect the overall Timeframe/Region/Service scope — clicking or searching within one card narrows the table below without collapsing the other cards' own numbers.",
             ]}
           />
@@ -286,23 +286,23 @@ function MarketIntelligenceTab() {
 }
 
 const MNO_COLUMNS: [string, string][] = [
-  ["1. Operator Name", "Pinned on desktop and mobile so it stays visible while scrolling the rest of the row."],
+  ["1. MNO / Cust Name", "Pinned on desktop and mobile so it stays visible while scrolling the rest of the row."],
   ["2. Region", "4-region macro classification — Americas, MEA, Europe, APAC — plus a separate Non-Terrestrial bucket for aeronautical/maritime/satellite networks with no fixed country."],
-  ["3. Country", "ISO 3166-1 alpha-3 code, as declared in the source IR.21/Reach List data."],
-  ["4. SCCP Provider (IR.21)", "The operator's declared roaming-signaling carrier(s)."],
-  ["5. DSX / LTE Provider (IR.21)", "The operator's declared LTE/Diameter edge-agent carrier(s)."],
-  ["6. IPX Provider (IR.21)", "The operator's declared GRX/IPX data-roaming carrier(s)."],
+  ["3. Country", "Full country name (searchable by name or ISO 3166-1 alpha-3 code), mapped from the ISO-3 code declared in the source IR.21/Reach List data."],
+  ["4. SCCP Provider (IR.21)", "The MNO / Customer's declared roaming-signaling carrier(s)."],
+  ["5. DSX / LTE Provider (IR.21)", "The MNO / Customer's declared LTE/Diameter edge-agent carrier(s)."],
+  ["6. IPX Provider (IR.21)", "The MNO / Customer's declared GRX/IPX data-roaming carrier(s)."],
   ["7. IR.21 PDF", "One-click link to the original GSMA document, when the paired PDF was uploaded alongside its XML."],
-  ["8. TADIG", "The operator's primary GSMA network identifier."],
+  ["8. TADIG", "The MNO / Customer's primary GSMA network identifier."],
   ["9. Network Type", "Terrestrial vs. Non-Terrestrial (aeronautical/maritime)."],
-  ["10. Last Effective Date", "The declared effective date of the most recent IR.21 ingested for this operator."],
+  ["10. Last Effective Date", "The declared effective date of the most recent IR.21 ingested for this MNO / Customer."],
   ["11. Status", "Operational status as declared."],
 ];
 
 function OperatorTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Operator (MNO) Search &amp; Detail Deep-Dive — /search/mno">
+      <Section title="MNO / Cust Search &amp; Detail Deep-Dive — /search/mno">
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           The default landing point for reconciliation work: every operator CCIP knows about, one row each, laid
           out in a fixed 11-column reference layout.
@@ -354,9 +354,10 @@ function OperatorTab() {
         </Typography>
         <Bullets
           items={[
-            "Multi-parameter filtering by Operator Name, TADIG, Country, MCC, and MNC — press Enter in any field to search instantly, no separate click required.",
+            "Multi-parameter filtering by MNO / Cust Name, TADIG, Country, MCC, and MNC — press Enter in any field to search instantly, no separate click required.",
+            "Country accepts either a full country name or its ISO-3 code, with a searchable autocomplete dropdown of matching countries as you type.",
             "One-click Region toggle pills (All / Americas / MEA / Europe / APAC / Non-Terrestrial) filter the result set without touching the text fields.",
-            "Database-backed autocomplete suggestions as you type the operator name.",
+            "Database-backed autocomplete suggestions as you type the MNO / Customer name.",
             "Search criteria and results are synchronized to the URL, so browser Back/Forward restores the exact search you had.",
             "CSV export of the current result set — includes a legal footnote noting the data is sourced from declared IR.21 & Reach List archives without operational warranty.",
           ]}
@@ -364,17 +365,17 @@ function OperatorTab() {
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-          Multi-operator comparison
+          Multi-MNO / Cust comparison
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Check 2 to 5 operators via the row checkboxes to open the Operator Comparison Matrix — a side-by-side
+          Check 2 to 5 MNOs / Custs via the row checkboxes to open the MNO / Cust Comparison Matrix — a side-by-side
           breakdown of every wholesale carrier connected to any of them, split by IR.21 Declared vs. Reach List
           Claimed per service, with its own CSV export.
         </Typography>
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-          Operator Detail — /search/mno/[id]
+          MNO / Cust Detail — /search/mno/[id]
         </Typography>
 
         <TechAccordion title="Interconnect Comparison Grid" defaultExpanded>
@@ -418,19 +419,21 @@ function OperatorTab() {
 
         <TechAccordion title="Multi-TADIG resolution">
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            A real-world operator occasionally holds more than one TADIG — a legacy code from before a merger, or a
-            second license for a separate radio generation. A Reach List frequently only quotes one of them.
+            A real-world MNO / Customer occasionally holds more than one TADIG — a legacy code from before a
+            merger, or a second license for a separate radio generation. A Reach List frequently only quotes one
+            of them.
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            An admin can link a known alternate TADIG to an existing operator (Admin → Operator record). Once
-            linked, a Reach List row quoting that alternate code resolves to the same operator record instead of
-            silently creating a duplicate — its Comparison Grid then shows the combined picture automatically.
+            An admin can link a known alternate TADIG to an existing MNO / Customer (Admin → MNO / Cust record).
+            Once linked, a Reach List row quoting that alternate code resolves to the same MNO / Cust record
+            instead of silently creating a duplicate — its Comparison Grid then shows the combined picture
+            automatically.
           </Typography>
           <Warn>
-            This linking is a deliberate admin decision, never automatic. Two operators sharing a similar name or
-            operating in the same country are not necessarily the same legal entity — CCIP does not guess this
-            relationship from text similarity alone, precisely to avoid attributing one operator&apos;s wholesale
-            data to a completely different one.
+            This linking is a deliberate admin decision, never automatic. Two MNOs / Customers sharing a similar
+            name or operating in the same country are not necessarily the same legal entity — CCIP does not guess
+            this relationship from text similarity alone, precisely to avoid attributing one MNO / Customer&apos;s
+            wholesale data to a completely different one.
           </Warn>
         </TechAccordion>
 
@@ -438,8 +441,8 @@ function OperatorTab() {
           <Bullets
             items={[
               <>
-                <strong>Roaming Signaling (SCCP)</strong> — primary and backup SCCP carriers, plus the operator&apos;s
-                declared DPC point codes.
+                <strong>Roaming Signaling (SCCP)</strong> — primary and backup SCCP carriers, plus the MNO /
+                Customer&apos;s declared DPC point codes.
               </>,
               <>
                 <strong>Data &amp; LTE Roaming (DSX / IPX)</strong> — LTE/Diameter edge-agent routing and GRX/IPX
@@ -447,12 +450,12 @@ function OperatorTab() {
               </>,
               "Authoritative and local DNS IP addresses, and declared inter-PMN IP subnet ranges.",
               "24×7 NOC and Roaming Coordinator contact details, where declared in the source IR.21.",
-              'One-click "View Original IR.21 PDF" to inspect the official GSMA document in-browser, when one was uploaded alongside that operator\'s XML.',
+              'One-click "View Original IR.21 PDF" to inspect the official GSMA document in-browser, when one was uploaded alongside that MNO / Customer\'s XML.',
             ]}
           />
         </TechAccordion>
 
-        <GoTo label="Open Operator Search" route="/search/mno" />
+        <GoTo label="Open MNO / Cust Search" route="/search/mno" />
       </Section>
     </Box>
   );
@@ -649,7 +652,7 @@ function GovernanceTab() {
           <Typography variant="body2" color="text.secondary">
             The backend runs on an auto-scaling Cloud Run instance that can go idle and take a few seconds to wake
             on the very first request after inactivity. A dedicated refresh icon — in the header, and again on the
-            Operator Search page — pings the API ahead of time so your first real search doesn&apos;t eat that
+            MNO / Cust Search page — pings the API ahead of time so your first real search doesn&apos;t eat that
             cold-start delay.
           </Typography>
         </TechAccordion>
@@ -680,7 +683,7 @@ function GovernanceTab() {
 const TABS = [
   { label: "Overview & Architecture", icon: <DashboardIcon fontSize="small" />, Panel: OverviewTab },
   { label: "Market Intelligence", icon: <TimelineIcon fontSize="small" />, Panel: MarketIntelligenceTab },
-  { label: "Operator Search & Detail", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorTab },
+  { label: "MNO / Cust Search & Detail", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorTab },
   { label: "Provider Search", icon: <BusinessIcon fontSize="small" />, Panel: ProviderSearchTab },
   { label: "Data Ingestion", icon: <UploadFileIcon fontSize="small" />, Panel: AdminTab },
   { label: "Governance", icon: <ShieldOutlinedIcon fontSize="small" />, Panel: GovernanceTab },

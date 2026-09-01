@@ -91,7 +91,7 @@ function AffectedMnosCell({ mnos }: { mnos: AffectedMno[] }) {
           >
             <Box sx={{ p: 1.5, maxWidth: 340, maxHeight: 320, overflowY: "auto" }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                All {mnos.length} Affected Operators
+                All {mnos.length} Affected MNOs / Custs
               </Typography>
               <List dense>
                 {mnos.map((m) => (
@@ -184,7 +184,7 @@ function OperatorOverrideModal({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen}>
-      <DialogTitle>Map Per Operator — &quot;{variant.rawCarrierName}&quot;</DialogTitle>
+      <DialogTitle>Map Per MNO / Cust — &quot;{variant.rawCarrierName}&quot;</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Assign a specific canonical provider to individual MNOs below, instead of mapping all{" "}
@@ -203,7 +203,7 @@ function OperatorOverrideModal({
             <TableHead>
               <TableRow>
                 <TableCell>TADIG</TableCell>
-                <TableCell>Operator Name</TableCell>
+                <TableCell>MNO / Cust Name</TableCell>
                 <TableCell>Country</TableCell>
                 <TableCell sx={{ minWidth: 220 }}>Assigned Provider</TableCell>
                 <TableCell sx={{ minWidth: 180 }}>Note</TableCell>
@@ -247,7 +247,7 @@ function OperatorOverrideModal({
         <Tooltip title={!isAdmin ? "Administrator privileges required to save overrides." : ""}>
           <span>
             <Button variant="contained" disabled={busy || assignedCount === 0 || !isAdmin} onClick={handleSave}>
-              Save Operator Overrides {assignedCount > 0 && `(${assignedCount})`}
+              Save MNO / Cust Overrides {assignedCount > 0 && `(${assignedCount})`}
             </Button>
           </span>
         </Tooltip>
@@ -314,7 +314,7 @@ function ResolveRow({
           onClick={() => setOverrideModalOpen(true)}
           sx={{ mt: 0.5 }}
         >
-          Map Per Operator
+          Map Per MNO / Cust
         </Button>
         <OperatorOverrideModal
           variant={variant}
@@ -419,7 +419,7 @@ export default function ProviderAliasesPage() {
                 <TableRow>
                   <TableCell>Raw Carrier Name</TableCell>
                   <TableCell>Occurrences</TableCell>
-                  <TableCell>Affected Operators / MNOs</TableCell>
+                  <TableCell>Affected MNOs / Custs</TableCell>
                   <TableCell>Service</TableCell>
                   <TableCell>Map to Canonical Provider</TableCell>
                   <TableCell>Or Create New</TableCell>

@@ -117,7 +117,7 @@ export default function DashboardPage() {
               icon: <CellTowerIcon fontSize="large" />,
               color: "#0A2540",
               href: "/search/mno",
-              tooltip: `Operators with a full, authoritative GSMA IR.21 declaration on file — the platform's source of truth for MNO count. ${metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were auto-created from Reach List uploads before MNO normalization was enforced (kept as-is, not retroactively removed). Reach List ingestion no longer creates a new MNO automatically — an unmatched row is now queued under "Unresolved Reach List Aliases" for admin review instead.`,
+              tooltip: `MNOs / Customers with a full, authoritative GSMA IR.21 declaration on file — the platform's source of truth for MNO count. ${metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were auto-created from Reach List uploads before MNO normalization was enforced (kept as-is, not retroactively removed). Reach List ingestion no longer creates a new MNO automatically — an unmatched row is now queued under "Unresolved Reach List Aliases" for admin review instead.`,
             },
             {
               label: "Total Providers",
@@ -133,7 +133,7 @@ export default function DashboardPage() {
               icon: <HubIcon fontSize="large" />,
               color: "#2E7D32",
               href: "/search/mno",
-              tooltip: "Every individual (Operator, Provider, Service) relationship on record, combining GSMA IR.21 declarations and Reach List uploads.",
+              tooltip: "Every individual (MNO/Cust, Provider, Service) relationship on record, combining GSMA IR.21 declarations and Reach List uploads.",
             },
             {
               label: "SCCP Relationships",

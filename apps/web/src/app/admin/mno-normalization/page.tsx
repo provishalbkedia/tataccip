@@ -61,7 +61,7 @@ function MnoPicker({ onPick }: { onPick: (mno: MnoSuggestion) => void }) {
       getOptionLabel={(o) => `${o.operatorName} (${o.tadigCode}) — ${o.country}`}
       onChange={(_, value) => value && onPick(value)}
       sx={{ minWidth: 320 }}
-      renderInput={(params) => <TextField {...params} label="Search existing IR.21 MNO to map to..." placeholder="Operator, TADIG, or country" />}
+      renderInput={(params) => <TextField {...params} label="Search existing IR.21 MNO to map to..." placeholder="MNO / Cust, TADIG, or country" />}
       noOptionsText={q.trim() ? "No matching MNO" : "Type to search"}
     />
   );
@@ -153,7 +153,7 @@ export default function MnoNormalizationPage() {
               <TableHead>
                 <TableRow>
                   <TableCell>Status</TableCell>
-                  <TableCell>Raw Operator Name</TableCell>
+                  <TableCell>Raw MNO / Cust Name</TableCell>
                   <TableCell>Raw TADIG</TableCell>
                   <TableCell>Country</TableCell>
                   <TableCell>Provider</TableCell>

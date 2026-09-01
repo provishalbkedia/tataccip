@@ -884,8 +884,8 @@ function ResetIr21DatabaseCard({ onReset, isAdmin }: { onReset: () => void; isAd
           <DialogContent>
             <DialogContentText sx={{ mb: 2 }}>
               This deletes every MNO, every IR.21 declaration, and every Reach List connectivity record
-              platform-wide — nothing is scoped, nothing is recoverable. Operator Search, Provider Search,
-              and every comparison view will show an empty operator universe until new IR.21/Reach List data
+              platform-wide — nothing is scoped, nothing is recoverable. MNO / Cust Search, Provider Search,
+              and every comparison view will show an empty MNO / Cust universe until new IR.21/Reach List data
               is uploaded. Registered providers themselves are kept.
             </DialogContentText>
             <DialogContentText sx={{ mb: 1 }}>

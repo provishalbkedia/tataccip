@@ -177,7 +177,7 @@ function OverridesLogTab({ isAdmin }: { isAdmin: boolean }) {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Operator (TADIG)</TableCell>
+                <TableCell>MNO / Cust (TADIG)</TableCell>
                 <TableCell>Country</TableCell>
                 <TableCell>Service</TableCell>
                 <TableCell>Original Raw String</TableCell>
@@ -525,7 +525,7 @@ export default function OverridesPage() {
         </Typography>
         <ReadOnlyBanner />
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}>
-          <Tab label="Operator-Level Overrides Log" />
+          <Tab label="MNO / Cust-Level Overrides Log" />
           <Tab label="Provider Normalization &amp; Alias Dictionary" />
         </Tabs>
         {tab === 0 && <OverridesLogTab isAdmin={isAdmin} />}

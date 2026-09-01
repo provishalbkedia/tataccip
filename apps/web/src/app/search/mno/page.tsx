@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ICellRendererParams } from "ag-grid-community";
 import {
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -33,6 +34,7 @@ import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
+import { COUNTRY_OPTIONS, getCountryName, resolveCountryCode, type CountryOption } from "@/lib/countries";
 import { MnoSuggestion, MnoSummary, Region } from "@ccip/shared-types";
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
@@ -173,7 +175,10 @@ function MnoSearchPageInner() {
   React.useEffect(() => {
     setQ(searchParams.get("q") ?? "");
     setTadig(searchParams.get("tadig") ?? "");
-    setCountry(searchParams.get("country") ?? "");
+    // resolveCountryCode tolerates a URL carrying a full name instead of the
+    // ISO-3 code (a hand-edited or older shared link) -- the backend only
+    // ever matches on the code.
+    setCountry(resolveCountryCode(searchParams.get("country")));
     setMcc(searchParams.get("mcc") ?? "");
     setMnc(searchParams.get("mnc") ?? "");
     const urlRegion = searchParams.get("region");
@@ -231,7 +236,7 @@ function MnoSearchPageInner() {
       <AppShell>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 3 }}>
           <Typography variant="h5" fontWeight={700}>
-            Operator Search
+            MNO / Cust Search
           </Typography>
           <Chip size="small" color="primary" label="GSMA IR.21 Declared" />
         </Box>
@@ -239,7 +244,7 @@ function MnoSearchPageInner() {
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}>
               <SuggestionAutocomplete<MnoSuggestion>
-                label={isMobile ? "Search Operator, TADIG, Country..." : "Search by Operator, TADIG, Country, MCC/MNC, or Carrier..."}
+                label={isMobile ? "Search MNO / Cust, TADIG, Country..." : "Search by MNO / Cust, TADIG, Country, MCC/MNC, or Carrier..."}
                 value={q}
                 onValueChange={setQ}
                 fetchSuggestions={fetchSuggestions}
@@ -257,12 +262,26 @@ function MnoSearchPageInner() {
               />
             </Grid>
             <Grid item xs={6} sm={1.5}>
-              <TextField
+              <Autocomplete<CountryOption>
                 fullWidth
-                label="Country"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                options={COUNTRY_OPTIONS}
+                value={COUNTRY_OPTIONS.find((c) => c.code === country) ?? null}
+                onChange={(_, v) => setCountry(v ? v.code : "")}
+                getOptionLabel={(o) => o.name}
+                isOptionEqualToValue={(o, v) => o.code === v.code}
+                // Matches on the full name OR the ISO-3 code as the user
+                // types -- "United Kingdom" and "GBR" both surface the same
+                // option, since source data (and everyone's muscle memory
+                // for it) is the 3-letter code even though the dropdown
+                // itself shows names.
+                filterOptions={(options, state) => {
+                  const q = state.inputValue.trim().toLowerCase();
+                  if (!q) return options;
+                  return options.filter((o) => o.name.toLowerCase().includes(q) || o.code.toLowerCase().includes(q));
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} label="Country" onKeyDown={(e) => e.key === "Enter" && runSearch()} />
+                )}
               />
             </Grid>
             <Grid item xs={6} sm={2}>
@@ -353,7 +372,7 @@ function MnoSearchPageInner() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          <Tooltip title="Toggle between GSMA IR.21 authenticated ground-truth operators, unmapped commercial reach list claims, or the unified database.">
+          <Tooltip title="Toggle between GSMA IR.21 authenticated ground-truth MNOs / Customers, unmapped commercial reach list claims, or the unified database.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
           </Tooltip>
         </Box>
@@ -392,7 +411,7 @@ function MnoSearchPageInner() {
             ))}
           </ToggleButtonGroup>
 
-          <Tooltip title={onlyWithProviders ? "Showing only operators with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every operator, including those with no listed provider"}>
+          <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
             <FormControlLabel
               sx={{ ml: 0 }}
               control={
@@ -412,21 +431,27 @@ function MnoSearchPageInner() {
 
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — Showing operator connectivity footprint strictly as declared in official
-            GSMA IR.21 documents. Click anywhere on a row (or its checkbox) to select 2–5 for side-by-side
-            comparison, or click an operator&apos;s name to open its connectivity details.
+            {results.length} result(s) — Showing MNO / Customer connectivity footprint strictly as declared in
+            official GSMA IR.21 documents. Click anywhere on a row (or its checkbox) to select 2–5 for side-by-side
+            comparison, or click an MNO / Customer&apos;s name to open its connectivity details.
           </Typography>
-          <Tooltip title="Select 2 to 5 operators to launch the side-by-side Interconnect Parity Comparison Drawer.">
+          <Tooltip title="Select 2 to 5 MNOs / Customers to launch the side-by-side Interconnect Parity Comparison Drawer.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
           </Tooltip>
         </Box>
         <DataGrid<MnoSummary>
           rowData={results}
           columnDefs={[
-            { field: "operatorName", headerName: "Operator Name", flex: 1.5, cellRenderer: OperatorNameCell },
+            { field: "operatorName", headerName: "MNO / Cust Name", flex: 1.5, cellRenderer: OperatorNameCell },
             { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 150, sortable: false, filter: false },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
-            { field: "country", headerName: "Country" },
+            {
+              field: "country",
+              headerName: "Country",
+              maxWidth: 160,
+              valueFormatter: (p) => getCountryName(p.value),
+              tooltipValueGetter: (p) => getCountryName(p.value),
+            },
             {
               field: "sccpProviders",
               headerName: "SCCP Provider (IR.21)",
@@ -490,7 +515,7 @@ function MnoSearchPageInner() {
             }}
           >
             <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {selected.length} Operator(s) Selected: {selected.map((m) => m.operatorName).join(", ")}
+              {selected.length} MNO/Cust(s) Selected: {selected.map((m) => m.operatorName).join(", ")}
               {selected.length > 5 && " — max 5, deselect some to compare"}
             </Typography>
             <Box sx={{ display: "flex", gap: 1, width: { xs: "100%", sm: "auto" } }}>
@@ -502,7 +527,7 @@ function MnoSearchPageInner() {
                 onClick={() => router.push(`/search/mno/compare?ids=${selected.map((m) => m.id).join(",")}`)}
                 sx={{ flex: { xs: 1, sm: "0 0 auto" } }}
               >
-                Compare Selected Operators (Matrix)
+                Compare Selected MNOs / Customers (Matrix)
               </Button>
               <Button
                 size="small"

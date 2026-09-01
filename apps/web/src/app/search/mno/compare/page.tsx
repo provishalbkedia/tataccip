@@ -146,7 +146,7 @@ function OperatorComparePageInner() {
           Back to search
         </Button>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
-          Operator Connectivity Comparison Matrix
+          MNO / Cust Connectivity Comparison Matrix
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Side-by-side comparison of wholesale carrier interconnects declared in IR.21 vs claimed in Reach Lists.

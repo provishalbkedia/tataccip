@@ -548,7 +548,7 @@ function MnoSearchPageInner() {
                 label={<Typography variant="body2">Only with listed providers</Typography>}
               />
             </Tooltip>
-            <Tooltip title="Filters the table by wholesale-provider exclusivity — either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio.">
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <TextField
                 select
                 size="small"
@@ -567,7 +567,10 @@ function MnoSearchPageInner() {
                   </MenuItem>
                 ))}
               </TextField>
-            </Tooltip>
+              <Tooltip title="Filters the table by wholesale-provider exclusivity — either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio.">
+                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+              </Tooltip>
+            </Box>
           </Box>
         </Box>
 

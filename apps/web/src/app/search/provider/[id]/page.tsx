@@ -3,12 +3,26 @@
 import * as React from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import { Box, Button, Card, CardContent, Chip, Grid, IconButton, InputAdornment, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  FormControlLabel,
+  Grid,
+  IconButton,
+  InputAdornment,
+  TextField,
+  Typography,
+} from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import FindInPageIcon from "@mui/icons-material/FindInPage";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
+import StarIcon from "@mui/icons-material/Star";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -76,9 +90,33 @@ function checkOrDash(p: { value: boolean }) {
   return p.value ? "✓" : "-";
 }
 
+const EXCLUSIVE_FIELD: Record<"sccp" | "dsx" | "ipx", keyof OnNetMnoRow> = {
+  sccp: "isExclusiveSccp",
+  dsx: "isExclusiveDsx",
+  ipx: "isExclusiveIpx",
+};
+
+/** Renders a service column's checkmark as an "Exclusive" pill when this
+ * provider is the sole provider declaring that service for the MNO — a
+ * plain "✓" (unchanged) when the service is present but shared with at
+ * least one other provider, and "-" when absent. Only meaningful for the
+ * single-source (IR.21-only or Reach List-only) column set — BOTH mode's
+ * split IR.21/Reach List columns don't get this treatment since exclusivity
+ * here is computed against the union of both sources, which wouldn't match
+ * either split column's own single-source value. */
+function serviceCellRenderer(service: "sccp" | "dsx" | "ipx") {
+  return function ServiceCell(params: ICellRendererParams<OnNetMnoRow>) {
+    if (!params.data?.[service]) return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
+    if (params.data[EXCLUSIVE_FIELD[service]]) {
+      return <Chip size="small" label="Exclusive" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 700, "& .MuiChip-label": { px: 0.75 } }} />;
+    }
+    return <span>✓</span>;
+  };
+}
+
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <Grid item xs={6} sm={2.4}>
+    <Grid item xs={6} sm={4} md={2}>
       <Card variant="outlined">
         <CardContent>
           <Typography variant="overline" color="text.secondary">
@@ -108,6 +146,7 @@ function ProviderDetailPageInner() {
   const [provider, setProvider] = React.useState<ProviderDetail | null>(null);
   const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
   const [mnoQuery, setMnoQuery] = React.useState("");
+  const [exclusiveOnly, setExclusiveOnly] = React.useState(false);
 
   const urlSource = searchParams.get("source");
   const source: ProviderStatsSource =
@@ -127,12 +166,14 @@ function ProviderDetailPageInner() {
   // pagination footer accurate for free (it counts whatever rowData it's
   // handed).
   const filteredMnos = React.useMemo(() => {
+    if (!provider) return [];
     const q = mnoQuery.trim().toLowerCase();
-    if (!q || !provider) return provider?.onNetMnos ?? [];
-    return provider.onNetMnos.filter(
-      (m) => m.operatorName.toLowerCase().includes(q) || m.country.toLowerCase().includes(q) || m.tadigCode.toLowerCase().includes(q),
-    );
-  }, [provider, mnoQuery]);
+    return provider.onNetMnos.filter((m) => {
+      if (exclusiveOnly && !m.isExclusiveAny) return false;
+      if (!q) return true;
+      return m.operatorName.toLowerCase().includes(q) || m.country.toLowerCase().includes(q) || m.tadigCode.toLowerCase().includes(q);
+    });
+  }, [provider, mnoQuery, exclusiveOnly]);
 
   const columnDefs = React.useMemo<ColDef<OnNetMnoRow>[]>(() => {
     const cols: ColDef<OnNetMnoRow>[] = [
@@ -151,9 +192,9 @@ function ProviderDetailPageInner() {
       );
     } else {
       cols.push(
-        { field: "sccp", headerName: "SCCP", cellRenderer: checkOrDash },
-        { field: "dsx", headerName: "DSX", cellRenderer: checkOrDash },
-        { field: "ipx", headerName: "IPX", cellRenderer: checkOrDash },
+        { field: "sccp", headerName: "SCCP", cellRenderer: serviceCellRenderer("sccp") },
+        { field: "dsx", headerName: "DSX", cellRenderer: serviceCellRenderer("dsx") },
+        { field: "ipx", headerName: "IPX", cellRenderer: serviceCellRenderer("ipx") },
       );
     }
     cols.push({
@@ -164,6 +205,18 @@ function ProviderDetailPageInner() {
       filter: false,
       minWidth: 100,
       flex: 0.6,
+    });
+    cols.push({
+      headerName: "Exclusivity",
+      colId: "exclusivity",
+      minWidth: 130,
+      flex: 0.8,
+      valueGetter: (p) => {
+        const d = p.data;
+        if (!d) return "-";
+        const exclusive = [d.isExclusiveSccp && "SCCP", d.isExclusiveDsx && "DSX", d.isExclusiveIpx && "IPX"].filter(Boolean);
+        return exclusive.length ? exclusive.join(", ") : "-";
+      },
     });
     return cols;
   }, [source]);
@@ -211,6 +264,7 @@ function ProviderDetailPageInner() {
               <StatBox label="SCCP" value={provider.stats.sccpCount} />
               <StatBox label="DSX" value={provider.stats.dsxCount} />
               <StatBox label="IPX" value={provider.stats.ipxCount} />
+              <StatBox label="Exclusive MNOs" value={provider.exclusiveMnoCount} />
             </Grid>
 
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5, flexWrap: "wrap" }}>
@@ -245,7 +299,18 @@ function ProviderDetailPageInner() {
                   ),
                 }}
               />
-              {mnoQuery && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={exclusiveOnly}
+                    onChange={(e) => setExclusiveOnly(e.target.checked)}
+                    icon={<StarIcon fontSize="small" sx={{ color: "text.disabled" }} />}
+                    checkedIcon={<StarIcon fontSize="small" color="success" />}
+                  />
+                }
+                label="Show Exclusive Only"
+              />
+              {(mnoQuery || exclusiveOnly) && (
                 <Typography variant="body2" color="text.secondary">
                   Showing {filteredMnos.length} filtered MNO{filteredMnos.length === 1 ? "" : "s"} (out of{" "}
                   {provider.onNetMnos.length} total)

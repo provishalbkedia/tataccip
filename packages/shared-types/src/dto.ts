@@ -288,6 +288,16 @@ export interface OnNetMnoRow {
   // merged flag that hides which source actually declared it.
   ir21?: ServicePresence;
   reachList?: ServicePresence;
+  // True when this provider is the ONLY provider declaring/claiming that
+  // service for this MNO, scoped to the same `source` lens the row itself
+  // is shown through (IR.21-only, Reach List-only, or the union of both
+  // when source=BOTH — matching how sccp/dsx/ipx above are themselves
+  // merged). Always false when the service flag itself is false.
+  isExclusiveSccp: boolean;
+  isExclusiveDsx: boolean;
+  isExclusiveIpx: boolean;
+  // True if any of the three service-level exclusivity flags above is true.
+  isExclusiveAny: boolean;
 }
 
 export interface ProviderDetail extends ProviderSummary {
@@ -297,6 +307,9 @@ export interface ProviderDetail extends ProviderSummary {
   // resolve here — the audit trail behind "why does this MNO show BICS".
   aliases: string[];
   observedRawStrings: string[];
+  // Count of onNetMnos where isExclusiveAny is true — this provider is the
+  // sole declared/claimed carrier for at least one service on that MNO.
+  exclusiveMnoCount: number;
 }
 
 export interface UploadHistoryRow {

@@ -211,18 +211,32 @@ export class ProviderService {
     const includeReach = source !== ProviderStatsSource.IR21;
     const hasAny = (p: ServicePresence) => p.sccp || p.dsx || p.ipx;
 
+    const exclusivityByMno = await this.computeProvidersByMnoService(Array.from(byMno.keys()), source);
+
     const onNetMnos: OnNetMnoRow[] = Array.from(byMno.entries())
       .filter(([, r]) => (includeIr21 && hasAny(r.ir21)) || (includeReach && hasAny(r.reachList)))
       .map(([mnoId, r]) => {
+        const sccp = (includeIr21 && r.ir21.sccp) || (includeReach && r.reachList.sccp);
+        const dsx = (includeIr21 && r.ir21.dsx) || (includeReach && r.reachList.dsx);
+        const ipx = (includeIr21 && r.ir21.ipx) || (includeReach && r.reachList.ipx);
+        const providers = exclusivityByMno.get(mnoId);
+        const isExclusiveSccp = sccp && (providers?.sccp.size ?? 0) === 1;
+        const isExclusiveDsx = dsx && (providers?.dsx.size ?? 0) === 1;
+        const isExclusiveIpx = ipx && (providers?.ipx.size ?? 0) === 1;
+
         const row: OnNetMnoRow = {
           mnoId,
           country: r.country,
           operatorName: r.operatorName,
           tadigCode: r.tadigCode,
-          sccp: (includeIr21 && r.ir21.sccp) || (includeReach && r.reachList.sccp),
-          dsx: (includeIr21 && r.ir21.dsx) || (includeReach && r.reachList.dsx),
-          ipx: (includeIr21 && r.ir21.ipx) || (includeReach && r.reachList.ipx),
+          sccp,
+          dsx,
+          ipx,
           hasPdfDocument: hasPdfByMno.get(mnoId) ?? false,
+          isExclusiveSccp,
+          isExclusiveDsx,
+          isExclusiveIpx,
+          isExclusiveAny: isExclusiveSccp || isExclusiveDsx || isExclusiveIpx,
         };
         if (source === ProviderStatsSource.BOTH) {
           row.ir21 = r.ir21;
@@ -251,7 +265,82 @@ export class ProviderService {
       onNetMnos,
       aliases,
       observedRawStrings,
+      exclusiveMnoCount: onNetMnos.filter((m) => m.isExclusiveAny).length,
     };
+  }
+
+  /** Maps mnoId -> per-service Set of distinct providerIds currently
+   * declaring/claiming that (mnoId, service) combination, scoped
+   * consistently with `source` (IR.21-only, Reach List-only, or the union
+   * of both for BOTH — mirroring the same OR'd merge detail() already uses
+   * to compute each on-net MNO's sccp/dsx/ipx flags). A set of size 1 means
+   * whichever single provider is in it is *exclusive* for that MNO+service
+   * under this lens. Restricted to `mnoIds` since this only ever needs to
+   * cover one provider's own footprint, not the whole platform — includes
+   * the multi-homed (secondary/backup carrier) resolution pass so a
+   * provider that's only ever a backup SCCP carrier or a non-first GRX/IPX
+   * entry still counts as "another provider" for exclusivity purposes. */
+  private async computeProvidersByMnoService(
+    mnoIds: number[],
+    source: ProviderStatsSource,
+  ): Promise<Map<number, Record<"sccp" | "dsx" | "ipx", Set<number>>>> {
+    const result = new Map<number, Record<"sccp" | "dsx" | "ipx", Set<number>>>();
+    if (mnoIds.length === 0) return result;
+
+    const touch = (mnoId: number, service: string, providerId: number) => {
+      let bucket = result.get(mnoId);
+      if (!bucket) {
+        bucket = { sccp: new Set(), dsx: new Set(), ipx: new Set() };
+        result.set(mnoId, bucket);
+      }
+      const key = service === "SCCP" ? "sccp" : service === "DSX" ? "dsx" : "ipx";
+      bucket[key].add(providerId);
+    };
+
+    const includeIr21 = source !== ProviderStatsSource.REACH_LIST;
+    const includeReach = source !== ProviderStatsSource.IR21;
+
+    const [ir21Rows, reachRows] = await Promise.all([
+      includeIr21
+        ? this.prisma.ir21Connectivity.findMany({
+            where: { mnoId: { in: mnoIds } },
+            select: { mnoId: true, providerId: true, service: { select: { serviceName: true } } },
+          })
+        : Promise.resolve([]),
+      includeReach
+        ? this.prisma.providerReachlist.findMany({
+            where: { mnoId: { in: mnoIds } },
+            select: { mnoId: true, providerId: true, service: { select: { serviceName: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    for (const r of ir21Rows) touch(r.mnoId, r.service.serviceName, r.providerId);
+    for (const r of reachRows) touch(r.mnoId, r.service.serviceName, r.providerId);
+
+    if (includeIr21) {
+      const connRows = await this.prisma.mnoMasterConnectivity.findMany({
+        where: { mnoId: { in: mnoIds } },
+        select: { mnoId: true, primarySccpCarrier: true, backupSccpCarriers: true, grxIpxProviders: true, lteIpxProviders: true },
+      });
+      for (const c of connRows) {
+        const checks: [string, (string | null)[]][] = [
+          ["SCCP", [c.primarySccpCarrier, ...c.backupSccpCarriers]],
+          ["DSX", c.lteIpxProviders],
+          ["IPX", c.grxIpxProviders],
+        ];
+        for (const [service, candidates] of checks) {
+          for (const raw of candidates) {
+            if (!raw) continue;
+            const normalized = this.providerResolver.normalize(raw);
+            if (!normalized) continue;
+            const providerId = this.providerResolver.matchAlias(normalized);
+            if (providerId) touch(c.mnoId, service, providerId);
+          }
+        }
+      }
+    }
+
+    return result;
   }
 
   /** Multi-provider side-by-side footprint comparison (2-5 providers) —

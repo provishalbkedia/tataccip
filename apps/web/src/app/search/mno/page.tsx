@@ -39,6 +39,20 @@ import { MnoSuggestion, MnoSummary, Region } from "@ccip/shared-types";
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 
+// Derived entirely client-side from data the API already returns —
+// sccpProviders/dsxProviders/ipxProviders are already resolved to
+// canonical ProviderMaster names (see MnoService.resolvedProvidersByMno),
+// so their union across all 3 services is exactly "every wholesale
+// provider serving this MNO on any active service". Exclusive means that
+// union has exactly one member.
+type MnoSummaryWithExclusivity = MnoSummary & { isExclusiveProvider: boolean; soleProviderName: string | null };
+
+function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
+  const unique = new Set([...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders]);
+  const isExclusiveProvider = unique.size === 1;
+  return { ...r, isExclusiveProvider, soleProviderName: isExclusiveProvider ? Array.from(unique)[0] : null };
+}
+
 type DatasetScope = "ir21" | "reachlist" | "all";
 const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist", "all"];
 const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
@@ -129,6 +143,20 @@ function PdfCell(params: ICellRendererParams<MnoSummary>) {
   );
 }
 
+/** Shows the "Yes"/"No" exclusivity valueGetter as a green "Single
+ * Provider" pill (with a tooltip naming the sole provider) when exclusive,
+ * or plain "No" otherwise. */
+function ExclusivityCell(params: ICellRendererParams<MnoSummaryWithExclusivity>) {
+  if (params.value !== "Yes" || !params.data?.soleProviderName) {
+    return <span style={{ color: "rgba(0,0,0,0.4)" }}>No</span>;
+  }
+  return (
+    <Tooltip title={`Sole provider declared for this MNO: ${params.data.soleProviderName}`}>
+      <Chip label="Single Provider" size="small" color="success" sx={{ fontWeight: 600 }} />
+    </Tooltip>
+  );
+}
+
 /** Renders a string-array cell as a comma-joined list, "-" when empty/absent.
  * Defensive about the shape since it's an ag-grid valueFormatter, not a
  * type-checked call site. */
@@ -161,11 +189,19 @@ function MnoSearchPageInner() {
   const [mnc, setMnc] = React.useState("");
   const [region, setRegion] = React.useState<Region | "">("");
   const [onlyWithProviders, setOnlyWithProviders] = React.useState(true);
+  const [exclusiveOnly, setExclusiveOnly] = React.useState(false);
   const [datasetScope, setDatasetScope] = React.useState<DatasetScope>("ir21");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
   const [warmingUp, setWarmingUp] = React.useState(false);
+
+  const rowsWithExclusivity = React.useMemo(() => results.map(withExclusivity), [results]);
+  const exclusiveCount = React.useMemo(() => rowsWithExclusivity.filter((r) => r.isExclusiveProvider).length, [rowsWithExclusivity]);
+  const visibleRows = React.useMemo(
+    () => (exclusiveOnly ? rowsWithExclusivity.filter((r) => r.isExclusiveProvider) : rowsWithExclusivity),
+    [rowsWithExclusivity, exclusiveOnly],
+  );
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — this fires on initial load, on an explicit Search
@@ -184,6 +220,7 @@ function MnoSearchPageInner() {
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
     setOnlyWithProviders(searchParams.get("onlyWithProviders") !== "false");
+    setExclusiveOnly(searchParams.get("exclusiveOnly") === "true");
     const urlDatasetScope = searchParams.get("datasetScope");
     setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
@@ -191,9 +228,10 @@ function MnoSearchPageInner() {
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; datasetScope?: DatasetScope }) => {
+    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; exclusiveOnly?: boolean; datasetScope?: DatasetScope }) => {
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
+      const nextExclusiveOnly = overrides?.exclusiveOnly ?? exclusiveOnly;
       const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
       const params = new URLSearchParams();
       if (q) params.set("q", q);
@@ -205,10 +243,11 @@ function MnoSearchPageInner() {
       // Only written to the URL when off the (true) default, so an
       // ordinary search URL stays clean.
       if (!nextOnlyWithProviders) params.set("onlyWithProviders", "false");
+      if (nextExclusiveOnly) params.set("exclusiveOnly", "true");
       if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, onlyWithProviders, datasetScope, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveOnly, datasetScope, pathname, router],
   );
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
@@ -411,36 +450,55 @@ function MnoSearchPageInner() {
             ))}
           </ToggleButtonGroup>
 
-          <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
-            <FormControlLabel
-              sx={{ ml: 0 }}
-              control={
-                <Switch
-                  checked={onlyWithProviders}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setOnlyWithProviders(next);
-                    pushParams({ onlyWithProviders: next });
-                  }}
-                />
-              }
-              label={<Typography variant="body2">Only with listed providers</Typography>}
-            />
-          </Tooltip>
+          <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.5 }}>
+            <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
+              <FormControlLabel
+                sx={{ ml: 0 }}
+                control={
+                  <Switch
+                    checked={onlyWithProviders}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setOnlyWithProviders(next);
+                      pushParams({ onlyWithProviders: next });
+                    }}
+                  />
+                }
+                label={<Typography variant="body2">Only with listed providers</Typography>}
+              />
+            </Tooltip>
+            <Tooltip title="Filters the table to display only MNOs that are served exclusively by a single wholesale provider across all active IR.21 declared services.">
+              <FormControlLabel
+                sx={{ ml: 0 }}
+                control={
+                  <Switch
+                    checked={exclusiveOnly}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setExclusiveOnly(next);
+                      pushParams({ exclusiveOnly: next });
+                    }}
+                  />
+                }
+                label={<Typography variant="body2">Exclusive / Single Provider Only</Typography>}
+              />
+            </Tooltip>
+          </Box>
         </Box>
 
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {results.length} result(s) — Showing MNO / Customer connectivity footprint strictly as declared in
-            official GSMA IR.21 documents. Click anywhere on a row (or its checkbox) to select 2–5 for side-by-side
-            comparison, or click an MNO / Customer&apos;s name to open its connectivity details.
+            {visibleRows.length} result(s) — {exclusiveCount} exclusively served by a single provider. Showing MNO /
+            Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click anywhere on
+            a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO / Customer&apos;s name
+            to open its connectivity details.
           </Typography>
           <Tooltip title="Select 2 to 5 MNOs / Customers to launch the side-by-side Interconnect Parity Comparison Drawer.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
           </Tooltip>
         </Box>
-        <DataGrid<MnoSummary>
-          rowData={results}
+        <DataGrid<MnoSummaryWithExclusivity>
+          rowData={visibleRows}
           columnDefs={[
             { field: "operatorName", headerName: "MNO / Cust Name", flex: 1.5, cellRenderer: OperatorNameCell },
             { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 150, sortable: false, filter: false },
@@ -469,6 +527,21 @@ function MnoSearchPageInner() {
               headerName: "IPX Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
+            },
+            {
+              colId: "isExclusiveProvider",
+              headerName: "Exclusive / Single Provider (Yes/No)",
+              minWidth: 200,
+              flex: 1,
+              valueGetter: (p) => (p.data?.isExclusiveProvider ? "Yes" : "No"),
+              cellRenderer: ExclusivityCell,
+            },
+            {
+              colId: "soleProviderName",
+              headerName: "Sole Provider Name",
+              minWidth: 160,
+              flex: 1,
+              valueGetter: (p) => p.data?.soleProviderName ?? "-",
             },
             {
               field: "hasPdfDocument",

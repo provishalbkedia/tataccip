@@ -41,17 +41,64 @@ const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Re
 
 // Derived entirely client-side from data the API already returns —
 // sccpProviders/dsxProviders/ipxProviders are already resolved to
-// canonical ProviderMaster names (see MnoService.resolvedProvidersByMno),
-// so their union across all 3 services is exactly "every wholesale
-// provider serving this MNO on any active service". Exclusive means that
-// union has exactly one member.
-type MnoSummaryWithExclusivity = MnoSummary & { isExclusiveProvider: boolean; soleProviderName: string | null };
+// canonical ProviderMaster names, deduplicated per service (see
+// MnoService.resolvedProvidersByMno). Service-wise exclusivity is just
+// "exactly 1 unique provider in that service's own array" — independent
+// per service, so an MNO can be IPX-exclusive while dual-homed on SCCP.
+// "Fully exclusive" (the original, coarser definition) is the union
+// across all 3 services collapsing to exactly one member.
+type MnoSummaryWithExclusivity = MnoSummary & {
+  isExclusiveSccp: boolean;
+  soleSccpProvider: string | null;
+  isExclusiveDsx: boolean;
+  soleDsxProvider: string | null;
+  isExclusiveIpx: boolean;
+  soleIpxProvider: string | null;
+  isAnyServiceExclusive: boolean;
+  isFullyExclusive: boolean;
+  soleMasterProvider: string | null;
+};
+
+const soleOf = (providers: string[]) => (providers.length === 1 ? providers[0] : null);
 
 function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
-  const unique = new Set([...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders]);
-  const isExclusiveProvider = unique.size === 1;
-  return { ...r, isExclusiveProvider, soleProviderName: isExclusiveProvider ? Array.from(unique)[0] : null };
+  const isExclusiveSccp = r.sccpProviders.length === 1;
+  const isExclusiveDsx = r.dsxProviders.length === 1;
+  const isExclusiveIpx = r.ipxProviders.length === 1;
+  const unionUnique = new Set([...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders]);
+  const isFullyExclusive = unionUnique.size === 1;
+  return {
+    ...r,
+    isExclusiveSccp,
+    soleSccpProvider: soleOf(r.sccpProviders),
+    isExclusiveDsx,
+    soleDsxProvider: soleOf(r.dsxProviders),
+    isExclusiveIpx,
+    soleIpxProvider: soleOf(r.ipxProviders),
+    isAnyServiceExclusive: isExclusiveSccp || isExclusiveDsx || isExclusiveIpx,
+    isFullyExclusive,
+    soleMasterProvider: isFullyExclusive ? Array.from(unionUnique)[0] : null,
+  };
 }
+
+type ExclusiveMode = "all" | "full" | "sccp" | "dsx" | "ipx" | "any";
+const EXCLUSIVE_MODES: ExclusiveMode[] = ["all", "full", "sccp", "dsx", "ipx", "any"];
+const EXCLUSIVE_MODE_LABELS: Record<ExclusiveMode, string> = {
+  all: "All MNOs (Default)",
+  full: "Fully Exclusive",
+  sccp: "SCCP Exclusive",
+  dsx: "DSX Exclusive",
+  ipx: "IPX Exclusive",
+  any: "Any Service Exclusive",
+};
+const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusivity) => boolean> = {
+  all: () => true,
+  full: (r) => r.isFullyExclusive,
+  sccp: (r) => r.isExclusiveSccp,
+  dsx: (r) => r.isExclusiveDsx,
+  ipx: (r) => r.isExclusiveIpx,
+  any: (r) => r.isAnyServiceExclusive,
+};
 
 type DatasetScope = "ir21" | "reachlist" | "all";
 const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist", "all"];
@@ -143,18 +190,43 @@ function PdfCell(params: ICellRendererParams<MnoSummary>) {
   );
 }
 
-/** Shows the "Yes"/"No" exclusivity valueGetter as a green "Single
- * Provider" pill (with a tooltip naming the sole provider) when exclusive,
- * or plain "No" otherwise. */
+/** Shows the "Yes"/"No" full-portfolio-exclusivity valueGetter as a green
+ * "Single Provider" pill (with a tooltip naming the sole provider) when
+ * exclusive, or plain "No" otherwise. */
 function ExclusivityCell(params: ICellRendererParams<MnoSummaryWithExclusivity>) {
-  if (params.value !== "Yes" || !params.data?.soleProviderName) {
+  if (params.value !== "Yes" || !params.data?.soleMasterProvider) {
     return <span style={{ color: "rgba(0,0,0,0.4)" }}>No</span>;
   }
   return (
-    <Tooltip title={`Sole provider declared for this MNO: ${params.data.soleProviderName}`}>
+    <Tooltip title={`Sole provider declared for this MNO: ${params.data.soleMasterProvider}`}>
       <Chip label="Single Provider" size="small" color="success" sx={{ fontWeight: 600 }} />
     </Tooltip>
   );
+}
+
+/** Per-service provider column cell: a plain comma-joined list when the
+ * service has more than one declared provider (unchanged from before), or
+ * the sole provider's name plus a small "Exclusive" pill (with a tooltip
+ * naming the service) when that service has exactly one. */
+function serviceProviderCellRenderer(serviceLabel: string, isExclusiveField: keyof MnoSummaryWithExclusivity) {
+  return function Cell(params: ICellRendererParams<MnoSummaryWithExclusivity>) {
+    const providers = (params.value as string[] | undefined) ?? [];
+    if (providers.length === 0) return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
+    if (!params.data?.[isExclusiveField]) return <span>{providers.join(", ")}</span>;
+    return (
+      <Tooltip title={`Exclusively routed via ${providers[0]} for ${serviceLabel}`}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providers[0]}</span>
+          <Chip
+            label="Exclusive"
+            size="small"
+            color="success"
+            sx={{ height: 20, fontSize: 11, fontWeight: 700, flexShrink: 0, "& .MuiChip-label": { px: 0.75 } }}
+          />
+        </Box>
+      </Tooltip>
+    );
+  };
 }
 
 /** Renders a string-array cell as a comma-joined list, "-" when empty/absent.
@@ -189,7 +261,7 @@ function MnoSearchPageInner() {
   const [mnc, setMnc] = React.useState("");
   const [region, setRegion] = React.useState<Region | "">("");
   const [onlyWithProviders, setOnlyWithProviders] = React.useState(true);
-  const [exclusiveOnly, setExclusiveOnly] = React.useState(false);
+  const [exclusiveMode, setExclusiveMode] = React.useState<ExclusiveMode>("all");
   const [datasetScope, setDatasetScope] = React.useState<DatasetScope>("ir21");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
@@ -197,10 +269,18 @@ function MnoSearchPageInner() {
   const [warmingUp, setWarmingUp] = React.useState(false);
 
   const rowsWithExclusivity = React.useMemo(() => results.map(withExclusivity), [results]);
-  const exclusiveCount = React.useMemo(() => rowsWithExclusivity.filter((r) => r.isExclusiveProvider).length, [rowsWithExclusivity]);
+  const exclusivityCounts = React.useMemo(
+    () => ({
+      sccp: rowsWithExclusivity.filter((r) => r.isExclusiveSccp).length,
+      dsx: rowsWithExclusivity.filter((r) => r.isExclusiveDsx).length,
+      ipx: rowsWithExclusivity.filter((r) => r.isExclusiveIpx).length,
+      full: rowsWithExclusivity.filter((r) => r.isFullyExclusive).length,
+    }),
+    [rowsWithExclusivity],
+  );
   const visibleRows = React.useMemo(
-    () => (exclusiveOnly ? rowsWithExclusivity.filter((r) => r.isExclusiveProvider) : rowsWithExclusivity),
-    [rowsWithExclusivity, exclusiveOnly],
+    () => rowsWithExclusivity.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
+    [rowsWithExclusivity, exclusiveMode],
   );
 
   // The URL query string is the single source of truth for "what did we
@@ -220,7 +300,8 @@ function MnoSearchPageInner() {
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
     setOnlyWithProviders(searchParams.get("onlyWithProviders") !== "false");
-    setExclusiveOnly(searchParams.get("exclusiveOnly") === "true");
+    const urlExclusiveMode = searchParams.get("exclusiveMode");
+    setExclusiveMode(urlExclusiveMode && EXCLUSIVE_MODES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
     setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
@@ -228,10 +309,10 @@ function MnoSearchPageInner() {
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; exclusiveOnly?: boolean; datasetScope?: DatasetScope }) => {
+    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; exclusiveMode?: ExclusiveMode; datasetScope?: DatasetScope }) => {
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
-      const nextExclusiveOnly = overrides?.exclusiveOnly ?? exclusiveOnly;
+      const nextExclusiveMode = overrides?.exclusiveMode ?? exclusiveMode;
       const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
       const params = new URLSearchParams();
       if (q) params.set("q", q);
@@ -243,11 +324,11 @@ function MnoSearchPageInner() {
       // Only written to the URL when off the (true) default, so an
       // ordinary search URL stays clean.
       if (!nextOnlyWithProviders) params.set("onlyWithProviders", "false");
-      if (nextExclusiveOnly) params.set("exclusiveOnly", "true");
+      if (nextExclusiveMode !== "all") params.set("exclusiveMode", nextExclusiveMode);
       if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveOnly, datasetScope, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, pathname, router],
   );
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
@@ -467,28 +548,33 @@ function MnoSearchPageInner() {
                 label={<Typography variant="body2">Only with listed providers</Typography>}
               />
             </Tooltip>
-            <Tooltip title="Filters the table to display only MNOs that are served exclusively by a single wholesale provider across all active IR.21 declared services.">
-              <FormControlLabel
-                sx={{ ml: 0 }}
-                control={
-                  <Switch
-                    checked={exclusiveOnly}
-                    onChange={(e) => {
-                      const next = e.target.checked;
-                      setExclusiveOnly(next);
-                      pushParams({ exclusiveOnly: next });
-                    }}
-                  />
-                }
-                label={<Typography variant="body2">Exclusive / Single Provider Only</Typography>}
-              />
+            <Tooltip title="Filters the table by wholesale-provider exclusivity — either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio.">
+              <TextField
+                select
+                size="small"
+                label="Exclusivity"
+                value={exclusiveMode}
+                onChange={(e) => {
+                  const next = e.target.value as ExclusiveMode;
+                  setExclusiveMode(next);
+                  pushParams({ exclusiveMode: next });
+                }}
+                sx={{ minWidth: 200 }}
+              >
+                {EXCLUSIVE_MODES.map((m) => (
+                  <MenuItem key={m} value={m}>
+                    {EXCLUSIVE_MODE_LABELS[m]}
+                  </MenuItem>
+                ))}
+              </TextField>
             </Tooltip>
           </Box>
         </Box>
 
         <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {visibleRows.length} result(s) — {exclusiveCount} exclusively served by a single provider. Showing MNO /
+            {visibleRows.length} result(s) — {exclusivityCounts.sccp} SCCP exclusive, {exclusivityCounts.dsx} DSX
+            exclusive, {exclusivityCounts.ipx} IPX exclusive, {exclusivityCounts.full} fully exclusive. Showing MNO /
             Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click anywhere on
             a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO / Customer&apos;s name
             to open its connectivity details.
@@ -515,33 +601,78 @@ function MnoSearchPageInner() {
               headerName: "SCCP Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
+              cellRenderer: serviceProviderCellRenderer("SCCP", "isExclusiveSccp"),
             },
             {
               field: "dsxProviders",
               headerName: "DSX / LTE Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
+              cellRenderer: serviceProviderCellRenderer("DSX", "isExclusiveDsx"),
             },
             {
               field: "ipxProviders",
               headerName: "IPX Provider (IR.21)",
               flex: 1.4,
               valueFormatter: joinOrDash,
+              cellRenderer: serviceProviderCellRenderer("IPX", "isExclusiveIpx"),
             },
             {
-              colId: "isExclusiveProvider",
-              headerName: "Exclusive / Single Provider (Yes/No)",
-              minWidth: 200,
+              colId: "isFullyExclusive",
+              headerName: "Fully Exclusive All Services (Yes/No)",
+              minWidth: 220,
               flex: 1,
-              valueGetter: (p) => (p.data?.isExclusiveProvider ? "Yes" : "No"),
+              valueGetter: (p) => (p.data?.isFullyExclusive ? "Yes" : "No"),
               cellRenderer: ExclusivityCell,
             },
             {
-              colId: "soleProviderName",
-              headerName: "Sole Provider Name",
-              minWidth: 160,
+              colId: "soleMasterProvider",
+              headerName: "Sole Master Provider",
+              minWidth: 170,
               flex: 1,
-              valueGetter: (p) => p.data?.soleProviderName ?? "-",
+              valueGetter: (p) => p.data?.soleMasterProvider ?? "-",
+            },
+            {
+              colId: "isExclusiveSccp",
+              headerName: "SCCP Exclusive (Yes/No)",
+              minWidth: 170,
+              flex: 0.9,
+              valueGetter: (p) => (p.data?.isExclusiveSccp ? "Yes" : "No"),
+            },
+            {
+              colId: "soleSccpProvider",
+              headerName: "SCCP Sole Provider",
+              minWidth: 160,
+              flex: 0.9,
+              valueGetter: (p) => p.data?.soleSccpProvider ?? "-",
+            },
+            {
+              colId: "isExclusiveDsx",
+              headerName: "DSX Exclusive (Yes/No)",
+              minWidth: 170,
+              flex: 0.9,
+              valueGetter: (p) => (p.data?.isExclusiveDsx ? "Yes" : "No"),
+            },
+            {
+              colId: "soleDsxProvider",
+              headerName: "DSX Sole Provider",
+              minWidth: 160,
+              flex: 0.9,
+              valueGetter: (p) => p.data?.soleDsxProvider ?? "-",
+            },
+            {
+              colId: "isExclusiveIpx",
+              headerName: "IPX Exclusive (Yes/No)",
+              minWidth: 170,
+              flex: 0.9,
+              valueGetter: (p) => (p.data?.isExclusiveIpx ? "Yes" : "No"),
+            },
+            {
+              colId: "soleIpxProvider",
+              headerName: "IPX Sole Provider",
+              minWidth: 160,
+              flex: 0.9,
+              valueGetter: (p) => p.data?.soleIpxProvider ?? "-",
             },
             {
               field: "hasPdfDocument",

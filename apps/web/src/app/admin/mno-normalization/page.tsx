@@ -108,6 +108,7 @@ export default function MnoNormalizationPage() {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [confirmBulkCreate, setConfirmBulkCreate] = React.useState(false);
   const [mapToMno, setMapToMno] = React.useState<MnoSuggestion | null>(null);
   const [mapToMnoQuery, setMapToMnoQuery] = React.useState("");
   const [mapToMnoOptions, setMapToMnoOptions] = React.useState<MnoSuggestion[]>([]);
@@ -200,6 +201,10 @@ export default function MnoNormalizationPage() {
   const allSelected = rows.length > 0 && selected.size === rows.length;
   const someSelected = selected.size > 0 && !allSelected;
   const suggestionCount = selectedRows.filter((r) => r.canonicalMnoName).length;
+  // How many *distinct* new MNOs a bulk Create would actually mint -- the
+  // same real operator declared by several providers is several selected
+  // rows but collapses to one MNO (same grouping the backend applies).
+  const selectedGroupCount = React.useMemo(() => new Set(selectedRows.map(groupKey)).size, [selectedRows]);
 
   const toggleRow = (id: string) => {
     setSelected((prev) => {
@@ -225,17 +230,22 @@ export default function MnoNormalizationPage() {
     MAP_TO_CANONICAL: "mapped",
     IGNORE: "marked reviewed",
     DELETE: "dismissed",
+    CREATE_NEW_MNO: "created",
   };
 
   const runBulkAction = async (action: BulkResolveAction, targetMnoId?: number, targetLabel?: string) => {
     const auditIds = [...selected];
     setBulkBusy(true);
     setConfirmDelete(false);
+    setConfirmBulkCreate(false);
     try {
       const result = await api.post<BulkResolveResult>("/mno-normalization/bulk-resolve", { action, auditIds, targetMnoId });
-      const target = targetLabel ? ` to ${targetLabel}` : "";
       const skippedNote = result.skippedCount > 0 ? ` (${result.skippedCount} skipped -- not applicable to this action)` : "";
-      setToast(`Successfully ${ACTION_LABEL[action]} ${result.updatedCount} alias(es)${target}${skippedNote}.`);
+      const message =
+        action === "CREATE_NEW_MNO"
+          ? `Successfully created ${result.mnosCreated ?? 0} new MNO(s) from ${result.updatedCount} alias(es).${skippedNote}`
+          : `Successfully ${ACTION_LABEL[action]} ${result.updatedCount} alias(es)${targetLabel ? ` to ${targetLabel}` : ""}${skippedNote}.`;
+      setToast(message);
       clearSelection();
       load();
     } catch (e) {
@@ -478,6 +488,18 @@ export default function MnoNormalizationPage() {
                   </Button>
                 </Box>
 
+                <Tooltip title="Creates one new 'Reach List Only' MNO per distinct raw operator name among the selected rows -- for operators that will never have a GSMA IR.21 filing (SMS aggregators, SS7 hubs, MVNOs).">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddCircleOutlineIcon />}
+                    onClick={() => setConfirmBulkCreate(true)}
+                    sx={{ borderColor: "#fff", color: "#fff", whiteSpace: "nowrap" }}
+                  >
+                    Create New MNOs ({selectedGroupCount})
+                  </Button>
+                </Tooltip>
+
                 <Button
                   size="small"
                   startIcon={<BlockIcon />}
@@ -523,6 +545,29 @@ export default function MnoNormalizationPage() {
             <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
             <Button color="error" variant="contained" onClick={() => runBulkAction("DELETE")}>
               Dismiss {selected.size}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={confirmBulkCreate} onClose={() => setConfirmBulkCreate(false)}>
+          <DialogTitle>Create {selectedGroupCount} new MNO{selectedGroupCount === 1 ? "" : "s"}?</DialogTitle>
+          <DialogContent>
+            <DialogContentText component="div">
+              Creates <strong>{selectedGroupCount}</strong> new MNO{selectedGroupCount === 1 ? "" : "s"} from the{" "}
+              {selected.size} selected row{selected.size === 1 ? "" : "s"} — one per distinct raw operator name{" "}
+              {selectedGroupCount !== selected.size && "(rows declared by more than one provider collapse onto the same new MNO)"}
+              , attaching each row&apos;s own provider/service declarations.
+              <br />
+              <br />
+              Each will appear under the <strong>Reach List Only</strong> dataset scope on MNO / Cust Search — never
+              mixed into IR.21-verified coverage. Use this only when you&apos;ve confirmed these operators genuinely
+              have no GSMA IR.21 filing to map to instead.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmBulkCreate(false)}>Cancel</Button>
+            <Button variant="contained" onClick={() => runBulkAction("CREATE_NEW_MNO")}>
+              Create {selectedGroupCount} MNO{selectedGroupCount === 1 ? "" : "s"}
             </Button>
           </DialogActions>
         </Dialog>

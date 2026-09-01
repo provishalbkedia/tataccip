@@ -685,7 +685,7 @@ export interface ResolveMnoNormalizationResult {
   recordsCreated: number;
 }
 
-export type BulkResolveAction = "ACCEPT_SUGGESTIONS" | "MAP_TO_CANONICAL" | "IGNORE" | "DELETE";
+export type BulkResolveAction = "ACCEPT_SUGGESTIONS" | "MAP_TO_CANONICAL" | "IGNORE" | "DELETE" | "CREATE_NEW_MNO";
 
 export interface BulkResolveRequest {
   action: BulkResolveAction;
@@ -703,8 +703,15 @@ export interface BulkResolveResult {
   // with no existing suggestion rather than guessing one.
   skippedCount: number;
   // ProviderReachlist rows created/refreshed across all updated rows
-  // (ACCEPT_SUGGESTIONS / MAP_TO_CANONICAL only -- 0 for IGNORE/DELETE).
+  // (ACCEPT_SUGGESTIONS / MAP_TO_CANONICAL / CREATE_NEW_MNO only -- 0 for
+  // IGNORE/DELETE).
   recordsCreated: number;
+  // CREATE_NEW_MNO only: how many distinct new MnoMaster rows were
+  // created -- selected rows are grouped by (rawOperatorName,
+  // rawTadigCode, country) first, since the same real operator declared
+  // by several providers is several audit rows but should become one MNO,
+  // not one per provider. Undefined for every other action.
+  mnosCreated?: number;
 }
 
 export interface CreateMnoFromAuditRequest {

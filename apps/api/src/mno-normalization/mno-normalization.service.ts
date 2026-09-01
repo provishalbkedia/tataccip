@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { ServiceName } from "@prisma/client";
+import { Prisma, ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizeCountryToIso3 } from "../upload/country-normalize";
 import {
@@ -11,6 +11,13 @@ import {
 } from "@ccip/shared-types";
 
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
+
+// The interactive-transaction callback's own client -- every query inside
+// createOneMnoFromGroup/resolveOrSynthesizeTadig/bulkResolve's action
+// branches must run through this (not `this.prisma` directly) so they
+// share one transaction instead of each opening/committing its own.
+type PrismaTx = Prisma.TransactionClient;
+type MnoNormalizationAuditRecord = Prisma.MnoNormalizationAuditGetPayload<Record<string, never>>;
 
 /** Admin resolution for MnoNormalizationAudit — the queue Reach List
  * ingestion writes to instead of auto-creating a new MnoMaster row (see
@@ -112,16 +119,32 @@ export class MnoNormalizationService {
   async createFromAudits(auditIds: string[], updatedBy: string): Promise<CreateMnoFromAuditResult> {
     if (auditIds.length === 0) throw new BadRequestException("At least one audit id is required");
 
-    const audits = await this.prisma.mnoNormalizationAudit.findMany({ where: { id: { in: auditIds } } });
-    if (audits.length !== auditIds.length) throw new NotFoundException("One or more normalization audit entries not found");
-    if (audits.some((a) => a.matchStatus === "MANUALLY_OVERRIDDEN")) {
-      throw new BadRequestException("One or more of these entries has already been resolved");
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const audits = await tx.mnoNormalizationAudit.findMany({ where: { id: { in: auditIds } } });
+      if (audits.length !== auditIds.length) throw new NotFoundException("One or more normalization audit entries not found");
+      if (audits.some((a) => a.matchStatus === "MANUALLY_OVERRIDDEN")) {
+        throw new BadRequestException("One or more of these entries has already been resolved");
+      }
+      return this.createOneMnoFromGroup(tx, audits, updatedBy);
+    });
+  }
 
+  /** Shared by createFromAudits() (one group, its own transaction) and
+   * bulkResolve()'s CREATE_NEW_MNO action (many groups, one shared
+   * transaction) -- creates a single new MnoMaster from a group of audit
+   * rows that all refer to the same real-world operator (same raw name +
+   * TADIG + country) and attaches every one of their accumulated
+   * (provider, service) declarations to it. See createFromAudits' own
+   * docstring above for the TADIG resolution/synthesis rationale. */
+  private async createOneMnoFromGroup(
+    tx: PrismaTx,
+    audits: MnoNormalizationAuditRecord[],
+    updatedBy: string,
+  ): Promise<CreateMnoFromAuditResult> {
     const primary = audits[0];
-    const tadigCode = await this.resolveOrSynthesizeTadig(primary.rawTadigCode, primary.country);
+    const tadigCode = await this.resolveOrSynthesizeTadig(tx, primary.rawTadigCode, primary.country);
 
-    const mno = await this.prisma.mnoMaster.create({
+    const mno = await tx.mnoMaster.create({
       data: {
         operatorName: primary.rawOperatorName,
         country: primary.country || "UNKNOWN",
@@ -133,7 +156,7 @@ export class MnoNormalizationService {
       },
     });
 
-    const serviceRows = await this.prisma.service.findMany();
+    const serviceRows = await tx.service.findMany();
     const serviceIdByName = new Map(serviceRows.map((s) => [s.serviceName, s.id]));
 
     let recordsCreated = 0;
@@ -142,14 +165,14 @@ export class MnoNormalizationService {
       for (const serviceNameRaw of audit.affectedServices) {
         const serviceId = serviceIdByName.get(serviceNameRaw as ServiceName);
         if (!serviceId) continue;
-        await this.prisma.providerReachlist.upsert({
+        await tx.providerReachlist.upsert({
           where: { mnoId_providerId_serviceId: { mnoId: mno.id, providerId: audit.providerId, serviceId } },
           update: { sourceFile, effectiveDate: new Date() },
           create: { mnoId: mno.id, providerId: audit.providerId, serviceId, sourceFile, effectiveDate: new Date() },
         });
         recordsCreated++;
       }
-      await this.prisma.mnoNormalizationAudit.update({
+      await tx.mnoNormalizationAudit.update({
         where: { id: audit.id },
         data: { matchStatus: "MANUALLY_OVERRIDDEN", canonicalMnoId: mno.id, updatedBy },
       });
@@ -164,14 +187,14 @@ export class MnoNormalizationService {
     };
   }
 
-  /** One transaction, four possible bulk actions -- powers the admin
+  /** One transaction, five possible bulk actions -- powers the admin
    * table's multi-select action bar so hundreds of pending rows don't
    * have to be resolved one at a time. Silently skips (counted in
    * skippedCount, never an error) whatever isn't applicable to a given
    * row instead of failing the whole batch over a few stragglers: an id
    * that no longer exists (resolved by someone else meanwhile), an
    * ACCEPT_SUGGESTIONS row with no existing suggestion, or a
-   * MAP_TO_CANONICAL/ACCEPT_SUGGESTIONS row that's already
+   * MAP_TO_CANONICAL/ACCEPT_SUGGESTIONS/CREATE_NEW_MNO row that's already
    * MANUALLY_OVERRIDDEN. DELETE is the one exception -- it removes
    * whatever's selected unconditionally, matching "dismiss this" being a
    * deliberate per-row choice regardless of current status. */
@@ -220,7 +243,32 @@ export class MnoNormalizationService {
           updatedCount++;
         };
 
-        if (action === "MAP_TO_CANONICAL") {
+        if (action === "CREATE_NEW_MNO") {
+          // Selected rows are grouped by real-world operator identity
+          // first (same key MnoNormalizationAudit is unique on) -- the
+          // same operator declared by 3 different providers is 3 audit
+          // rows but must become one new MNO, not three. See
+          // createOneMnoFromGroup.
+          const groups = new Map<string, MnoNormalizationAuditRecord[]>();
+          for (const audit of audits) {
+            if (audit.matchStatus === "MANUALLY_OVERRIDDEN") {
+              skippedCount++;
+              continue;
+            }
+            const key = `${audit.rawOperatorName}|${audit.rawTadigCode}|${audit.country}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(audit);
+          }
+          let mnosCreated = 0;
+          for (const groupAudits of groups.values()) {
+            const result = await this.createOneMnoFromGroup(tx, groupAudits, updatedBy);
+            updatedCount += result.auditIdsResolved.length;
+            recordsCreated += result.recordsCreated;
+            mnosCreated++;
+          }
+          skippedCount += auditIds.length - audits.length;
+          return { success: true as const, updatedCount, skippedCount, recordsCreated, mnosCreated };
+        } else if (action === "MAP_TO_CANONICAL") {
           const mno = await tx.mnoMaster.findUnique({ where: { id: targetMnoId! } });
           if (!mno) throw new NotFoundException(`MnoMaster id ${targetMnoId} not found`);
           for (const audit of audits) {
@@ -256,10 +304,10 @@ export class MnoNormalizationService {
     );
   }
 
-  private async resolveOrSynthesizeTadig(rawTadigCode: string, country: string): Promise<string> {
+  private async resolveOrSynthesizeTadig(tx: PrismaTx, rawTadigCode: string, country: string): Promise<string> {
     const candidate = rawTadigCode.trim().toUpperCase();
     if (TADIG_REGEX.test(candidate)) {
-      const clash = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: candidate } });
+      const clash = await tx.mnoMaster.findUnique({ where: { tadigCode: candidate } });
       if (!clash) return candidate;
       // Fall through to synthesis on the rare chance another row grabbed
       // this exact code between the audit being queued and this call.
@@ -274,7 +322,7 @@ export class MnoNormalizationService {
     const iso3 = iso3Raw && /^[A-Z]{3}$/.test(iso3Raw) ? iso3Raw : "ZZZ";
     for (let suffix = 90; suffix <= 99; suffix++) {
       const synthetic = `${iso3}${suffix}`;
-      const clash = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: synthetic } });
+      const clash = await tx.mnoMaster.findUnique({ where: { tadigCode: synthetic } });
       if (!clash) return synthetic;
     }
     throw new BadRequestException(`Could not mint a unique placeholder TADIG for country "${country}" — all ${iso3}90-${iso3}99 are taken`);

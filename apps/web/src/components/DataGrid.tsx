@@ -154,7 +154,16 @@ export default function DataGrid<T>({
   const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("sm"));
 
   const defaultColDef = React.useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true, flex: 1, minWidth: 110 }),
+    // suppressMovable: dragging a header cell to reorder columns is a
+    // separate AG Grid gesture from resizing, sharing the same header cell
+    // -- easy to trigger by accident when a resize attempt starts a few
+    // pixels short of the actual (8px, easy to miss) resize handle at the
+    // column boundary. Column order isn't persisted or meaningful here, so
+    // disabling it outright removes that accidental-reorder trap rather
+    // than leaving users to land on it while trying to resize (see the
+    // widened .ag-header-cell-resize hit target below for the other half
+    // of that fix).
+    () => ({ sortable: true, filter: true, resizable: true, suppressMovable: true, flex: 1, minWidth: 110 }),
     [],
   );
 
@@ -296,6 +305,19 @@ export default function DataGrid<T>({
             transition: "background-color 180ms ease-in-out, box-shadow 180ms ease-in-out",
           },
           "& .ag-row": { transition: "background-color 180ms ease-in-out" },
+          // AG Grid's own resize handle is a bare 8px strip exactly on the
+          // column boundary -- an easy miss, especially at a glance. Widens
+          // just the invisible grab target (not the visible column
+          // separator line) so a slightly-off drag still starts a resize
+          // instead of falling through to a header click/reorder attempt.
+          // AG Grid's default resize handle already sits flush against the
+          // column's own right edge (position: absolute; right: 0) --
+          // widening it just extends further left, staying entirely inside
+          // this column rather than reaching into the next one, where it'd
+          // lose the pointer-event fight to that sibling's own stacking
+          // context no matter how high a z-index it's given here.
+          "& .ag-header-cell-resize": { width: "16px !important" },
+          "& .ag-header-cell-resize:hover": { backgroundColor: "rgba(11, 111, 191, 0.25)" },
         }}
       >
         <div

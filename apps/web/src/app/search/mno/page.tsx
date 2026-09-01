@@ -148,17 +148,38 @@ function RegionCell(params: ICellRendererParams<MnoSummary>) {
   const region = params.value as Region | null | undefined;
   if (!region) return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
   const palette = REGION_CHIP_COLOR[region] ?? REGION_CHIP_COLOR[Region.NON_TERRESTRIAL];
-  return <Chip label={region} size="small" sx={{ bgcolor: palette.bgcolor, color: palette.color, fontWeight: 600 }} />;
+  return (
+    <Chip
+      label={region}
+      size="small"
+      sx={{
+        bgcolor: palette.bgcolor,
+        color: palette.color,
+        fontWeight: 600,
+        maxWidth: "100%",
+        "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" },
+      }}
+    />
+  );
 }
 
 /** Distinguishes a row with a real IR.21 declaration from a legacy row
- * known only via a Reach List upload (see hasIr21Declaration). */
+ * known only via a Reach List upload (see hasIr21Declaration). maxWidth
+ * "100%" plus the label's own ellipsis lets the chip itself shrink and
+ * truncate along with the column instead of overflowing the cell when a
+ * user drags the column narrower than "Reach List Only" needs. */
 function SourceCell(params: ICellRendererParams<MnoSummary>) {
   const hasIr21 = params.value as boolean;
   return hasIr21 ? (
-    <Chip label="IR.21" size="small" color="primary" variant="outlined" />
+    <Chip label="IR.21" size="small" color="primary" variant="outlined" sx={{ maxWidth: "100%" }} />
   ) : (
-    <Chip label="Reach List Only" size="small" color="warning" variant="outlined" />
+    <Chip
+      label="Reach List Only"
+      size="small"
+      color="warning"
+      variant="outlined"
+      sx={{ maxWidth: "100%", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
+    />
   );
 }
 
@@ -767,8 +788,8 @@ function MnoSearchPageInner() {
           rowData={visibleRows}
           columnDefs={[
             { field: "operatorName", headerName: "MNO / Cust Name", flex: 1.5, cellRenderer: OperatorNameCell },
-            { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 150, sortable: false, filter: false },
-            { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 140 },
+            { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 90, sortable: false, filter: false },
+            { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 90 },
             {
               field: "country",
               headerName: "Country",
@@ -800,7 +821,7 @@ function MnoSearchPageInner() {
             {
               colId: "isFullyExclusive",
               headerName: "Fully Exclusive All Services (Yes/No)",
-              minWidth: 220,
+              minWidth: 160,
               flex: 1,
               valueGetter: (p) => (p.data?.isFullyExclusive ? "Yes" : "No"),
               cellRenderer: ExclusivityCell,
@@ -808,49 +829,49 @@ function MnoSearchPageInner() {
             {
               colId: "soleMasterProvider",
               headerName: "Sole Master Provider",
-              minWidth: 170,
+              minWidth: 100,
               flex: 1,
               valueGetter: (p) => p.data?.soleMasterProvider ?? "-",
             },
             {
               colId: "isExclusiveSccp",
               headerName: "SCCP Exclusive (Yes/No)",
-              minWidth: 170,
+              minWidth: 130,
               flex: 0.9,
               valueGetter: (p) => (p.data?.isExclusiveSccp ? "Yes" : "No"),
             },
             {
               colId: "soleSccpProvider",
               headerName: "SCCP Sole Provider",
-              minWidth: 160,
+              minWidth: 100,
               flex: 0.9,
               valueGetter: (p) => p.data?.soleSccpProvider ?? "-",
             },
             {
               colId: "isExclusiveDsx",
               headerName: "DSX Exclusive (Yes/No)",
-              minWidth: 170,
+              minWidth: 130,
               flex: 0.9,
               valueGetter: (p) => (p.data?.isExclusiveDsx ? "Yes" : "No"),
             },
             {
               colId: "soleDsxProvider",
               headerName: "DSX Sole Provider",
-              minWidth: 160,
+              minWidth: 100,
               flex: 0.9,
               valueGetter: (p) => p.data?.soleDsxProvider ?? "-",
             },
             {
               colId: "isExclusiveIpx",
               headerName: "IPX Exclusive (Yes/No)",
-              minWidth: 170,
+              minWidth: 130,
               flex: 0.9,
               valueGetter: (p) => (p.data?.isExclusiveIpx ? "Yes" : "No"),
             },
             {
               colId: "soleIpxProvider",
               headerName: "IPX Sole Provider",
-              minWidth: 160,
+              minWidth: 100,
               flex: 0.9,
               valueGetter: (p) => p.data?.soleIpxProvider ?? "-",
             },

@@ -5,12 +5,14 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ICellRendererParams } from "ag-grid-community";
 import {
   Autocomplete,
+  Badge,
   Box,
   Button,
   Chip,
   FormControlLabel,
   Grid,
   IconButton,
+  InputAdornment,
   MenuItem,
   Paper,
   Switch,
@@ -24,6 +26,7 @@ import {
 import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import ClearIcon from "@mui/icons-material/Clear";
@@ -275,6 +278,19 @@ function serviceProviderCellRenderer(serviceLabel: string, isExclusiveField: key
   };
 }
 
+/** Shared end-adornment for a plain controlled TextField (TADIG/MCC/MNC) --
+ * only rendered once there's something to clear. */
+function clearAdornment(value: string, onClear: () => void) {
+  if (!value) return undefined;
+  return (
+    <InputAdornment position="end">
+      <IconButton size="small" onClick={onClear} title="Clear" edge="end">
+        <ClearIcon fontSize="small" />
+      </IconButton>
+    </InputAdornment>
+  );
+}
+
 /** Renders a string-array cell as a comma-joined list, "-" when empty/absent.
  * Defensive about the shape since it's an ag-grid valueFormatter, not a
  * type-checked call site. */
@@ -379,6 +395,25 @@ function MnoSearchPageInner() {
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
 
+  // Baseline defaults every field/toggle above is initialized to -- used
+  // both to detect whether anything is currently non-default (for the
+  // Reset button's active-state indicator) and, on reset, to restore.
+  const hasActiveFilters =
+    !!q || !!tadig || !!country || !!mcc || !!mnc || !!region || !onlyWithProviders || exclusiveMode !== "all" || datasetScope !== "ir21";
+
+  const resetAllFilters = React.useCallback(() => {
+    setQ("");
+    setTadig("");
+    setCountry("");
+    setMcc("");
+    setMnc("");
+    setRegion("");
+    setOnlyWithProviders(true);
+    setExclusiveMode("all");
+    setDatasetScope("ir21");
+    router.push(pathname, { scroll: false });
+  }, [pathname, router]);
+
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<MnoSuggestion[]>(`/mno/suggestions?q=${encodeURIComponent(query)}`),
     [],
@@ -425,11 +460,13 @@ function MnoSearchPageInner() {
                 value={tadig}
                 onChange={(e) => setTadig(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                InputProps={{ endAdornment: clearAdornment(tadig, () => setTadig("")) }}
               />
             </Grid>
             <Grid item xs={6} sm={1.5}>
               <Autocomplete<CountryOption>
                 fullWidth
+                disableClearable={false}
                 options={COUNTRY_OPTIONS}
                 value={COUNTRY_OPTIONS.find((c) => c.code === country) ?? null}
                 onChange={(_, v) => setCountry(v ? v.code : "")}
@@ -451,21 +488,34 @@ function MnoSearchPageInner() {
               />
             </Grid>
             <Grid item xs={6} sm={2}>
-              <TextField
-                select
-                fullWidth
-                label="Region"
-                value={region}
-                onChange={(e) => setRegion(e.target.value as Region | "")}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
-              >
-                <MenuItem value="">All Regions</MenuItem>
-                {REGION_OPTIONS.map((r) => (
-                  <MenuItem key={r} value={r}>
-                    {r}
-                  </MenuItem>
-                ))}
-              </TextField>
+              <Box sx={{ position: "relative" }}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Region"
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value as Region | "")}
+                  onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                  sx={region ? { "& .MuiSelect-select": { pr: "56px !important" } } : undefined}
+                >
+                  <MenuItem value="">All Regions</MenuItem>
+                  {REGION_OPTIONS.map((r) => (
+                    <MenuItem key={r} value={r}>
+                      {r}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                {region && (
+                  <IconButton
+                    size="small"
+                    title="Clear"
+                    onClick={() => setRegion("")}
+                    sx={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)" }}
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Box>
             </Grid>
             <Grid item xs={6} sm={1}>
               <TextField
@@ -474,6 +524,7 @@ function MnoSearchPageInner() {
                 value={mcc}
                 onChange={(e) => setMcc(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                InputProps={{ endAdornment: clearAdornment(mcc, () => setMcc("")) }}
               />
             </Grid>
             <Grid item xs={6} sm={1}>
@@ -483,9 +534,10 @@ function MnoSearchPageInner() {
                 value={mnc}
                 onChange={(e) => setMnc(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                InputProps={{ endAdornment: clearAdornment(mnc, () => setMnc("")) }}
               />
             </Grid>
-            <Grid item xs={9} sm={1.5}>
+            <Grid item xs={6} sm={1}>
               <Button fullWidth variant="contained" startIcon={<SearchIcon />} onClick={runSearch}>
                 Search
               </Button>
@@ -502,6 +554,27 @@ function MnoSearchPageInner() {
                     sx={warmingUp ? { animation: "spin 1s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } } : undefined}
                   />
                 </IconButton>
+              </Tooltip>
+            </Grid>
+            <Grid item xs={3} sm={0.5}>
+              <Tooltip title={hasActiveFilters ? "Reset all active filters" : "No active filters to reset"}>
+                <span>
+                  <Badge color="warning" variant="dot" invisible={!hasActiveFilters}>
+                    <IconButton
+                      onClick={resetAllFilters}
+                      disabled={!hasActiveFilters}
+                      color={hasActiveFilters ? "warning" : "default"}
+                      sx={{
+                        minWidth: 44,
+                        minHeight: 44,
+                        border: "1px solid",
+                        borderColor: hasActiveFilters ? "warning.main" : "divider",
+                      }}
+                    >
+                      <RestartAltIcon fontSize="small" />
+                    </IconButton>
+                  </Badge>
+                </span>
               </Tooltip>
             </Grid>
           </Grid>
@@ -595,24 +668,39 @@ function MnoSearchPageInner() {
               />
             </Tooltip>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <TextField
-                select
-                size="small"
-                label="Exclusivity"
-                value={exclusiveMode}
-                onChange={(e) => {
-                  const next = e.target.value as ExclusiveMode;
-                  setExclusiveMode(next);
-                  pushParams({ exclusiveMode: next });
-                }}
-                sx={{ minWidth: 200 }}
-              >
-                {EXCLUSIVE_MODES.map((m) => (
-                  <MenuItem key={m} value={m}>
-                    {EXCLUSIVE_MODE_LABELS[m]}
-                  </MenuItem>
-                ))}
-              </TextField>
+              <Box sx={{ position: "relative" }}>
+                <TextField
+                  select
+                  size="small"
+                  label="Exclusivity"
+                  value={exclusiveMode}
+                  onChange={(e) => {
+                    const next = e.target.value as ExclusiveMode;
+                    setExclusiveMode(next);
+                    pushParams({ exclusiveMode: next });
+                  }}
+                  sx={{ minWidth: 200, ...(exclusiveMode !== "all" && { "& .MuiSelect-select": { pr: "56px !important" } }) }}
+                >
+                  {EXCLUSIVE_MODES.map((m) => (
+                    <MenuItem key={m} value={m}>
+                      {EXCLUSIVE_MODE_LABELS[m]}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                {exclusiveMode !== "all" && (
+                  <IconButton
+                    size="small"
+                    title="Clear"
+                    onClick={() => {
+                      setExclusiveMode("all");
+                      pushParams({ exclusiveMode: "all" });
+                    }}
+                    sx={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)" }}
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Box>
               <Tooltip title="Filters the table by wholesale-provider exclusivity — either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio.">
                 <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
               </Tooltip>

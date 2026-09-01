@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Autocomplete, TextField } from "@mui/material";
+import { Autocomplete, IconButton, InputAdornment, TextField } from "@mui/material";
+import ClearIcon from "@mui/icons-material/Clear";
 
 const DEBOUNCE_MS = 250;
 
@@ -80,6 +81,22 @@ export default function SuggestionAutocomplete<T>({
           label={label}
           onKeyDown={(e) => {
             if (e.key === "Enter" && onEnter) onEnter();
+          }}
+          InputProps={{
+            ...params.InputProps,
+            // freeSolo mode has no controlled `value` for MUI's own
+            // built-in clear indicator to key off, so it never appears no
+            // matter how much text is typed -- this end adornment is a
+            // manual equivalent, shown purely off the current inputValue.
+            endAdornment: value ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => onValueChange("")} title="Clear" edge="end">
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : (
+              params.InputProps.endAdornment
+            ),
           }}
         />
       )}

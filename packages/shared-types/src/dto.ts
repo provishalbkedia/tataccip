@@ -348,6 +348,22 @@ export interface UploadResult {
   // MnoNormalizationAudit for admin review instead of auto-creating a new
   // MnoMaster row. See GET /mno-normalization/pending.
   pendingNormalizationCount?: number;
+  // Every row from this upload that could not be ingested at all -- across
+  // both accepted formats and every rejection reason (missing/invalid
+  // TADIG, no valid services, unresolved operator, etc). A superset of
+  // `unresolvedMnos` with per-row detail (row number, raw TADIG, an
+  // explicit reason) rather than just an aggregated name+country list, so
+  // nothing that fails ingestion is only ever mentioned in a one-time
+  // response message.
+  rejectedRows?: UnresolvedReachRow[];
+}
+
+export interface UnresolvedReachRow {
+  rowNumber: number;
+  rawOperatorName: string;
+  rawTadig: string;
+  country: string;
+  rejectionReason: string;
 }
 
 // Multi-Carrier Reach List ZIP Batch Ingestion — a distinct upload path

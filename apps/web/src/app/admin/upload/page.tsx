@@ -288,6 +288,45 @@ function UploadCard({
                 ))}
               </List>
             )}
+            {result.rejectedRows && result.rejectedRows.length > 0 && (
+              <Box sx={{ mt: 1 }}>
+                <Alert
+                  severity="warning"
+                  action={
+                    <Button size="small" startIcon={<DownloadIcon />} onClick={() => downloadRejectedRowsCsv(result.rejectedRows!)}>
+                      Download CSV
+                    </Button>
+                  }
+                >
+                  {result.rejectedRows.length} row(s) from this file could not be ingested — itemized below. Rows
+                  queued for admin review are also visible under Admin Menu / Unresolved Reach List Aliases.
+                </Alert>
+                <TableContainer sx={{ maxHeight: 260, mt: 0.5, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Row</TableCell>
+                        <TableCell>Operator</TableCell>
+                        <TableCell>TADIG</TableCell>
+                        <TableCell>Country</TableCell>
+                        <TableCell>Rejection Reason</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {result.rejectedRows.map((r, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{r.rowNumber}</TableCell>
+                          <TableCell>{r.rawOperatorName || "-"}</TableCell>
+                          <TableCell>{r.rawTadig || "-"}</TableCell>
+                          <TableCell>{r.country || "-"}</TableCell>
+                          <TableCell sx={{ whiteSpace: "normal" }}>{r.rejectionReason}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            )}
           </Box>
         )}
       </CardContent>
@@ -515,6 +554,21 @@ function downloadUnresolvedCsv(rows: { mnoName: string; country: string }[]) {
   const link = document.createElement("a");
   link.href = url;
   link.download = "unresolved-operators.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadRejectedRowsCsv(rows: NonNullable<UploadResult["rejectedRows"]>) {
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = [
+    "Row,Operator,TADIG,Country,Rejection Reason",
+    ...rows.map((r) => [r.rowNumber, r.rawOperatorName, r.rawTadig, r.country, r.rejectionReason].map(esc).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "reachlist-rejected-rows.csv";
   link.click();
   URL.revokeObjectURL(url);
 }

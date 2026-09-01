@@ -4,14 +4,14 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeCountryToIso3 } from "./country-normalize";
-import { buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
+import { buildGlobalNameResolver, buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21ChangeHistoryItem, Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { interpretChangeHistoryDescription } from "./ir21-change-history.util";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
-import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UploadResult } from "@ccip/shared-types";
+import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UnresolvedReachRow, UploadResult } from "@ccip/shared-types";
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
@@ -179,6 +179,7 @@ export class UploadService {
       unresolvedMnos: raw.unresolvedMnos.length > 0 ? raw.unresolvedMnos : undefined,
       recordsReplaced: raw.recordsReplaced,
       pendingNormalizationCount: raw.pendingNormalizationCount > 0 ? raw.pendingNormalizationCount : undefined,
+      rejectedRows: raw.rejectedRows.length > 0 ? raw.rejectedRows : undefined,
     };
   }
 
@@ -199,12 +200,14 @@ export class UploadService {
     totalRowsTransposed?: number;
     unresolvedMnos: { mnoName: string; country: string }[];
     pendingNormalizationCount: number;
+    rejectedRows: UnresolvedReachRow[];
   }> {
     let rows = rowsIn;
     const services = await this.serviceMap();
     const providerCache = await this.providerCache();
     const errors: string[] = [];
     const seenKeys = new Set<string>();
+    const rejectedRows: UnresolvedReachRow[] = [];
     let recordsLoaded = 0;
 
     let recordsReplaced: number | undefined;
@@ -234,6 +237,13 @@ export class UploadService {
       select: { id: true, operatorName: true, country: true, tadigCode: true },
     });
     const resolveMno = buildMnoResolver(allMnos);
+    // Country-agnostic last resort, tried only once the country-scoped
+    // resolver above has already failed — a cross-border/hub declaration
+    // (e.g. a wholesale SS7 hub whose reach-list row states a different
+    // country than MnoMaster's own IR.21-derived country for it) still
+    // resolves here provided the name match is exact/confident platform-
+    // wide, without weakening the primary resolver's country-scoped safety.
+    const globalResolveMno = buildGlobalNameResolver(allMnos);
 
     if (format === "MATRIX") {
       const resolveColumnProvider = await this.buildMatrixColumnResolver();
@@ -249,20 +259,39 @@ export class UploadService {
         );
       }
 
-
       const expandedRows: Record<string, string>[] = [];
       const seenUnresolved = new Set<string>();
-      let discontinuedSkipped = 0;
-      for (const row of rows) {
+      let discontinuedStripped = 0;
+      let blankRowsSkipped = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const rowNum = i + 2;
+        const row = rows[i];
         const mnoNameRaw = col(row, "mno", "operator");
         const country = col(row, "country");
-        if (!mnoNameRaw || !country) continue;
-
-        if (/\[discontinued\]/i.test(mnoNameRaw)) {
-          discontinuedSkipped++;
+        const rawTadigForRow = col(row, "tadig", "tadig code");
+        if (!mnoNameRaw || !country) {
+          blankRowsSkipped++;
+          rejectedRows.push({
+            rowNumber: rowNum,
+            rawOperatorName: mnoNameRaw,
+            rawTadig: rawTadigForRow,
+            country,
+            rejectionReason: "Missing operator name or country.",
+          });
           continue;
         }
-        const mnoName = mnoNameRaw.replace(/\[discontinued\]/i, "").trim();
+
+        // A "[discontinued]" prefix is the source tool's own status label,
+        // not evidence the row's declared services are stale — the cell
+        // still lists real, currently-declared services, so the prefix is
+        // stripped and the row ingests like any other rather than being
+        // dropped outright.
+        let mnoName = mnoNameRaw;
+        if (/\[discontinued\]/i.test(mnoNameRaw)) {
+          discontinuedStripped++;
+          mnoName = mnoNameRaw.replace(/\[discontinued\]/i, "").trim();
+        }
 
         // Prefer the row's own TADIG when it's already valid — it's often
         // itself resolved from IR.21 by the source spreadsheet's own
@@ -270,21 +299,70 @@ export class UploadService {
         // second-guess it and risk a false "ambiguous"/"not-found" on an
         // operator whose matrix-file name doesn't closely match
         // MnoMaster's IR.21-derived name.
-        const rawTadig = col(row, "tadig", "tadig code").trim().toUpperCase();
-        let tadig: string;
+        const rawTadig = rawTadigForRow.trim().toUpperCase();
+        let tadig: string | null = null;
+        let resolutionStatus: "resolved" | "not-found" | "ambiguous" = "resolved";
         if (TADIG_REGEX.test(rawTadig)) {
           tadig = rawTadig;
         } else {
           const resolution = resolveMno(country, mnoName);
-          if (resolution.status !== "resolved") {
-            const pairKey = `${country}|${mnoName}`;
-            if (!seenUnresolved.has(pairKey)) {
-              seenUnresolved.add(pairKey);
-              unresolvedMnos.push({ mnoName, country });
+          if (resolution.status === "resolved") {
+            tadig = resolution.tadigCode;
+          } else {
+            const globalResolution = globalResolveMno(mnoName);
+            if (globalResolution.status === "resolved") {
+              tadig = globalResolution.tadigCode;
+            } else {
+              resolutionStatus = resolution.status === "ambiguous" || globalResolution.status === "ambiguous" ? "ambiguous" : "not-found";
             }
-            continue;
           }
-          tadig = resolution.tadigCode;
+        }
+
+        if (tadig === null) {
+          const pairKey = `${country}|${mnoName}`;
+          if (!seenUnresolved.has(pairKey)) {
+            seenUnresolved.add(pairKey);
+            unresolvedMnos.push({ mnoName, country });
+          }
+
+          // No TADIG to key a ProviderReachlist row on — but every provider
+          // column with actual declared service data is still queued into
+          // MnoNormalizationAudit (the same fallback the STANDARD-format
+          // loop below uses), so the row is preserved for admin review
+          // instead of vanishing once this response is read.
+          let anyProviderData = false;
+          for (const { key, providerId } of providerCols) {
+            const cellServices = row[key]?.trim();
+            if (!cellServices) continue;
+            const serviceTokens = cellServices
+              .split(/[,;/]/)
+              .map((s) => s.trim().toUpperCase())
+              .filter((t): t is ServiceName => services.has(t as ServiceName));
+            if (serviceTokens.length === 0) continue;
+            anyProviderData = true;
+            await this.recordNormalizationAudit({
+              rawOperatorName: mnoName,
+              rawTadigCode: rawTadig,
+              country,
+              providerId,
+              services: serviceTokens,
+              sourceFile: filename,
+              matchStatus: "PENDING_REVIEW",
+            });
+          }
+          if (anyProviderData) pendingNormalizationCount++;
+
+          rejectedRows.push({
+            rowNumber: rowNum,
+            rawOperatorName: mnoName,
+            rawTadig: rawTadig || "(blank)",
+            country,
+            rejectionReason:
+              resolutionStatus === "ambiguous"
+                ? "Operator name matched more than one existing MNO — queued for admin review under Unresolved Reach List Aliases."
+                : "No TADIG given and no confident match found in MnoMaster — queued for admin review under Unresolved Reach List Aliases.",
+          });
+          continue;
         }
 
         for (const { display, key } of providerCols) {
@@ -294,12 +372,15 @@ export class UploadService {
         }
       }
 
-      if (discontinuedSkipped > 0) {
-        errors.push(`${discontinuedSkipped} row(s) skipped: operator marked "[discontinued]".`);
+      if (discontinuedStripped > 0) {
+        errors.push(`${discontinuedStripped} row(s) had a "[discontinued]" prefix — stripped from the name and ingested normally.`);
+      }
+      if (blankRowsSkipped > 0) {
+        errors.push(`${blankRowsSkipped} row(s) skipped: missing operator name or country.`);
       }
       if (unresolvedMnos.length > 0) {
         errors.push(
-          `${unresolvedMnos.length} MNO(s) not found in MnoMaster (no TADIG to attach to), skipped: ` +
+          `${unresolvedMnos.length} MNO(s) not found in MnoMaster (no TADIG to attach to), queued for admin review under Unresolved Reach List Aliases: ` +
             unresolvedMnos.slice(0, 10).map((u) => `"${u.mnoName}" (${u.country})`).join(", ") +
             (unresolvedMnos.length > 10 ? `, and ${unresolvedMnos.length - 10} more` : ""),
         );
@@ -321,10 +402,12 @@ export class UploadService {
       const tadig = tadigRaw.trim().toUpperCase();
       if (!providerRaw || !tadig) {
         errors.push(`Row ${rowNum}: missing Provider or TADIG, skipped.`);
+        rejectedRows.push({ rowNumber: rowNum, rawOperatorName: mnoName, rawTadig: tadigRaw, country, rejectionReason: "Missing Provider or TADIG." });
         continue;
       }
       if (!TADIG_REGEX.test(tadig)) {
         errors.push(`Row ${rowNum}: invalid TADIG "${tadig}", skipped.`);
+        rejectedRows.push({ rowNumber: rowNum, rawOperatorName: mnoName, rawTadig: tadigRaw, country, rejectionReason: `Invalid TADIG "${tadig}" (must be 5 alphanumeric characters).` });
         continue;
       }
 
@@ -337,6 +420,7 @@ export class UploadService {
       );
       if (validServiceTokens.length === 0) {
         errors.push(`Row ${rowNum}: no valid Services listed for TADIG "${tadig}", skipped.`);
+        rejectedRows.push({ rowNumber: rowNum, rawOperatorName: mnoName, rawTadig: tadigRaw, country, rejectionReason: `No valid Services listed ("${servicesRaw}").` });
         continue;
       }
 
@@ -357,6 +441,7 @@ export class UploadService {
       });
       if (providerTokens.length === 0) {
         errors.push(`Row ${rowNum}: Provider "${providerRaw}" had no resolvable name after cleanup, skipped.`);
+        rejectedRows.push({ rowNumber: rowNum, rawOperatorName: mnoName, rawTadig: tadigRaw, country, rejectionReason: `Provider "${providerRaw}" had no resolvable name after cleanup.` });
         continue;
       }
 
@@ -390,6 +475,13 @@ export class UploadService {
         if (nameResolution.status === "resolved") {
           mno = await this.prisma.mnoMaster.findUnique({ where: { id: nameResolution.mnoId } });
           matchStatus = "ALIAS_MATCHED";
+        } else {
+          // Country-agnostic last resort — see globalResolveMno above.
+          const globalResolution = globalResolveMno(mnoName);
+          if (globalResolution.status === "resolved") {
+            mno = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: globalResolution.tadigCode } });
+            matchStatus = "ALIAS_MATCHED";
+          }
         }
       }
 
@@ -411,6 +503,13 @@ export class UploadService {
           `Row ${rowNum}: TADIG "${tadig}" (operator "${mnoName || tadig}") not found in MnoMaster and no ` +
             `confident name match — queued for admin review under Unresolved Reach List Aliases, skipped.`,
         );
+        rejectedRows.push({
+          rowNumber: rowNum,
+          rawOperatorName: mnoName,
+          rawTadig: tadigRaw,
+          country,
+          rejectionReason: `TADIG "${tadig}" not found in MnoMaster and no confident name match — queued for admin review under Unresolved Reach List Aliases.`,
+        });
         continue;
       }
 
@@ -474,6 +573,7 @@ export class UploadService {
       totalRowsTransposed,
       unresolvedMnos,
       pendingNormalizationCount,
+      rejectedRows,
     };
   }
 

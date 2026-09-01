@@ -48,6 +48,17 @@ const NAME_ALIASES: Record<string, string> = {
   "east timor": "TLS",
   "vatican": "VAT",
   "vatican city": "VAT",
+  // "SAR China" (Special Administrative Region) qualifiers — a common
+  // reach-list-source phrasing the library's own registered name ("Hong
+  // Kong", "Macao") doesn't carry, so it falls through to the raw-string
+  // fallback below and never matches its real ISO3 code without these.
+  "hong kong, sar china": "HKG",
+  "hong kong sar": "HKG",
+  "hong kong sar china": "HKG",
+  "macau, sar china": "MAC",
+  "macao, sar china": "MAC",
+  "macau sar": "MAC",
+  "macao sar": "MAC",
 };
 
 /** Normalizes a country value (ISO3 code, ISO2 code, or full English name —

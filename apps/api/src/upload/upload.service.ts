@@ -4,7 +4,7 @@ import AdmZip from "adm-zip";
 import { PrismaService } from "../prisma/prisma.service";
 import { readFirstSheetAsRows, col } from "./excel.util";
 import { normalizeCountryToIso3 } from "./country-normalize";
-import { buildGlobalNameResolver, buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
+import { buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "./reachlist-matrix.util";
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21ChangeHistoryItem, Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
@@ -237,13 +237,14 @@ export class UploadService {
       select: { id: true, operatorName: true, country: true, tadigCode: true },
     });
     const resolveMno = buildMnoResolver(allMnos);
-    // Country-agnostic last resort, tried only once the country-scoped
-    // resolver above has already failed — a cross-border/hub declaration
-    // (e.g. a wholesale SS7 hub whose reach-list row states a different
-    // country than MnoMaster's own IR.21-derived country for it) still
-    // resolves here provided the name match is exact/confident platform-
-    // wide, without weakening the primary resolver's country-scoped safety.
-    const globalResolveMno = buildGlobalNameResolver(allMnos);
+    // A country-agnostic name-only fallback was tried here and reverted —
+    // real brands (Digicel, Lycamobile, Altice, Lebara, NATCOM...) operate
+    // as genuinely distinct legal entities with distinct TADIGs per
+    // country, so a confident *name* match with no country scoping
+    // actively mismatches them (e.g. "Lebara Mobile Limited" (GBR) got
+    // silently merged into the unrelated "LEBARA" (NGA) record). Country
+    // scoping stays mandatory for any match this platform makes on its
+    // own — see buildMnoResolver above.
 
     if (format === "MATRIX") {
       const resolveColumnProvider = await this.buildMatrixColumnResolver();
@@ -309,12 +310,7 @@ export class UploadService {
           if (resolution.status === "resolved") {
             tadig = resolution.tadigCode;
           } else {
-            const globalResolution = globalResolveMno(mnoName);
-            if (globalResolution.status === "resolved") {
-              tadig = globalResolution.tadigCode;
-            } else {
-              resolutionStatus = resolution.status === "ambiguous" || globalResolution.status === "ambiguous" ? "ambiguous" : "not-found";
-            }
+            resolutionStatus = resolution.status;
           }
         }
 
@@ -475,13 +471,6 @@ export class UploadService {
         if (nameResolution.status === "resolved") {
           mno = await this.prisma.mnoMaster.findUnique({ where: { id: nameResolution.mnoId } });
           matchStatus = "ALIAS_MATCHED";
-        } else {
-          // Country-agnostic last resort — see globalResolveMno above.
-          const globalResolution = globalResolveMno(mnoName);
-          if (globalResolution.status === "resolved") {
-            mno = await this.prisma.mnoMaster.findUnique({ where: { tadigCode: globalResolution.tadigCode } });
-            matchStatus = "ALIAS_MATCHED";
-          }
         }
       }
 

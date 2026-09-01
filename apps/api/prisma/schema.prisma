@@ -227,6 +227,13 @@ enum MnoMatchStatus {
   ALIAS_MATCHED
   PENDING_REVIEW
   MANUALLY_OVERRIDDEN
+  // An admin has looked at this row and deliberately decided it doesn't
+  // need mapping (e.g. genuinely too ambiguous, or a real operator that
+  // will get its own IR.21 upload later) -- distinct from
+  // MANUALLY_OVERRIDDEN, which always carries a canonicalMnoId. Excluded
+  // from listPending() like MANUALLY_OVERRIDDEN, so it stops recurring in
+  // the review queue without pretending it resolved to something.
+  IGNORED
 }
 
 // GSMA IR.21 is the platform's sole authoritative source for new MNO

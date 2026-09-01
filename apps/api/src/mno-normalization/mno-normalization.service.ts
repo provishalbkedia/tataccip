@@ -2,7 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizeCountryToIso3 } from "../upload/country-normalize";
-import { CreateMnoFromAuditResult, MnoNormalizationAuditRow, ResolveMnoNormalizationResult } from "@ccip/shared-types";
+import {
+  BulkResolveAction,
+  BulkResolveResult,
+  CreateMnoFromAuditResult,
+  MnoNormalizationAuditRow,
+  ResolveMnoNormalizationResult,
+} from "@ccip/shared-types";
 
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
 
@@ -156,6 +162,98 @@ export class MnoNormalizationService {
       auditIdsResolved: audits.map((a) => a.id),
       recordsCreated,
     };
+  }
+
+  /** One transaction, four possible bulk actions -- powers the admin
+   * table's multi-select action bar so hundreds of pending rows don't
+   * have to be resolved one at a time. Silently skips (counted in
+   * skippedCount, never an error) whatever isn't applicable to a given
+   * row instead of failing the whole batch over a few stragglers: an id
+   * that no longer exists (resolved by someone else meanwhile), an
+   * ACCEPT_SUGGESTIONS row with no existing suggestion, or a
+   * MAP_TO_CANONICAL/ACCEPT_SUGGESTIONS row that's already
+   * MANUALLY_OVERRIDDEN. DELETE is the one exception -- it removes
+   * whatever's selected unconditionally, matching "dismiss this" being a
+   * deliberate per-row choice regardless of current status. */
+  async bulkResolve(
+    action: BulkResolveAction,
+    auditIds: string[],
+    targetMnoId: number | undefined,
+    updatedBy: string,
+  ): Promise<BulkResolveResult> {
+    if (auditIds.length === 0) throw new BadRequestException("At least one audit id is required");
+    if (action === "MAP_TO_CANONICAL" && !targetMnoId) {
+      throw new BadRequestException("targetMnoId is required for MAP_TO_CANONICAL");
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const audits = await tx.mnoNormalizationAudit.findMany({ where: { id: { in: auditIds } } });
+
+        if (action === "DELETE") {
+          const deleted = await tx.mnoNormalizationAudit.deleteMany({ where: { id: { in: audits.map((a) => a.id) } } });
+          return { success: true as const, updatedCount: deleted.count, skippedCount: auditIds.length - deleted.count, recordsCreated: 0 };
+        }
+
+        const serviceRows = await tx.service.findMany();
+        const serviceIdByName = new Map(serviceRows.map((s) => [s.serviceName, s.id]));
+        let updatedCount = 0;
+        let skippedCount = 0;
+        let recordsCreated = 0;
+
+        const applyMapping = async (audit: (typeof audits)[number], mnoId: number) => {
+          const sourceFile = audit.affectedFiles[audit.affectedFiles.length - 1] ?? "Resolved from MnoNormalizationAudit (bulk)";
+          for (const serviceNameRaw of audit.affectedServices) {
+            const serviceId = serviceIdByName.get(serviceNameRaw as ServiceName);
+            if (!serviceId) continue;
+            await tx.providerReachlist.upsert({
+              where: { mnoId_providerId_serviceId: { mnoId, providerId: audit.providerId, serviceId } },
+              update: { sourceFile, effectiveDate: new Date() },
+              create: { mnoId, providerId: audit.providerId, serviceId, sourceFile, effectiveDate: new Date() },
+            });
+            recordsCreated++;
+          }
+          await tx.mnoNormalizationAudit.update({
+            where: { id: audit.id },
+            data: { matchStatus: "MANUALLY_OVERRIDDEN", canonicalMnoId: mnoId, updatedBy },
+          });
+          updatedCount++;
+        };
+
+        if (action === "MAP_TO_CANONICAL") {
+          const mno = await tx.mnoMaster.findUnique({ where: { id: targetMnoId! } });
+          if (!mno) throw new NotFoundException(`MnoMaster id ${targetMnoId} not found`);
+          for (const audit of audits) {
+            if (audit.matchStatus === "MANUALLY_OVERRIDDEN") {
+              skippedCount++;
+              continue;
+            }
+            await applyMapping(audit, mno.id);
+          }
+        } else if (action === "ACCEPT_SUGGESTIONS") {
+          for (const audit of audits) {
+            if (audit.matchStatus !== "ALIAS_MATCHED" || !audit.canonicalMnoId) {
+              skippedCount++;
+              continue;
+            }
+            await applyMapping(audit, audit.canonicalMnoId);
+          }
+        } else if (action === "IGNORE") {
+          for (const audit of audits) {
+            if (audit.matchStatus === "MANUALLY_OVERRIDDEN") {
+              skippedCount++;
+              continue;
+            }
+            await tx.mnoNormalizationAudit.update({ where: { id: audit.id }, data: { matchStatus: "IGNORED", updatedBy } });
+            updatedCount++;
+          }
+        }
+
+        skippedCount += auditIds.length - audits.length;
+        return { success: true as const, updatedCount, skippedCount, recordsCreated };
+      },
+      { timeout: 30000 },
+    );
   }
 
   private async resolveOrSynthesizeTadig(rawTadigCode: string, country: string): Promise<string> {

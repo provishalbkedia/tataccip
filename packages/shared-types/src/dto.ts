@@ -654,7 +654,7 @@ export interface OperatorCompareMatrixResponse {
 // country+name fuzzy match) is queued here instead of auto-creating a new
 // MnoMaster row. See UploadService.recordNormalizationAudit /
 // MnoNormalizationService.
-export type MnoMatchStatus = "EXACT_TADIG" | "ALIAS_MATCHED" | "PENDING_REVIEW" | "MANUALLY_OVERRIDDEN";
+export type MnoMatchStatus = "EXACT_TADIG" | "ALIAS_MATCHED" | "PENDING_REVIEW" | "MANUALLY_OVERRIDDEN" | "IGNORED";
 
 export interface MnoNormalizationAuditRow {
   id: string;
@@ -682,6 +682,28 @@ export interface ResolveMnoNormalizationRequest {
 
 export interface ResolveMnoNormalizationResult {
   audit: MnoNormalizationAuditRow;
+  recordsCreated: number;
+}
+
+export type BulkResolveAction = "ACCEPT_SUGGESTIONS" | "MAP_TO_CANONICAL" | "IGNORE" | "DELETE";
+
+export interface BulkResolveRequest {
+  action: BulkResolveAction;
+  // MnoNormalizationAudit ids -- always a uuid string, not a numeric id.
+  auditIds: string[];
+  // Required for (and only used by) MAP_TO_CANONICAL.
+  targetMnoId?: number;
+}
+
+export interface BulkResolveResult {
+  success: true;
+  // Rows actually changed (mapped, ignored, or deleted).
+  updatedCount: number;
+  // Selected rows left untouched -- e.g. ACCEPT_SUGGESTIONS skips a row
+  // with no existing suggestion rather than guessing one.
+  skippedCount: number;
+  // ProviderReachlist rows created/refreshed across all updated rows
+  // (ACCEPT_SUGGESTIONS / MAP_TO_CANONICAL only -- 0 for IGNORE/DELETE).
   recordsCreated: number;
 }
 

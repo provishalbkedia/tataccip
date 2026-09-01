@@ -227,25 +227,48 @@ function ExclusivityCell(params: ICellRendererParams<MnoSummaryWithExclusivity>)
   );
 }
 
-/** Per-service provider column cell: a plain comma-joined list when the
- * service has more than one declared provider (unchanged from before), or
- * the sole provider's name plus a small "Exclusive" pill (with a tooltip
- * naming the service) when that service has exactly one. */
+const EXCLUSIVE_TEXT_COLOR = "#2E7D32";
+const SHARED_TEXT_COLOR = "#0A2540";
+
+/** Per-service provider column cell. The carrier name is always the full,
+ * legible text (CSS-ellipsized only if the column is genuinely too narrow,
+ * never squeezed out by a badge sitting inside the same cell — a standalone
+ * "Exclusive" chip in these narrow columns used to do exactly that,
+ * collapsing "Orange" down to "O.."). Exclusive (single-provider) cells
+ * get forest-green text plus a small dot instead, which costs a few px
+ * rather than a whole chip's worth of width. */
 function serviceProviderCellRenderer(serviceLabel: string, isExclusiveField: keyof MnoSummaryWithExclusivity) {
   return function Cell(params: ICellRendererParams<MnoSummaryWithExclusivity>) {
     const providers = (params.value as string[] | undefined) ?? [];
     if (providers.length === 0) return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
-    if (!params.data?.[isExclusiveField]) return <span>{providers.join(", ")}</span>;
+
+    const isExclusive = !!params.data?.[isExclusiveField];
+    const text = providers.join(", ");
+    const tooltip = isExclusive
+      ? `Exclusive ${serviceLabel} Provider: ${providers[0]} (Single carrier declared in IR.21)`
+      : `${serviceLabel} Providers: ${text}`;
+
     return (
-      <Tooltip title={`Exclusively routed via ${providers[0]} for ${serviceLabel}`}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providers[0]}</span>
-          <Chip
-            label="Exclusive"
-            size="small"
-            color="success"
-            sx={{ height: 20, fontSize: 11, fontWeight: 700, flexShrink: 0, "& .MuiChip-label": { px: 0.75 } }}
-          />
+      <Tooltip title={tooltip}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0, width: "100%" }}>
+          {isExclusive && (
+            <Box component="span" sx={{ color: EXCLUSIVE_TEXT_COLOR, fontSize: 10, flexShrink: 0, lineHeight: 1 }}>
+              ●
+            </Box>
+          )}
+          <Box
+            component="span"
+            sx={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+              color: isExclusive ? EXCLUSIVE_TEXT_COLOR : SHARED_TEXT_COLOR,
+              fontWeight: isExclusive ? 600 : 400,
+            }}
+          >
+            {text}
+          </Box>
         </Box>
       </Tooltip>
     );
@@ -609,6 +632,49 @@ function MnoSearchPageInner() {
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
           </Tooltip>
         </Box>
+
+        <Box
+          sx={{
+            mb: 1.5,
+            p: 1,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 2,
+            bgcolor: "action.hover",
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Legend
+          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Box component="span" sx={{ color: EXCLUSIVE_TEXT_COLOR, fontSize: 10, lineHeight: 1 }}>
+              ●
+            </Box>
+            <Typography variant="caption" sx={{ color: EXCLUSIVE_TEXT_COLOR, fontWeight: 600 }}>
+              Green provider name
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              — exclusive / single provider for that service
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Typography variant="caption" sx={{ color: SHARED_TEXT_COLOR, fontWeight: 400 }}>
+              Dark provider name
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              — multi-provider / shared service
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Chip label="Single Provider" size="small" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 600 }} />
+            <Typography variant="caption" color="text.secondary">
+              — fully exclusive across all declared services (SCCP + DSX + IPX)
+            </Typography>
+          </Box>
+        </Box>
+
         <DataGrid<MnoSummaryWithExclusivity>
           rowData={visibleRows}
           columnDefs={[

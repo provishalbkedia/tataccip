@@ -19,6 +19,29 @@ const TADIG_REGEX = /^[A-Z0-9]{5}$/;
 type PrismaTx = Prisma.TransactionClient;
 type MnoNormalizationAuditRecord = Prisma.MnoNormalizationAuditGetPayload<Record<string, never>>;
 
+// Candidate 2-character TADIG operator-code suffixes for a synthesized
+// placeholder, in preference order -- "90".."99" first (the original,
+// most recognizably-synthetic block), then a much larger reserve so a
+// single busy country (real production case: the UK alone needed more
+// than 10 placeholder MNOs) never runs out. Collision safety doesn't
+// actually depend on avoiding "real" GSMA-assigned codes -- the caller
+// always checks each candidate against this platform's own MnoMaster
+// before using it, so a value here only ever gets used if nothing already
+// claims it. First-letter X/Y/Z keeps the widened pool visually
+// distinguishable from typical low/sequential real allocations (which
+// GSMA typically assigns starting from "01"/"AA"), rather than working
+// backward through "89", "88", ... which would look indistinguishable
+// from a real code to anyone auditing the data later.
+const SYNTHETIC_TADIG_SUFFIXES: string[] = (() => {
+  const suffixes: string[] = [];
+  for (let n = 90; n <= 99; n++) suffixes.push(String(n));
+  const alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  for (const first of ["Z", "Y", "X"]) {
+    for (const second of alnum) suffixes.push(`${first}${second}`);
+  }
+  return suffixes;
+})();
+
 /** Admin resolution for MnoNormalizationAudit — the queue Reach List
  * ingestion writes to instead of auto-creating a new MnoMaster row (see
  * UploadService.recordNormalizationAudit). GSMA IR.21 stays the sole
@@ -111,11 +134,11 @@ export class MnoNormalizationService {
    * carry a real, if unusual, TADIG (hub/non-standard prefixes included)
    * even though they never matched an existing MnoMaster. Otherwise a
    * synthetic placeholder is minted: the country's real ISO3 prefix (so it
-   * still groups/searches sensibly by country) plus a 90-99 suffix chosen
-   * to never collide with a real GSMA-assigned code — GSMA's own 2-char
-   * operator codes for real networks don't reach that range in practice,
-   * and it reads unambiguously as "not a real assigned TADIG" to anyone
-   * who notices the pattern. */
+   * still groups/searches sensibly by country) plus a suffix from
+   * SYNTHETIC_TADIG_SUFFIXES, checked against this platform's own
+   * MnoMaster for collisions (not against real-world GSMA allocations,
+   * which this platform has no visibility into) — see that constant's own
+   * comment for why the pool is sized the way it is. */
   async createFromAudits(auditIds: string[], updatedBy: string): Promise<CreateMnoFromAuditResult> {
     if (auditIds.length === 0) throw new BadRequestException("At least one audit id is required");
 
@@ -320,12 +343,14 @@ export class MnoNormalizationService {
     // the same "ZZZ" catch-all.
     const iso3Raw = normalizeCountryToIso3(country);
     const iso3 = iso3Raw && /^[A-Z]{3}$/.test(iso3Raw) ? iso3Raw : "ZZZ";
-    for (let suffix = 90; suffix <= 99; suffix++) {
+    for (const suffix of SYNTHETIC_TADIG_SUFFIXES) {
       const synthetic = `${iso3}${suffix}`;
       const clash = await tx.mnoMaster.findUnique({ where: { tadigCode: synthetic } });
       if (!clash) return synthetic;
     }
-    throw new BadRequestException(`Could not mint a unique placeholder TADIG for country "${country}" — all ${iso3}90-${iso3}99 are taken`);
+    throw new BadRequestException(
+      `Could not mint a unique placeholder TADIG for country "${country}" — all ${SYNTHETIC_TADIG_SUFFIXES.length} reserved ${iso3}xx codes are taken. This means ${iso3} has an unusually large number of placeholder MNOs already; contact engineering to widen the reserved range further.`,
+    );
   }
 
   private toRow(

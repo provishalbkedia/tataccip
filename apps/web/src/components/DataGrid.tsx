@@ -229,6 +229,20 @@ export default function DataGrid<T>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearSelectionSignal]);
 
+  // Any time the row data set itself changes -- a filter, live search term,
+  // or exclusivity mode narrowing/widening the result set -- land back on
+  // page 1, skipping the very first mount (nothing to "reset" from yet).
+  // Without this, a shrinking result set can strand the viewer on a now
+  // out-of-range page showing zero rows even though real matches exist.
+  const isFirstRowDataRef = React.useRef(true);
+  React.useEffect(() => {
+    if (isFirstRowDataRef.current) {
+      isFirstRowDataRef.current = false;
+      return;
+    }
+    gridRef.current?.api?.paginationGoToFirstPage();
+  }, [rowData]);
+
   function handlePageSizeChange(value: number) {
     const api = gridRef.current?.api;
     if (!api) return;

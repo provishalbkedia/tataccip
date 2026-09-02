@@ -381,6 +381,44 @@ function MnoSearchPageInner() {
   const [clearSignal, setClearSignal] = React.useState(0);
   const [warmingUp, setWarmingUp] = React.useState(false);
 
+  // Live "search-as-you-type" for the 4 free-text fields (q/tadig/mcc/mnc):
+  // filtered entirely client-side against whatever's already loaded in
+  // `results` (country/region/onlyWithProviders/datasetScope stay real
+  // server round trips, triggered instantly by their own dropdown handlers
+  // below -- see pushParams). q/tadig/mcc/mnc themselves also still reach
+  // the server via the Search button / Enter (pushParams keeps writing
+  // them to the URL, so a search stays bookmarkable/shareable), but that's
+  // no longer what makes the table respond -- this debounced client-side
+  // pass is. A single shared 250ms timer covers all 4 fields together
+  // (typing in any of them restarts the same countdown), flushable on
+  // demand (the Search button, Enter, an autocomplete pick, or clearing a
+  // field to "" all need the table to catch up immediately rather than
+  // wait out the debounce).
+  const [debouncedFreeText, setDebouncedFreeText] = React.useState({ q: "", tadig: "", mcc: "", mnc: "" });
+  const freeTextDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
+    freeTextDebounceRef.current = setTimeout(() => {
+      setDebouncedFreeText({ q, tadig, mcc, mnc });
+    }, 250);
+    return () => {
+      if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
+    };
+  }, [q, tadig, mcc, mnc]);
+
+  // Cancels any pending debounce and applies the current (or explicitly
+  // overridden) free-text values immediately -- overrides win over the
+  // closure's own q/tadig/mcc/mnc so a same-tick "clear to empty" isn't
+  // clobbered by stale state that hasn't re-rendered yet.
+  const flushFreeTextFilter = React.useCallback(
+    (overrides?: Partial<typeof debouncedFreeText>) => {
+      if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
+      setDebouncedFreeText({ q, tadig, mcc, mnc, ...overrides });
+    },
+    [q, tadig, mcc, mnc],
+  );
+
   const rowsWithExclusivity = React.useMemo(() => results.map(withExclusivity), [results]);
   const exclusivityCounts = React.useMemo(
     () => ({
@@ -391,13 +429,36 @@ function MnoSearchPageInner() {
     }),
     [rowsWithExclusivity],
   );
-  const visibleRows = React.useMemo(
-    () =>
-      rowsWithExclusivity
-        .filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode])
-        .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r)),
-    [rowsWithExclusivity, exclusiveMode, serviceFilter],
-  );
+  const visibleRows = React.useMemo(() => {
+    const qNorm = debouncedFreeText.q.trim().toLowerCase();
+    const tadigNorm = debouncedFreeText.tadig.trim().toLowerCase();
+    const mccNorm = debouncedFreeText.mcc.trim().toLowerCase();
+    const mncNorm = debouncedFreeText.mnc.trim().toLowerCase();
+
+    return rowsWithExclusivity
+      .filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode])
+      .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r))
+      .filter((r) => !tadigNorm || r.tadigCode.toLowerCase().includes(tadigNorm))
+      .filter((r) => !mccNorm || r.mcc.toLowerCase().includes(mccNorm))
+      .filter((r) => !mncNorm || r.mnc.toLowerCase().includes(mncNorm))
+      .filter((r) => {
+        if (!qNorm) return true;
+        const haystack = [
+          r.operatorName,
+          r.tadigCode,
+          r.country,
+          r.mcc,
+          r.mnc,
+          r.networkType ?? "",
+          ...r.sccpProviders,
+          ...r.dsxProviders,
+          ...r.ipxProviders,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(qNorm);
+      });
+  }, [rowsWithExclusivity, exclusiveMode, serviceFilter, debouncedFreeText]);
 
   // Distinct-entity subtotals for the column-header chips -- derived
   // entirely client-side from visibleRows (the exact rows the grid is
@@ -422,14 +483,23 @@ function MnoSearchPageInner() {
   // restores a prior query, syncing the input fields and refetching in all
   // three cases without needing separate logic for each.
   React.useEffect(() => {
-    setQ(searchParams.get("q") ?? "");
-    setTadig(searchParams.get("tadig") ?? "");
+    const urlQ = searchParams.get("q") ?? "";
+    const urlTadig = searchParams.get("tadig") ?? "";
+    const urlMcc = searchParams.get("mcc") ?? "";
+    const urlMnc = searchParams.get("mnc") ?? "";
+    setQ(urlQ);
+    setTadig(urlTadig);
     // resolveCountryCode tolerates a URL carrying a full name instead of the
     // ISO-3 code (a hand-edited or older shared link) -- the backend only
     // ever matches on the code.
     setCountry(resolveCountryCode(searchParams.get("country")));
-    setMcc(searchParams.get("mcc") ?? "");
-    setMnc(searchParams.get("mnc") ?? "");
+    setMcc(urlMcc);
+    setMnc(urlMnc);
+    // Bypasses the debounce -- a fresh page load or Back/Forward navigation
+    // should show the URL's own search terms applied immediately, not 250ms
+    // later.
+    if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
+    setDebouncedFreeText({ q: urlQ, tadig: urlTadig, mcc: urlMcc, mnc: urlMnc });
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
     setOnlyWithProviders(searchParams.get("onlyWithProviders") === "true");
@@ -445,12 +515,14 @@ function MnoSearchPageInner() {
 
   const pushParams = React.useCallback(
     (overrides?: {
+      country?: string;
       region?: Region | "";
       onlyWithProviders?: boolean;
       exclusiveMode?: ExclusiveMode;
       datasetScope?: DatasetScope;
       service?: ServiceFilter | "";
     }) => {
+      const nextCountry = overrides?.country ?? country;
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
       const nextExclusiveMode = overrides?.exclusiveMode ?? exclusiveMode;
@@ -459,7 +531,7 @@ function MnoSearchPageInner() {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (tadig) params.set("tadig", tadig);
-      if (country) params.set("country", country);
+      if (nextCountry) params.set("country", nextCountry);
       if (mcc) params.set("mcc", mcc);
       if (mnc) params.set("mnc", mnc);
       if (nextRegion) params.set("region", nextRegion);
@@ -474,7 +546,15 @@ function MnoSearchPageInner() {
     [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, serviceFilter, pathname, router],
   );
 
-  const runSearch = React.useCallback(() => pushParams(), [pushParams]);
+  // Also flushes any pending free-text debounce -- Search/Enter should make
+  // the visible table catch up to whatever's currently typed immediately,
+  // not up to 250ms later, even though pushParams's own server round trip
+  // already uses the latest raw q/tadig/mcc/mnc regardless of debounce
+  // timing.
+  const runSearch = React.useCallback(() => {
+    flushFreeTextFilter();
+    pushParams();
+  }, [flushFreeTextFilter, pushParams]);
 
   // Baseline defaults every field/toggle above is initialized to -- used
   // both to detect whether anything is currently non-default (for the
@@ -502,6 +582,10 @@ function MnoSearchPageInner() {
     setExclusiveMode("all");
     setDatasetScope("ir21");
     setServiceFilter("");
+    // Bypasses the debounce -- Reset must restore the full baseline
+    // instantly, not up to 250ms later.
+    if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
+    setDebouncedFreeText({ q: "", tadig: "", mcc: "", mnc: "" });
     router.push(pathname, { scroll: false });
   }, [pathname, router]);
 
@@ -543,10 +627,23 @@ function MnoSearchPageInner() {
               <SuggestionAutocomplete<MnoSuggestion>
                 label={isMobile ? "Search MNO / Cust, TADIG, Country..." : "Search by MNO / Cust, TADIG, Country, MCC/MNC, or Carrier..."}
                 value={q}
-                onValueChange={setQ}
+                onValueChange={(v) => {
+                  setQ(v);
+                  // Clearing to "" (the built-in X button, or backspacing to
+                  // empty) restores the full list instantly rather than
+                  // waiting out the debounce.
+                  if (!v) flushFreeTextFilter({ q: "" });
+                }}
                 fetchSuggestions={fetchSuggestions}
                 getOptionLabel={(o) => o.operatorName}
                 onEnter={runSearch}
+                // A real suggestion pick (not a keystroke) applies
+                // immediately -- no debounce delay for an explicit
+                // selection. Takes the resolved value directly rather than
+                // reading back `q` from this closure, which (thanks to
+                // React's batching) wouldn't yet reflect the setQ() call
+                // onValueChange just made above.
+                onSelect={(v) => flushFreeTextFilter({ q: v })}
               />
             </Grid>
             <Grid item xs={6} sm={1.5}>
@@ -554,9 +651,18 @@ function MnoSearchPageInner() {
                 fullWidth
                 label="TADIG"
                 value={tadig}
-                onChange={(e) => setTadig(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTadig(v);
+                  if (!v) flushFreeTextFilter({ tadig: "" });
+                }}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                InputProps={{ endAdornment: clearAdornment(tadig, () => setTadig("")) }}
+                InputProps={{
+                  endAdornment: clearAdornment(tadig, () => {
+                    setTadig("");
+                    flushFreeTextFilter({ tadig: "" });
+                  }),
+                }}
               />
             </Grid>
             <Grid item xs={6} sm={1.5}>
@@ -565,7 +671,14 @@ function MnoSearchPageInner() {
                 disableClearable={false}
                 options={COUNTRY_OPTIONS}
                 value={COUNTRY_OPTIONS.find((c) => c.code === country) ?? null}
-                onChange={(_, v) => setCountry(v ? v.code : "")}
+                onChange={(_, v) => {
+                  const next = v ? v.code : "";
+                  setCountry(next);
+                  // A structural (server-scoped) filter -- selecting or
+                  // clearing applies instantly rather than waiting for
+                  // Enter/Search.
+                  pushParams({ country: next });
+                }}
                 getOptionLabel={(o) => o.name}
                 isOptionEqualToValue={(o, v) => o.code === v.code}
                 // Matches on the full name OR the ISO-3 code as the user
@@ -590,8 +703,14 @@ function MnoSearchPageInner() {
                   fullWidth
                   label="Region"
                   value={region}
-                  onChange={(e) => setRegion(e.target.value as Region | "")}
-                  onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                  onChange={(e) => {
+                    const next = e.target.value as Region | "";
+                    setRegion(next);
+                    // A structural (server-scoped) filter -- applies
+                    // instantly on selection, matching the Region pill row
+                    // below (both control the same `region` state).
+                    pushParams({ region: next });
+                  }}
                   sx={region ? { "& .MuiSelect-select": { pr: "56px !important" } } : undefined}
                 >
                   <MenuItem value="">All Regions</MenuItem>
@@ -605,7 +724,10 @@ function MnoSearchPageInner() {
                   <IconButton
                     size="small"
                     title="Clear"
-                    onClick={() => setRegion("")}
+                    onClick={() => {
+                      setRegion("");
+                      pushParams({ region: "" });
+                    }}
                     sx={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)" }}
                   >
                     <ClearIcon fontSize="small" />
@@ -618,9 +740,18 @@ function MnoSearchPageInner() {
                 fullWidth
                 label="MCC"
                 value={mcc}
-                onChange={(e) => setMcc(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMcc(v);
+                  if (!v) flushFreeTextFilter({ mcc: "" });
+                }}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                InputProps={{ endAdornment: clearAdornment(mcc, () => setMcc("")) }}
+                InputProps={{
+                  endAdornment: clearAdornment(mcc, () => {
+                    setMcc("");
+                    flushFreeTextFilter({ mcc: "" });
+                  }),
+                }}
               />
             </Grid>
             <Grid item xs={6} sm={1}>
@@ -628,9 +759,18 @@ function MnoSearchPageInner() {
                 fullWidth
                 label="MNC"
                 value={mnc}
-                onChange={(e) => setMnc(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMnc(v);
+                  if (!v) flushFreeTextFilter({ mnc: "" });
+                }}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                InputProps={{ endAdornment: clearAdornment(mnc, () => setMnc("")) }}
+                InputProps={{
+                  endAdornment: clearAdornment(mnc, () => {
+                    setMnc("");
+                    flushFreeTextFilter({ mnc: "" });
+                  }),
+                }}
               />
             </Grid>
             <Grid item xs={6} sm={1}>

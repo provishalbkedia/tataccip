@@ -20,6 +20,7 @@ export default function SuggestionAutocomplete<T>({
   getOptionLabel,
   getOptionValue,
   onEnter,
+  onSelect,
 }: {
   label: string;
   value: string;
@@ -32,6 +33,12 @@ export default function SuggestionAutocomplete<T>({
   // wouldn't itself substring-match the field being searched.
   getOptionValue?: (option: T) => string;
   onEnter?: () => void;
+  // Fired only for a genuine option pick (mouse click or keyboard-select),
+  // never for plain typing -- carries the same resolved value just passed to
+  // onValueChange, so a caller can apply an instant, non-debounced filter
+  // update for a dropdown selection without reading back its own (possibly
+  // not-yet-re-rendered) state.
+  onSelect?: (value: string) => void;
 }) {
   const [options, setOptions] = React.useState<T[]>([]);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout>>();
@@ -72,7 +79,9 @@ export default function SuggestionAutocomplete<T>({
       }}
       onChange={(_, newValue) => {
         if (newValue && typeof newValue !== "string") {
-          onValueChange((getOptionValue ?? getOptionLabel)(newValue));
+          const resolved = (getOptionValue ?? getOptionLabel)(newValue);
+          onValueChange(resolved);
+          onSelect?.(resolved);
         }
       }}
       renderInput={(params) => (

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Alert, Box, Card, CardContent, Chip, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardContent, Chip, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import CellTowerIcon from "@mui/icons-material/CellTower";
@@ -12,10 +12,14 @@ import RouterIcon from "@mui/icons-material/Router";
 import LanIcon from "@mui/icons-material/Lan";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import RuleIcon from "@mui/icons-material/Rule";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
+import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
+import VideoModal from "@/components/VideoModal";
 import { api, ApiError } from "@/lib/api";
+import { BRIEF_VIDEO, MASTERCLASS_VIDEO, type VideoAsset } from "@/lib/videos";
 import { DashboardMetrics } from "@ccip/shared-types";
 
 function StatTile({
@@ -78,6 +82,7 @@ function StatTile({
 export default function DashboardPage() {
   const [metrics, setMetrics] = React.useState<DashboardMetrics | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [activeVideo, setActiveVideo] = React.useState<VideoAsset | null>(null);
 
   React.useEffect(() => {
     api
@@ -93,6 +98,49 @@ export default function DashboardPage() {
           Dashboard
         </Typography>
         <ActiveBaselineBanner />
+
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 1.5,
+            mb: 3,
+            p: 2,
+            bgcolor: "#F4F6F8",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="body2" fontWeight={600} sx={{ mr: 0.5 }}>
+            New here?
+          </Typography>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<PlayCircleOutlineIcon />}
+            onClick={() => setActiveVideo(BRIEF_VIDEO)}
+            sx={{ bgcolor: "#0A2540", "&:hover": { bgcolor: "#061A2E" } }}
+          >
+            Watch Quick Intro (80s)
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<SchoolOutlinedIcon />}
+            onClick={() => setActiveVideo(MASTERCLASS_VIDEO)}
+            sx={{ borderColor: "#00D4B2", color: "#0A2540", "&:hover": { borderColor: "#00A896", bgcolor: "rgba(0,212,178,0.08)" } }}
+          >
+            Platform Deep-Dive (7m)
+          </Button>
+          <Link href="/help" style={{ marginLeft: "auto", fontSize: "0.875rem", color: "#0B6FBF", textDecoration: "none" }}>
+            View complete written documentation in Platform Guide &amp; Help →
+          </Link>
+        </Box>
+
+        <VideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+
         {metrics && (
           <Chip
             icon={<InfoOutlinedIcon fontSize="small" />}

@@ -10,6 +10,7 @@ import {
   Box,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   Chip,
   Divider,
@@ -40,9 +41,12 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import TimelineIcon from "@mui/icons-material/Timeline";
+import PlayCircleFilledIcon from "@mui/icons-material/PlayCircleFilled";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import VideoModal from "@/components/VideoModal";
 import { useAuth } from "@/lib/auth-context";
+import { BRIEF_VIDEO, MASTERCLASS_VIDEO, type VideoAsset } from "@/lib/videos";
 import { Role } from "@ccip/shared-types";
 
 // ---------- Small reusable building blocks ----------
@@ -110,6 +114,125 @@ function GoTo({ label, route }: { label: string; route: string }) {
     <Button className="no-print" variant="outlined" endIcon={<ArrowForwardIcon />} onClick={() => router.push(route)} sx={{ mt: 1 }}>
       {label}
     </Button>
+  );
+}
+
+// ---------- Video Walkthroughs & Training ----------
+
+function VideoShowcaseCard({
+  video,
+  chipLabel,
+  chipColor,
+  cardTitle,
+  description,
+  actionLabel,
+  onPlay,
+}: {
+  video: VideoAsset;
+  chipLabel: string;
+  chipColor: string;
+  cardTitle: string;
+  description: string;
+  actionLabel: string;
+  onPlay: () => void;
+}) {
+  const isVertical = video.orientation === "vertical";
+  return (
+    <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <CardActionArea
+        onClick={onPlay}
+        className="video-showcase-action"
+        sx={{ display: "flex", flexDirection: "column", alignItems: "stretch", height: "100%" }}
+      >
+        <Box
+          sx={{
+            position: "relative",
+            width: "100%",
+            aspectRatio: isVertical ? "9 / 16" : "16 / 9",
+            maxHeight: isVertical ? 320 : "none",
+            bgcolor: "#0A2540",
+            backgroundImage: `url(https://img.youtube.com/vi/${video.videoId}/hqdefault.jpg)`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Box
+            sx={{
+              width: 60,
+              height: 60,
+              borderRadius: "50%",
+              bgcolor: "rgba(255,255,255,0.94)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 14px rgba(0,0,0,0.4)",
+              transition: "transform 150ms ease",
+              ".video-showcase-action:hover &": { transform: "scale(1.1)" },
+            }}
+          >
+            <PlayCircleFilledIcon sx={{ fontSize: 42, color: "#0A2540" }} />
+          </Box>
+        </Box>
+        <CardContent sx={{ flexGrow: 1, width: "100%" }}>
+          <Chip label={chipLabel} size="small" sx={{ bgcolor: chipColor, color: "#fff", fontWeight: 700, mb: 1.5 }} />
+          <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+            {cardTitle}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {description}
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<PlayCircleFilledIcon />}
+            sx={{ pointerEvents: "none" }}
+            tabIndex={-1}
+          >
+            {actionLabel}
+          </Button>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  );
+}
+
+function VideoWalkthroughsSection() {
+  const [activeVideo, setActiveVideo] = React.useState<VideoAsset | null>(null);
+
+  return (
+    <Box className="no-print" sx={{ mb: 4 }}>
+      <Typography variant="h6" fontWeight={700} gutterBottom>
+        Video Walkthroughs &amp; Training
+      </Typography>
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6}>
+          <VideoShowcaseCard
+            video={BRIEF_VIDEO}
+            chipLabel="⚡ 80-Sec Quick Overview"
+            chipColor="#0B6FBF"
+            cardTitle="Platform Highlights & Mission"
+            description="How CCIP bridges the gap between commercial claims and GSMA IR.21 engineering data."
+            actionLabel="Watch Overview"
+            onPlay={() => setActiveVideo(BRIEF_VIDEO)}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <VideoShowcaseCard
+            video={MASTERCLASS_VIDEO}
+            chipLabel="🎓 7-Min Masterclass"
+            chipColor="#00D4B2"
+            cardTitle="Complete Architecture & Features"
+            description="Full walkthrough of all modules: MNO search, provider footprints, churn tracking, and parser rules."
+            actionLabel="Watch Masterclass"
+            onPlay={() => setActiveVideo(MASTERCLASS_VIDEO)}
+          />
+        </Grid>
+      </Grid>
+      <VideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+    </Box>
   );
 }
 
@@ -767,6 +890,10 @@ export default function HelpPage() {
             Download Platform Guide (PDF)
           </Button>
         </Box>
+
+        <Divider sx={{ mb: 3 }} className="no-print" />
+
+        <VideoWalkthroughsSection />
 
         <Divider sx={{ mb: 2 }} className="no-print" />
 

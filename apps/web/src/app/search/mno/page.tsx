@@ -35,6 +35,7 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
+import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { COUNTRY_OPTIONS, getCountryName, resolveCountryCode, type CountryOption } from "@/lib/countries";
@@ -364,6 +365,23 @@ function MnoSearchPageInner() {
   const visibleRows = React.useMemo(
     () => rowsWithExclusivity.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
     [rowsWithExclusivity, exclusiveMode],
+  );
+
+  // Distinct-entity subtotals for the column-header chips -- derived
+  // entirely client-side from visibleRows (the exact rows the grid is
+  // currently showing), so every filter/exclusivity-mode change recomputes
+  // these instantly with no extra API round trip. sccp/dsx/ipxProviders are
+  // already sanitized (see sanitizeProviders above), so no extra
+  // .filter(Boolean) is needed on the flatMap.
+  const columnSubtotals = React.useMemo(
+    () => ({
+      mnos: new Set(visibleRows.map((r) => r.id)).size,
+      countries: new Set(visibleRows.map((r) => r.country).filter(Boolean)).size,
+      sccp: new Set(visibleRows.flatMap((r) => r.sccpProviders)).size,
+      dsx: new Set(visibleRows.flatMap((r) => r.dsxProviders)).size,
+      ipx: new Set(visibleRows.flatMap((r) => r.ipxProviders)).size,
+    }),
+    [visibleRows],
   );
 
   // The URL query string is the single source of truth for "what did we
@@ -787,7 +805,14 @@ function MnoSearchPageInner() {
         <DataGrid<MnoSummaryWithExclusivity>
           rowData={visibleRows}
           columnDefs={[
-            { field: "operatorName", headerName: "MNO / Cust Name", flex: 1.5, cellRenderer: OperatorNameCell },
+            {
+              field: "operatorName",
+              headerName: "MNO / Cust Name",
+              flex: 1.5,
+              cellRenderer: OperatorNameCell,
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.mnos, entityLabel: "MNO / Cust" },
+            },
             { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 90, sortable: false, filter: false },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 90 },
             {
@@ -796,6 +821,8 @@ function MnoSearchPageInner() {
               maxWidth: 160,
               valueFormatter: (p) => getCountryName(p.value),
               tooltipValueGetter: (p) => getCountryName(p.value),
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.countries, entityLabel: "Country" },
             },
             {
               field: "sccpProviders",
@@ -803,6 +830,8 @@ function MnoSearchPageInner() {
               flex: 1.4,
               valueFormatter: joinOrDash,
               cellRenderer: serviceProviderCellRenderer("SCCP", "isExclusiveSccp"),
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.sccp, entityLabel: "SCCP Provider" },
             },
             {
               field: "dsxProviders",
@@ -810,6 +839,8 @@ function MnoSearchPageInner() {
               flex: 1.4,
               valueFormatter: joinOrDash,
               cellRenderer: serviceProviderCellRenderer("DSX", "isExclusiveDsx"),
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.dsx, entityLabel: "DSX Provider" },
             },
             {
               field: "ipxProviders",
@@ -817,6 +848,8 @@ function MnoSearchPageInner() {
               flex: 1.4,
               valueFormatter: joinOrDash,
               cellRenderer: serviceProviderCellRenderer("IPX", "isExclusiveIpx"),
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.ipx, entityLabel: "IPX Provider" },
             },
             {
               colId: "isFullyExclusive",

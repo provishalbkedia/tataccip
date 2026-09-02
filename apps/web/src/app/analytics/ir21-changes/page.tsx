@@ -23,6 +23,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
+import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
@@ -130,20 +131,6 @@ function PdfCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
     >
       <PictureAsPdfIcon fontSize="small" />
     </IconButton>
-  );
-}
-
-/** AG Grid `headerComponent` -- renders a column's own header text plus an
- * MUI info-icon tooltip, matching KpiCard's own icon pattern. AG Grid
- * passes the configured `headerName` through `displayName`. */
-function TooltipColumnHeader(props: { displayName: string; tooltipText: string }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-      <span>{props.displayName}</span>
-      <Tooltip title={props.tooltipText}>
-        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15 }} />
-      </Tooltip>
-    </Box>
   );
 }
 
@@ -524,6 +511,21 @@ export default function Ir21ChangesPage() {
   // it updates instantly with every filter change, per the task's own
   // "client-side computation" requirement.
   const uniqueOperatorCount = React.useMemo(() => new Set(rows.map((r) => r.mnoId)).size, [rows]);
+
+  // Distinct-entity subtotals for the column-header chips, derived
+  // client-side from the already-fetched filtered feed (rows) -- same
+  // "no extra API round trip" reasoning as uniqueOperatorCount above, so
+  // every filter change (timeframe, provider, search, etc.) recomputes
+  // these instantly.
+  const columnSubtotals = React.useMemo(
+    () => ({
+      countries: new Set(rows.map((r) => r.country).filter(Boolean)).size,
+      services: new Set(rows.map((r) => r.serviceName).filter(Boolean)).size,
+      changeTypes: new Set(rows.map((r) => r.changeType).filter(Boolean)).size,
+      providers: new Set(rows.flatMap((r) => [r.oldProviderName, r.newProviderName]).filter(Boolean)).size,
+    }),
+    [rows],
+  );
 
   // The KPI card headline (ChurnKpiValue) and its ranked search control
   // (ChurnProviderAutocomplete) both show whichever provider is currently
@@ -906,21 +908,46 @@ export default function Ir21ChangesPage() {
               maxWidth: 160,
               valueFormatter: (p) => getCountryName(p.value),
               tooltipValueGetter: (p) => getCountryName(p.value),
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.countries, entityLabel: "Country" },
             },
-            { field: "mnoName", headerName: "MNO / Cust", flex: 1.3, minWidth: 180 },
+            {
+              field: "mnoName",
+              headerName: "MNO / Cust",
+              flex: 1.3,
+              minWidth: 180,
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: uniqueOperatorCount, entityLabel: "MNO / Cust" },
+            },
             { field: "tadigCode", headerName: "TADIG", maxWidth: 100 },
-            { field: "serviceName", headerName: "Service", cellRenderer: ServiceCell, maxWidth: 110 },
-            { field: "changeType", headerName: "Change Action", cellRenderer: ChangeTypeCell, minWidth: 150 },
+            {
+              field: "serviceName",
+              headerName: "Service",
+              cellRenderer: ServiceCell,
+              maxWidth: 130,
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.services, entityLabel: "Service" },
+            },
+            {
+              field: "changeType",
+              headerName: "Change Action",
+              cellRenderer: ChangeTypeCell,
+              minWidth: 170,
+              headerComponent: ColumnHeaderWithSubtotal,
+              headerComponentParams: { subtotal: columnSubtotals.changeTypes, entityLabel: "Change Type" },
+            },
             {
               headerName: "Routing Modification Details",
               cellRenderer: DetailsCell,
               flex: 1.6,
-              minWidth: 240,
+              minWidth: 260,
               sortable: false,
               filter: false,
-              headerComponent: TooltipColumnHeader,
+              headerComponent: ColumnHeaderWithSubtotal,
               headerComponentParams: {
-                tooltipText:
+                subtotal: columnSubtotals.providers,
+                entityLabel: "Wholesale Provider",
+                infoTooltip:
                   "Green (+ ADDED) indicates a newly declared route; Red (- REMOVED) indicates a decommissioned route; Amber (⇄ REPLACED) indicates a direct carrier switch.",
               },
             },

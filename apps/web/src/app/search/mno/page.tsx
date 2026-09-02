@@ -212,7 +212,15 @@ function SourceCell(params: ICellRendererParams<MnoSummary>) {
             size="small"
             color="error"
             sx={{ p: 0.25, "&:hover": { transform: "scale(1.1)" } }}
-            onClick={(e) => {
+            // onClickCapture, not onClick -- AG Grid's row-selection listener
+            // is attached natively (not through React) directly on the row
+            // element, which sits between this button and React's own
+            // delegated root listener. A bubble-phase stopPropagation() runs
+            // too late to stop it (AG Grid's listener already fired while
+            // the event was bubbling past the row, before React's synthetic
+            // dispatch even begins), so it has to be stopped in the capture
+            // phase instead, before the event ever reaches the row.
+            onClickCapture={(e) => {
               e.stopPropagation();
               if (params.data) openMnoPdf(params.data.id);
             }}

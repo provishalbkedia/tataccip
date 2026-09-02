@@ -1,0 +1,25 @@
+name: Supabase Keep-Alive Ping
+
+# Supabase's free/starter tier auto-pauses a project after ~7 days of zero
+# inbound database activity. This workflow hits the API's DB-touching
+# health endpoint (GET /health/keepalive -- see apps/api/src/health/health.controller.ts)
+# on a fixed cadence well under that threshold, so the platform stays
+# active through genuinely quiet stretches (a weekend, a lull between
+# uploads) without depending on real user traffic. The same HTTP request
+# also cold-starts Cloud Run first if it's scaled to zero (no min-instances
+# configured), so one ping covers both dormancy risks.
+on:
+  schedule:
+    # Every 3 days at 05:00 UTC -- comfortably inside Supabase's 7-day
+    # pause window even allowing for GitHub's own documented scheduling
+    # delays/skips under high load.
+    - cron: '0 5 */3 * *'
+  workflow_dispatch: # Allows manual triggering from the Actions tab.
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping CCIP API keep-alive endpoint
+        run: |
+          curl -fsS -m 30 "https://ccip-api-791027434681.asia-south1.run.app/api/health/keepalive"

@@ -133,7 +133,7 @@ export default function DashboardPage() {
               icon: <HubIcon fontSize="large" />,
               color: "#2E7D32",
               href: "/search/mno",
-              tooltip: "Every individual (MNO/Cust, Provider, Service) relationship on record, combining GSMA IR.21 declarations and Reach List uploads.",
+              tooltip: "Total individual (MNO/Cust, Provider, Service) routing relationships declared and authenticated in the active GSMA IR.21 dataset across SCCP, DSX, and IPX.",
             },
             {
               label: "SCCP Relationships",
@@ -141,7 +141,7 @@ export default function DashboardPage() {
               icon: <RouterIcon fontSize="large" />,
               color: "#0B6FBF",
               href: "/search/provider?service=SCCP&source=IR21",
-              tooltip: "SCCP (signaling) relationships declared specifically in GSMA IR.21 documents. Reach List coverage for this service is tracked separately — see Provider Search with the Reach List source selected.",
+              tooltip: "Total signaling (SS7 / SCCP) carrier relationships declared across all active IR.21 MNO profiles (including primary and secondary gateway routes).",
             },
             {
               label: "DSX Relationships",
@@ -149,7 +149,7 @@ export default function DashboardPage() {
               icon: <LanIcon fontSize="large" />,
               color: "#0B6FBF",
               href: "/search/provider?service=DSX&source=IR21",
-              tooltip: "DSX (LTE/Diameter signaling) relationships declared specifically in GSMA IR.21 documents. Reach List coverage for this service is tracked separately — see Provider Search with the Reach List source selected.",
+              tooltip: "Total LTE Diameter Edge Agent (DSX / Diameter) routing relationships declared in IR.21 Section 20.",
             },
             {
               label: "IPX Relationships",
@@ -157,7 +157,7 @@ export default function DashboardPage() {
               icon: <SwapHorizIcon fontSize="large" />,
               color: "#0B6FBF",
               href: "/search/provider?service=IPX&source=IR21",
-              tooltip: "IPX (GRX/data roaming) relationships declared specifically in GSMA IR.21 documents. Reach List coverage for this service is tracked separately — see Provider Search with the Reach List source selected.",
+              tooltip: "Total Data Roaming (GRX / IPX) provider relationships declared in IR.21 Section 17.",
             },
             {
               label: "Unresolved Reach List Aliases",

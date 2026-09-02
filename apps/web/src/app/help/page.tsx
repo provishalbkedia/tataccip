@@ -195,6 +195,44 @@ function OverviewTab() {
           </Grid>
         </Grid>
       </Section>
+
+      <Section title="Main Dashboard Metrics — /dashboard">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          The landing page's stat tiles are all scoped strictly to the active GSMA IR.21 baseline — none of them mix
+          in unverified commercial Reach List rows, even where a related figure elsewhere in the platform does.
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>Total MNOs</strong> — operators with a full, authoritative GSMA IR.21 declaration on file.
+              Legacy Reach-List-only TADIGs and rows still pending admin review are tracked separately (see the
+              banner directly above the tiles) and excluded from this count.
+            </>,
+            <>
+              <strong>Total Providers</strong> — wholesale/IPX providers that actually back at least one live SCCP,
+              DSX, or IPX relationship, not a raw database row count.
+            </>,
+            <>
+              <strong>Total Connections</strong> — always exactly SCCP + DSX + IPX Relationships (the three tiles
+              below it added together). If this number and that sum ever disagree, something upstream is double
+              counting or leaking Reach List data in — treat it as a data-integrity signal worth reporting.
+            </>,
+            <>
+              <strong>SCCP / DSX / IPX Relationships</strong> — every distinct (MNO/Cust, Provider) pair declared
+              for that service in IR.21, counting <em>both</em> the primary carrier and any secondary/backup
+              carrier an operator declares (e.g. a primary + backup SCCP gateway, or a multi-entry GRX/IPX list) —
+              the same full picture the MNO Detail page&apos;s Comparison Grid shows, not just the single canonical
+              provider CCIP stores per (MNO, service) for routing purposes. An MNO that multi-homes a service
+              contributes one relationship per distinct provider it declares there, not just one.
+            </>,
+            <>
+              <strong>Unresolved Reach List Aliases</strong> — Reach List rows still waiting on admin review; see{" "}
+              the Admin tab below.
+            </>,
+          ]}
+        />
+        <GoTo label="Open Dashboard" route="/dashboard" />
+      </Section>
     </Box>
   );
 }

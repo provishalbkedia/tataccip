@@ -344,7 +344,7 @@ function MnoSearchPageInner() {
   const [mcc, setMcc] = React.useState("");
   const [mnc, setMnc] = React.useState("");
   const [region, setRegion] = React.useState<Region | "">("");
-  const [onlyWithProviders, setOnlyWithProviders] = React.useState(true);
+  const [onlyWithProviders, setOnlyWithProviders] = React.useState(false);
   const [exclusiveMode, setExclusiveMode] = React.useState<ExclusiveMode>("all");
   const [datasetScope, setDatasetScope] = React.useState<DatasetScope>("ir21");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
@@ -400,7 +400,7 @@ function MnoSearchPageInner() {
     setMnc(searchParams.get("mnc") ?? "");
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
-    setOnlyWithProviders(searchParams.get("onlyWithProviders") !== "false");
+    setOnlyWithProviders(searchParams.get("onlyWithProviders") === "true");
     const urlExclusiveMode = searchParams.get("exclusiveMode");
     setExclusiveMode(urlExclusiveMode && EXCLUSIVE_MODES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
@@ -422,9 +422,9 @@ function MnoSearchPageInner() {
       if (mcc) params.set("mcc", mcc);
       if (mnc) params.set("mnc", mnc);
       if (nextRegion) params.set("region", nextRegion);
-      // Only written to the URL when off the (true) default, so an
+      // Only written to the URL when on, off its (false) default, so an
       // ordinary search URL stays clean.
-      if (!nextOnlyWithProviders) params.set("onlyWithProviders", "false");
+      if (nextOnlyWithProviders) params.set("onlyWithProviders", "true");
       if (nextExclusiveMode !== "all") params.set("exclusiveMode", nextExclusiveMode);
       if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
@@ -438,7 +438,7 @@ function MnoSearchPageInner() {
   // both to detect whether anything is currently non-default (for the
   // Reset button's active-state indicator) and, on reset, to restore.
   const hasActiveFilters =
-    !!q || !!tadig || !!country || !!mcc || !!mnc || !!region || !onlyWithProviders || exclusiveMode !== "all" || datasetScope !== "ir21";
+    !!q || !!tadig || !!country || !!mcc || !!mnc || !!region || onlyWithProviders || exclusiveMode !== "all" || datasetScope !== "ir21";
 
   const resetAllFilters = React.useCallback(() => {
     setQ("");
@@ -447,7 +447,7 @@ function MnoSearchPageInner() {
     setMcc("");
     setMnc("");
     setRegion("");
-    setOnlyWithProviders(true);
+    setOnlyWithProviders(false);
     setExclusiveMode("all");
     setDatasetScope("ir21");
     router.push(pathname, { scroll: false });

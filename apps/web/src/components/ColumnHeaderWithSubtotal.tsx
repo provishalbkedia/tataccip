@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Box, Chip, Tooltip } from "@mui/material";
+import { Box, Chip } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import type { IHeaderParams } from "ag-grid-community";
+import InfoTooltip from "./InfoTooltip";
 
 interface ColumnHeaderWithSubtotalProps extends IHeaderParams {
   // Distinct-entity count for whatever this column represents, computed
@@ -56,7 +57,7 @@ export default function ColumnHeaderWithSubtotal(props: ColumnHeaderWithSubtotal
       </Box>
       {sortDirection === "asc" && <ArrowUpwardIcon sx={{ fontSize: 14, flexShrink: 0, color: "text.secondary" }} />}
       {sortDirection === "desc" && <ArrowDownwardIcon sx={{ fontSize: 14, flexShrink: 0, color: "text.secondary" }} />}
-      <Tooltip title={`Unique ${props.entityLabel} count across current filtered results`}>
+      <InfoTooltip title={`Unique ${props.entityLabel} count across current filtered results`}>
         <Chip
           label={props.subtotal}
           size="small"
@@ -71,11 +72,11 @@ export default function ColumnHeaderWithSubtotal(props: ColumnHeaderWithSubtotal
             "& .MuiChip-label": { px: 0.75 },
           }}
         />
-      </Tooltip>
+      </InfoTooltip>
       {props.infoTooltip && (
-        <Tooltip title={props.infoTooltip} onClick={(e) => e.stopPropagation()}>
+        <InfoTooltip title={props.infoTooltip} onClick={(e) => e.stopPropagation()}>
           <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15, flexShrink: 0 }} />
-        </Tooltip>
+        </InfoTooltip>
       )}
     </Box>
   );

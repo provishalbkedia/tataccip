@@ -6,6 +6,7 @@ import type { ICellRendererParams } from "ag-grid-community";
 import {
   Autocomplete,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -15,15 +16,16 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
+import InfoTooltip from "@/components/InfoTooltip";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
@@ -85,9 +87,9 @@ function DateCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const iso = params.value as string;
   if (!iso) return <span>-</span>;
   return (
-    <Tooltip title={new Date(iso).toLocaleString()}>
+    <InfoTooltip title={new Date(iso).toLocaleString()}>
       <span>{formatAbsoluteDate(iso)}</span>
-    </Tooltip>
+    </InfoTooltip>
   );
 }
 
@@ -174,9 +176,9 @@ function KpiCard({
             <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.4 }}>
               {label}
             </Typography>
-            <Tooltip title={tooltip}>
+            <InfoTooltip title={tooltip}>
               <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-            </Tooltip>
+            </InfoTooltip>
             {active && <Chip label="Filtered" size="small" color="primary" sx={{ ml: "auto", height: 20, flexShrink: 0 }} />}
           </Box>
           {typeof value === "string" ? (
@@ -320,9 +322,9 @@ function KpiAutocompleteHint() {
       <Typography variant="caption" color="text.secondary">
         Search &amp; filter
       </Typography>
-      <Tooltip title="Type or select any ranked carrier/MNO to isolate their specific churn feed and re-scope the results table below.">
+      <InfoTooltip title="Type or select any ranked carrier/MNO to isolate their specific churn feed and re-scope the results table below.">
         <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 14 }} />
-      </Tooltip>
+      </InfoTooltip>
     </Box>
   );
 }
@@ -632,6 +634,37 @@ export default function Ir21ChangesPage() {
     setChangeType("");
   };
 
+  // Counts exactly the filter/selection dimensions "Clear Filters" flushes
+  // below -- drives both the button's own enabled state and its "(N
+  // active)" label, so the two never drift out of sync with each other.
+  const activeFilterCount =
+    (timeframe !== "3m" ? 1 : 0) +
+    (region ? 1 : 0) +
+    (service ? 1 : 0) +
+    (changeType ? 1 : 0) +
+    (search ? 1 : 0) +
+    (provider ? 1 : 0) +
+    (activeKpi ? 1 : 0);
+
+  // One-shot reset back to the page's baseline view. Provider and its
+  // driving Autocomplete input are cleared together -- leaving providerInput
+  // stale would show old typed text in a box whose `value` had already
+  // reset to null. There are no URL query params to clean up here: unlike
+  // /search/mno, this page's filters were never synced to the address bar
+  // in the first place (queryString/overviewQueryString only ever feed the
+  // API fetch), so resetting this state is already the complete flush.
+  const resetAllFilters = () => {
+    setTimeframe("3m");
+    setRegion("");
+    setService("");
+    setChangeType("");
+    setSearch("");
+    setProvider(null);
+    setProviderInput("");
+    setProviderRole(null);
+    setActiveKpi(null);
+  };
+
   return (
     <RequireAuth>
       <AppShell>
@@ -762,9 +795,9 @@ export default function Ir21ChangesPage() {
               <Typography variant="body2" color="text.secondary">
                 Timeframe:
               </Typography>
-              <Tooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
+              <InfoTooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
                 <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-              </Tooltip>
+              </InfoTooltip>
             </Box>
             <ToggleButtonGroup
               exclusive
@@ -893,6 +926,22 @@ export default function Ir21ChangesPage() {
                 ? "Loading…"
                 : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
             </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FilterAltOffIcon />}
+              onClick={resetAllFilters}
+              disabled={activeFilterCount === 0}
+              sx={{
+                ml: "auto",
+                alignSelf: "center",
+                borderColor: "#CFD8DC",
+                color: "#0A2540",
+                "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
+              }}
+            >
+              {activeFilterCount > 0 ? `Clear Filters (${activeFilterCount} active)` : "Clear Filters"}
+            </Button>
           </Box>
         </Paper>
 

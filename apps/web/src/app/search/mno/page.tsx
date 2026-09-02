@@ -182,22 +182,46 @@ function RegionCell(params: ICellRendererParams<MnoSummary>) {
 }
 
 /** Distinguishes a row with a real IR.21 declaration from a legacy row
- * known only via a Reach List upload (see hasIr21Declaration). maxWidth
- * "100%" plus the label's own ellipsis lets the chip itself shrink and
- * truncate along with the column instead of overflowing the cell when a
- * user drags the column narrower than "Reach List Only" needs. */
+ * known only via a Reach List upload (see hasIr21Declaration), plus — merged
+ * in from the old standalone "IR.21 PDF" column — a compact PDF-open icon
+ * right next to it when one is available, so viewing the source document no
+ * longer needs a separate, far-right column and the horizontal scroll to
+ * reach it. maxWidth "100%" plus the label's own ellipsis lets the chip
+ * itself shrink and truncate along with the column instead of overflowing
+ * the cell when a user drags the column narrower than "Reach List Only"
+ * needs. stopPropagation on the icon keeps the PDF click from also
+ * triggering the row's own checkbox-selection toggle. */
 function SourceCell(params: ICellRendererParams<MnoSummary>) {
   const hasIr21 = params.value as boolean;
-  return hasIr21 ? (
-    <Chip label="IR.21" size="small" color="primary" variant="outlined" sx={{ maxWidth: "100%" }} />
-  ) : (
-    <Chip
-      label="Reach List Only"
-      size="small"
-      color="warning"
-      variant="outlined"
-      sx={{ maxWidth: "100%", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
-    />
+  return (
+    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, maxWidth: "100%" }}>
+      {hasIr21 ? (
+        <Chip label="IR.21" size="small" color="primary" variant="outlined" sx={{ maxWidth: "100%" }} />
+      ) : (
+        <Chip
+          label="Reach List Only"
+          size="small"
+          color="warning"
+          variant="outlined"
+          sx={{ maxWidth: "100%", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
+        />
+      )}
+      {params.data?.hasPdfDocument && (
+        <Tooltip title="View official GSMA IR.21 PDF" arrow>
+          <IconButton
+            size="small"
+            color="error"
+            sx={{ p: 0.25, "&:hover": { transform: "scale(1.1)" } }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (params.data) openMnoPdf(params.data.id);
+            }}
+          >
+            <PictureAsPdfIcon fontSize="small" sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+    </Box>
   );
 }
 
@@ -231,27 +255,6 @@ function OperatorNameCell(params: ICellRendererParams<MnoSummary>) {
     >
       {params.value}
     </span>
-  );
-}
-
-/** stopPropagation so clicking the PDF icon doesn't also trigger the row's
- * own checkbox-selection toggle. */
-function PdfCell(params: ICellRendererParams<MnoSummary>) {
-  if (!params.data?.hasPdfDocument) {
-    return <span style={{ color: "rgba(0,0,0,0.4)" }}>-</span>;
-  }
-  return (
-    <IconButton
-      size="small"
-      color="error"
-      title="View IR.21 PDF"
-      onClick={(e) => {
-        e.stopPropagation();
-        if (params.data) openMnoPdf(params.data.id);
-      }}
-    >
-      <PictureAsPdfIcon fontSize="small" />
-    </IconButton>
   );
 }
 
@@ -870,7 +873,7 @@ function MnoSearchPageInner() {
               headerComponent: ColumnHeaderWithSubtotal,
               headerComponentParams: { subtotal: columnSubtotals.mnos, entityLabel: "MNO / Cust" },
             },
-            { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 90, sortable: false, filter: false },
+            { field: "hasIr21Declaration", headerName: "Source", cellRenderer: SourceCell, minWidth: 115, sortable: false, filter: false },
             { field: "region", headerName: "Region", cellRenderer: RegionCell, minWidth: 90 },
             {
               field: "country",
@@ -966,13 +969,17 @@ function MnoSearchPageInner() {
               valueGetter: (p) => p.data?.soleIpxProvider ?? "-",
             },
             {
+              // Merged into the "Source" column's cell renderer above (the
+              // PDF icon now sits next to the source chip) so this no longer
+              // renders as its own grid column -- kept hidden purely so
+              // "Export CSV" (which reads allColumns, see DataGrid.tsx)
+              // still carries a "Has IR.21 PDF" value for offline reporting.
               field: "hasPdfDocument",
-              headerName: "IR.21 PDF",
-              cellRenderer: PdfCell,
+              headerName: "Has IR.21 PDF",
+              hide: true,
+              valueFormatter: (p) => (p.value ? "Yes" : "No"),
               sortable: false,
               filter: false,
-              minWidth: 100,
-              flex: 0.6,
             },
             { field: "tadigCode", headerName: "TADIG" },
             { field: "mnoAsNumbers", headerName: "MNO's ASNs (GRX/IPX)", valueFormatter: joinOrDash },

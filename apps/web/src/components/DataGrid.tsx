@@ -240,7 +240,10 @@ export default function DataGrid<T>({
   const handleExport = React.useCallback(() => {
     const api = gridRef.current?.api;
     if (!api || !exportFileName) return;
-    const csv = api.getDataAsCsv();
+    // allColumns: true pulls in columns marked hide: true (e.g. MNO Search's
+    // "Has IR.21 PDF") so a value merged into another column's cell renderer
+    // for display purposes still reaches CSV exports for offline reporting.
+    const csv = api.getDataAsCsv({ allColumns: true });
     if (csv === undefined) return;
     const footer =
       "\nNotice: Exported from CCIP for intelligence analysis. Sourced from declared IR.21 & Reach List archives without operational warranty.\n";

@@ -33,7 +33,7 @@ export class MnoController {
       mcc,
       mnc,
       region,
-      onlyWithProviders: onlyWithProviders !== "false",
+      onlyWithProviders: onlyWithProviders === "true",
       datasetScope,
     });
   }

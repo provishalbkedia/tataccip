@@ -127,6 +127,23 @@ const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusiv
   any: (r) => r.isAnyServiceExclusive,
 };
 
+// Drill-in from the Dashboard's SCCP/DSX/IPX Relationships cards
+// (?service=SCCP|DSX|IPX) -- narrows to MNOs that declare at least one
+// provider for that specific service, independent of (and combinable
+// with) the exclusivity mode filter above.
+type ServiceFilter = "SCCP" | "DSX" | "IPX";
+const SERVICE_FILTERS: ServiceFilter[] = ["SCCP", "DSX", "IPX"];
+const SERVICE_FILTER_LABEL: Record<ServiceFilter, string> = {
+  SCCP: "Declared SCCP Only",
+  DSX: "Declared DSX Only",
+  IPX: "Declared IPX Only",
+};
+const SERVICE_FILTER_PREDICATE: Record<ServiceFilter, (r: MnoSummaryWithExclusivity) => boolean> = {
+  SCCP: (r) => r.sccpProviders.length > 0,
+  DSX: (r) => r.dsxProviders.length > 0,
+  IPX: (r) => r.ipxProviders.length > 0,
+};
+
 type DatasetScope = "ir21" | "reachlist" | "all";
 const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist", "all"];
 const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
@@ -346,6 +363,7 @@ function MnoSearchPageInner() {
   const [region, setRegion] = React.useState<Region | "">("");
   const [onlyWithProviders, setOnlyWithProviders] = React.useState(false);
   const [exclusiveMode, setExclusiveMode] = React.useState<ExclusiveMode>("all");
+  const [serviceFilter, setServiceFilter] = React.useState<ServiceFilter | "">("");
   const [datasetScope, setDatasetScope] = React.useState<DatasetScope>("ir21");
   const [results, setResults] = React.useState<MnoSummary[]>([]);
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
@@ -363,8 +381,11 @@ function MnoSearchPageInner() {
     [rowsWithExclusivity],
   );
   const visibleRows = React.useMemo(
-    () => rowsWithExclusivity.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
-    [rowsWithExclusivity, exclusiveMode],
+    () =>
+      rowsWithExclusivity
+        .filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode])
+        .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r)),
+    [rowsWithExclusivity, exclusiveMode, serviceFilter],
   );
 
   // Distinct-entity subtotals for the column-header chips -- derived
@@ -401,6 +422,8 @@ function MnoSearchPageInner() {
     const urlRegion = searchParams.get("region");
     setRegion(urlRegion && (REGION_OPTIONS as string[]).includes(urlRegion) ? (urlRegion as Region) : "");
     setOnlyWithProviders(searchParams.get("onlyWithProviders") === "true");
+    const urlService = searchParams.get("service");
+    setServiceFilter(urlService && SERVICE_FILTERS.includes(urlService as ServiceFilter) ? (urlService as ServiceFilter) : "");
     const urlExclusiveMode = searchParams.get("exclusiveMode");
     setExclusiveMode(urlExclusiveMode && EXCLUSIVE_MODES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
@@ -410,11 +433,18 @@ function MnoSearchPageInner() {
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (overrides?: { region?: Region | ""; onlyWithProviders?: boolean; exclusiveMode?: ExclusiveMode; datasetScope?: DatasetScope }) => {
+    (overrides?: {
+      region?: Region | "";
+      onlyWithProviders?: boolean;
+      exclusiveMode?: ExclusiveMode;
+      datasetScope?: DatasetScope;
+      service?: ServiceFilter | "";
+    }) => {
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
       const nextExclusiveMode = overrides?.exclusiveMode ?? exclusiveMode;
       const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
+      const nextService = overrides?.service ?? serviceFilter;
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (tadig) params.set("tadig", tadig);
@@ -427,9 +457,10 @@ function MnoSearchPageInner() {
       if (nextOnlyWithProviders) params.set("onlyWithProviders", "true");
       if (nextExclusiveMode !== "all") params.set("exclusiveMode", nextExclusiveMode);
       if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
+      if (nextService) params.set("service", nextService);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, serviceFilter, pathname, router],
   );
 
   const runSearch = React.useCallback(() => pushParams(), [pushParams]);
@@ -438,7 +469,16 @@ function MnoSearchPageInner() {
   // both to detect whether anything is currently non-default (for the
   // Reset button's active-state indicator) and, on reset, to restore.
   const hasActiveFilters =
-    !!q || !!tadig || !!country || !!mcc || !!mnc || !!region || onlyWithProviders || exclusiveMode !== "all" || datasetScope !== "ir21";
+    !!q ||
+    !!tadig ||
+    !!country ||
+    !!mcc ||
+    !!mnc ||
+    !!region ||
+    onlyWithProviders ||
+    exclusiveMode !== "all" ||
+    datasetScope !== "ir21" ||
+    !!serviceFilter;
 
   const resetAllFilters = React.useCallback(() => {
     setQ("");
@@ -450,8 +490,14 @@ function MnoSearchPageInner() {
     setOnlyWithProviders(false);
     setExclusiveMode("all");
     setDatasetScope("ir21");
+    setServiceFilter("");
     router.push(pathname, { scroll: false });
   }, [pathname, router]);
+
+  const clearServiceFilter = React.useCallback(() => {
+    setServiceFilter("");
+    pushParams({ service: "" });
+  }, [pushParams]);
 
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<MnoSuggestion[]>(`/mno/suggestions?q=${encodeURIComponent(query)}`),
@@ -759,6 +805,17 @@ function MnoSearchPageInner() {
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
           </Tooltip>
         </Box>
+
+        {serviceFilter && (
+          <Box sx={{ mb: 1.5 }}>
+            <Chip
+              label={`Filter: ${SERVICE_FILTER_LABEL[serviceFilter]} (${visibleRows.length})`}
+              color="primary"
+              onDelete={clearServiceFilter}
+              sx={{ fontWeight: 600 }}
+            />
+          </Box>
+        )}
 
         <Box
           sx={{

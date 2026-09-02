@@ -90,7 +90,7 @@ export class MnoService {
     onlyWithProviders?: boolean;
     datasetScope?: "ir21" | "reachlist" | "all";
   }): Promise<MnoSummary[]> {
-    const { q, tadig, country, mcc, mnc, region, onlyWithProviders = true, datasetScope = "ir21" } = params;
+    const { q, tadig, country, mcc, mnc, region, onlyWithProviders = false, datasetScope = "ir21" } = params;
     const requestedRegions = region
       ? new Set(region.split(",").map((r) => r.trim()).filter((r) => (ALL_REGIONS as string[]).includes(r)))
       : null;
@@ -171,10 +171,10 @@ export class MnoService {
     // An MNO with no resolved provider on any service (no Ir21Connectivity,
     // no ProviderReachlist row) has nothing comparable to show in Operator
     // Search — every provider/PDF/date column would just render "-".
-    // Filtered out by default (onlyWithProviders), toggleable off from the
-    // UI to see the full IR.21 baseline. The MnoMaster row itself is left
-    // alone either way (still counted in the baseline, still reachable by
-    // a direct link); this only changes what search results include.
+    // Included by default; onlyWithProviders lets the UI opt into hiding
+    // these instead. The MnoMaster row itself is left alone either way
+    // (still counted in the baseline, still reachable by a direct link);
+    // this only changes what search results include.
     const mapped = orderedRows.map((r) => {
       const p = providersByMno.get(r.id);
       return {

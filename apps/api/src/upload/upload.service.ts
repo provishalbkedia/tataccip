@@ -1103,7 +1103,15 @@ export class UploadService {
 
     const existingRows = await this.prisma.ir21RoutingChange.findMany({
       where: { mnoId },
-      select: { serviceName: true, changeType: true, oldProviderId: true, newProviderId: true, description: true, effectiveDate: true },
+      select: {
+        serviceName: true,
+        changeType: true,
+        oldProviderId: true,
+        newProviderId: true,
+        description: true,
+        effectiveDate: true,
+        isInitialOnboarding: true,
+      },
     });
 
     // Non-carrier rows (the 3 technical types plus ADMIN_NAME_UPDATE) have
@@ -1127,9 +1135,20 @@ export class UploadService {
     const seen = new Set(
       existingRows.map((r) => seenKeyFor({ ...r, dateStr: r.effectiveDate.toISOString().slice(0, 10) })),
     );
+    // Excludes an onboarding-flagged row -- that row is never counted in any
+    // churn KPI (Ir21RoutingChangesService.summary forces it out), so if it
+    // were allowed to "claim" a provider here, a ChangeHistory-derived
+    // carrier swap arriving for the SAME provider would have its own "new"
+    // side stripped down to a bare REMOVED, and the real competitive win
+    // would end up credited to *nobody* -- confirmed against a real MNO
+    // whose very first upload's live-diff correctly (and separately)
+    // suppressed "ADDED Tata Comm" as onboarding, while the same file's own
+    // <ChangeHistory> log documented a genuine historical "BICS -> Tata
+    // Comm" replacement; without this exclusion that history entry degraded
+    // to a bare "REMOVED BICS" with no corresponding gainer at all.
     const hasAdditionRecorded = new Set(
       existingRows
-        .filter((r) => r.newProviderId !== null && (r.changeType === "ADDED" || r.changeType === "REPLACED"))
+        .filter((r) => r.newProviderId !== null && (r.changeType === "ADDED" || r.changeType === "REPLACED") && !r.isInitialOnboarding)
         .map((r) => `${r.serviceName}|${r.newProviderId}`),
     );
 
@@ -1273,6 +1292,7 @@ export class UploadService {
         matchedRule: true,
         description: true,
         effectiveDate: true,
+        isInitialOnboarding: true,
       },
     });
 
@@ -1305,9 +1325,21 @@ export class UploadService {
     let rowsSkippedNoMatch = 0;
 
     for (const groupRows of byGroup.values()) {
+      // Excludes an onboarding-flagged LIVE_DIFF row for the same reason
+      // backfillChangeHistory's own hasAdditionRecorded does -- see that
+      // method's comment. Without this, reclassifying a ChangeHistory row
+      // whose "new" side collides with an onboarding-suppressed LIVE_DIFF
+      // addition would strip that provider out here too, leaving the real
+      // competitive win credited to nobody in either pass.
       const hasAdditionRecorded = new Set<number>(
         groupRows
-          .filter((r) => r.changeSource === "LIVE_DIFF" && r.newProviderId !== null && (r.changeType === "ADDED" || r.changeType === "REPLACED"))
+          .filter(
+            (r) =>
+              r.changeSource === "LIVE_DIFF" &&
+              r.newProviderId !== null &&
+              (r.changeType === "ADDED" || r.changeType === "REPLACED") &&
+              !r.isInitialOnboarding,
+          )
           .map((r) => r.newProviderId as number),
       );
 

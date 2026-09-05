@@ -10,6 +10,7 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   FormControlLabel,
   MenuItem,
@@ -26,6 +27,7 @@ import {
   Typography,
 } from "@mui/material";
 import RuleIcon from "@mui/icons-material/Rule";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
 import { api, ApiError } from "@/lib/api";
 import { Ir21RoutingChangeRow, RoutingChangeType } from "@ccip/shared-types";
 
@@ -146,18 +148,43 @@ export default function Ir21ChangeLogReviewTab() {
   const [scope, setScope] = React.useState<"review" | "all">("review");
   const [editing, setEditing] = React.useState<Ir21RoutingChangeRow | null>(null);
   const [savedMsg, setSavedMsg] = React.useState(false);
+  const [confirmReprocess, setConfirmReprocess] = React.useState(false);
+  const [reprocessing, setReprocessing] = React.useState(false);
+  const [reprocessResult, setReprocessResult] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const load = React.useCallback(() => {
     setLoading(true);
-    api
+    return api
       .get<Ir21RoutingChangeRow[]>("/analytics/ir21-changes/feed?changeType=ALL&timeframe=all")
       .then(setRows)
       .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load change log"))
       .finally(() => setLoading(false));
   }, []);
 
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
   const visibleRows = React.useMemo(() => (scope === "review" ? rows.filter(needsReview) : rows), [rows, scope]);
   const reviewCount = React.useMemo(() => rows.filter(needsReview).length, [rows]);
+
+  const runReprocess = async () => {
+    setReprocessing(true);
+    setConfirmReprocess(false);
+    try {
+      const { updatedCount } = await api.post<{ updatedCount: number }>("/analytics/ir21-changes/reprocess-onboarding");
+      setReprocessResult(
+        updatedCount > 0
+          ? `Reclassified ${updatedCount} row(s) as onboarding (excluded from churn KPIs).`
+          : "Nothing to reclassify — every eligible row is already correctly flagged.",
+      );
+      await load();
+    } catch (e) {
+      setReprocessResult(e instanceof ApiError ? e.message : "Failed to reprocess onboarding classification");
+    } finally {
+      setReprocessing(false);
+    }
+  };
 
   return (
     <Box>
@@ -169,16 +196,29 @@ export default function Ir21ChangeLogReviewTab() {
         it wrong.
       </Typography>
 
-      <ToggleButtonGroup
-        exclusive
-        size="small"
-        value={scope}
-        onChange={(_, v) => v && setScope(v)}
-        sx={{ mb: 2, "& .MuiToggleButton-root": { textTransform: "none", px: 2 } }}
-      >
-        <ToggleButton value="review">Needs Review ({reviewCount})</ToggleButton>
-        <ToggleButton value="all">All Events ({rows.length})</ToggleButton>
-      </ToggleButtonGroup>
+      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5, mb: 2 }}>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={scope}
+          onChange={(_, v) => v && setScope(v)}
+          sx={{ "& .MuiToggleButton-root": { textTransform: "none", px: 2 } }}
+        >
+          <ToggleButton value="review">Needs Review ({reviewCount})</ToggleButton>
+          <ToggleButton value="all">All Events ({rows.length})</ToggleButton>
+        </ToggleButtonGroup>
+
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<AutorenewIcon />}
+          onClick={() => setConfirmReprocess(true)}
+          disabled={reprocessing}
+          sx={{ ml: "auto" }}
+        >
+          Reprocess Existing Baseline
+        </Button>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -259,6 +299,35 @@ export default function Ir21ChangeLogReviewTab() {
       )}
 
       <Snackbar open={savedMsg} autoHideDuration={3000} onClose={() => setSavedMsg(false)} message="Classification updated" />
+
+      <Dialog open={confirmReprocess} onClose={() => setConfirmReprocess(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <AutorenewIcon color="primary" fontSize="small" />
+          Reprocess Existing Baseline
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div">
+            Retroactively flags every MNO&apos;s earliest recorded &quot;+ ADDED&quot; event as onboarding, not
+            market churn — this is what fixes an old baseline load (e.g. hundreds of MNOs uploaded together) showing
+            up as a flood of fake carrier wins in Total Churn Events and the Gainer/Loser KPIs.
+            <br />
+            <br />
+            Safe to run any time: only rows still on the old classification are touched, and a row already correct
+            is left alone. This does <strong>not</strong> recover Config/IP or Admin/Name updates from a{" "}
+            <code>&lt;ChangeHistory&gt;</code> entry an older ingestion silently dropped — that raw text was never
+            stored, so recovering those specifically requires re-uploading the original IR.21 archive(s) through
+            Admin Upload (also safe: it won&apos;t create duplicate churn events for data that hasn&apos;t changed).
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmReprocess(false)}>Cancel</Button>
+          <Button variant="contained" onClick={runReprocess} disabled={reprocessing}>
+            {reprocessing ? "Reprocessing…" : "Reprocess Now"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={!!reprocessResult} autoHideDuration={6000} onClose={() => setReprocessResult(null)} message={reprocessResult ?? ""} />
     </Box>
   );
 }

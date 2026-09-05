@@ -222,6 +222,47 @@ export class Ir21RoutingChangesService {
     };
   }
 
+  /** Retroactively corrects isInitialOnboarding on rows written before that
+   * column existed (or by any earlier run of this same job) -- every
+   * platform install accumulates MNOs whose very first LIVE_DIFF-recorded
+   * change looked, in the data, identical in shape to a genuine new-carrier
+   * win (nothing on file before it), when it was really just that MNO's
+   * onboarding. For each MNO, its LIVE_DIFF row(s) at that MNO's own
+   * earliest LIVE_DIFF effectiveDate are flagged onboarding -- scoped to
+   * changeSource=LIVE_DIFF specifically (not just MIN(effectiveDate) across
+   * everything) because a CHANGE_HISTORY backfill can carry a genuinely
+   * older real-world date than the MNO's first upload, which would
+   * otherwise make the true onboarding row's own date look non-minimal and
+   * get skipped. CHANGE_HISTORY rows are never touched here or by this
+   * flag at all -- their dated entries describe real historical events
+   * regardless of when this platform first saw the MNO.
+   *
+   * Idempotent and safe to re-run any time: already-correct rows
+   * (isInitialOnboarding already true, or a genuinely later real addition)
+   * simply don't match the WHERE clause again. This does NOT recover
+   * CONFIG_UPDATE/ADMIN_UPDATE classifications for historical
+   * <ChangeHistory> entries an older ingestion silently dropped -- that raw
+   * description text was never persisted, so recovering it requires
+   * re-uploading the original IR.21 archive(s) through Admin Upload (safe:
+   * live-diff produces zero duplicate churn rows for unchanged data, and
+   * backfillChangeHistory's own dedup guards prevent re-inserting anything
+   * already on file). */
+  async reprocessOnboardingClassification(): Promise<{ updatedCount: number }> {
+    const updatedCount = await this.prisma.$executeRaw`
+      UPDATE "Ir21RoutingChange" t
+      SET "isInitialOnboarding" = true
+      WHERE t."changeType" = 'ADDED'
+        AND t."changeSource" = 'LIVE_DIFF'
+        AND t."isInitialOnboarding" = false
+        AND t."effectiveDate" = (
+          SELECT MIN(t2."effectiveDate")
+          FROM "Ir21RoutingChange" t2
+          WHERE t2."mnoId" = t."mnoId" AND t2."changeSource" = 'LIVE_DIFF'
+        )
+    `;
+    return { updatedCount };
+  }
+
   /** Admin override from the IR.21 Change Log & Normalization Review screen
    * -- corrects an automatic classification (e.g. a CONFIG_UPDATE that was
    * actually an ADMIN_UPDATE, or a bulk-load ADDED row that either

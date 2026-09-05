@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -32,5 +32,15 @@ export class Ir21RoutingChangesController {
   @Roles(Role.ADMIN)
   reclassify(@Param("id") id: string, @Body() dto: ReclassifyRoutingChangeDto) {
     return this.ir21RoutingChangesService.reclassify(id, dto.changeType, dto.isInitialOnboarding);
+  }
+
+  // Admin-only, idempotent, re-runnable at any time -- retroactively fixes
+  // isInitialOnboarding on rows written before that concept existed (or
+  // before it existed at all, pre-migration). See the service method's own
+  // doc comment for exactly what this can and can't recover.
+  @Post("reprocess-onboarding")
+  @Roles(Role.ADMIN)
+  reprocessOnboarding() {
+    return this.ir21RoutingChangesService.reprocessOnboardingClassification();
   }
 }

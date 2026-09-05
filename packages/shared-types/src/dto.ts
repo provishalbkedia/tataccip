@@ -798,6 +798,29 @@ export interface Ir21RoutingChangeRow {
   hasPdfDocument: boolean;
 }
 
+// UploadService.reclassifyChangeHistoryTaxonomy's report -- re-runs every
+// CHANGE_HISTORY row's stored description through the current
+// interpretChangeHistoryDescription/classifyNonCarrierChange rules and
+// updates changeType/matchedRule/provider fields where the classification
+// has changed since the row was originally ingested (e.g. under an older,
+// narrower regex set). LIVE_DIFF rows are never touched -- their
+// changeType comes from a direct connectivity diff, not from classifying
+// free text. before/afterCounts span every Ir21RoutingChange row
+// (LIVE_DIFF + CHANGE_HISTORY) keyed by changeType, so they show exactly
+// what the Market Intelligence pill bar's own badges will read before and
+// after this runs. Deliberately can't recover a <ChangeHistory> entry an
+// older ingestion never stored at all because nothing matched at the time
+// -- that raw text was never persisted, so recovering it requires
+// re-uploading the original IR.21 archive(s) through Admin Upload.
+export interface Ir21ReclassifyTaxonomyResult {
+  rowsScanned: number;
+  rowsUpdated: number;
+  rowsUnchanged: number;
+  rowsSkippedNoMatch: number;
+  beforeCounts: Record<string, number>;
+  afterCounts: Record<string, number>;
+}
+
 // Every field here is computed strictly from genuine carrier routing
 // switches (ADDED/REMOVED/REPLACED, isInitialOnboarding excluded) regardless
 // of what changeType the feed itself is currently filtered to -- a

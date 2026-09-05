@@ -28,8 +28,9 @@ import {
 } from "@mui/material";
 import RuleIcon from "@mui/icons-material/Rule";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 import { api, ApiError } from "@/lib/api";
-import { CARRIER_CHURN_TYPES, Ir21RoutingChangeRow, RoutingChangeType, SERVICE_SECTION_ID } from "@ccip/shared-types";
+import { CARRIER_CHURN_TYPES, Ir21ReclassifyTaxonomyResult, Ir21RoutingChangeRow, RoutingChangeType, SERVICE_SECTION_ID } from "@ccip/shared-types";
 
 const CHANGE_TYPE_OPTIONS: RoutingChangeType[] = [
   "ADDED",
@@ -176,6 +177,10 @@ export default function Ir21ChangeLogReviewTab() {
   const [confirmReprocess, setConfirmReprocess] = React.useState(false);
   const [reprocessing, setReprocessing] = React.useState(false);
   const [reprocessResult, setReprocessResult] = React.useState<string | null>(null);
+  const [confirmReclassify, setConfirmReclassify] = React.useState(false);
+  const [reclassifying, setReclassifying] = React.useState(false);
+  const [reclassifyResult, setReclassifyResult] = React.useState<Ir21ReclassifyTaxonomyResult | null>(null);
+  const [reclassifyError, setReclassifyError] = React.useState<string | null>(null);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -211,6 +216,21 @@ export default function Ir21ChangeLogReviewTab() {
     }
   };
 
+  const runReclassify = async () => {
+    setReclassifying(true);
+    setConfirmReclassify(false);
+    setReclassifyError(null);
+    try {
+      const result = await api.post<Ir21ReclassifyTaxonomyResult>("/upload/reclassify-change-history-taxonomy");
+      setReclassifyResult(result);
+      await load();
+    } catch (e) {
+      setReclassifyError(e instanceof ApiError ? e.message : "Failed to reclassify change history taxonomy");
+    } finally {
+      setReclassifying(false);
+    }
+  };
+
   return (
     <Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -236,10 +256,20 @@ export default function Ir21ChangeLogReviewTab() {
         <Button
           size="small"
           variant="outlined"
+          startIcon={<FactCheckIcon />}
+          onClick={() => setConfirmReclassify(true)}
+          disabled={reclassifying}
+          sx={{ ml: "auto" }}
+        >
+          Reclassify Taxonomy
+        </Button>
+
+        <Button
+          size="small"
+          variant="outlined"
           startIcon={<AutorenewIcon />}
           onClick={() => setConfirmReprocess(true)}
           disabled={reprocessing}
-          sx={{ ml: "auto" }}
         >
           Reprocess Existing Baseline
         </Button>
@@ -345,6 +375,106 @@ export default function Ir21ChangeLogReviewTab() {
       )}
 
       <Snackbar open={savedMsg} autoHideDuration={3000} onClose={() => setSavedMsg(false)} message="Classification updated" />
+
+      <Dialog open={confirmReclassify} onClose={() => setConfirmReclassify(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <FactCheckIcon color="primary" fontSize="small" />
+          Reclassify Taxonomy
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div">
+            Re-runs every existing <code>ChangeHistory</code>-sourced row&apos;s stored raw description through the
+            current classifier rules and updates its Normalized Bucket / Tag and Matched Rule / Pattern where they&apos;ve
+            changed — fixing rows classified under an older, narrower regex set (e.g. before real-file calibration
+            widened the carrier-swap patterns and reordered the non-carrier bucket priority).
+            <br />
+            <br />
+            Live-diff rows (a direct provider-to-provider change detected between two uploads) are never touched —
+            there&apos;s no free text on those to reclassify. Safe to run any time: a row already correct under the
+            current rules is left alone.
+            <br />
+            <br />
+            This does <strong>not</strong> recover a <code>&lt;ChangeHistory&gt;</code> entry an older ingestion
+            silently dropped because nothing matched at the time — that raw description text was never stored as a
+            row at all, so recovering those specifically requires re-uploading the original IR.21 archive(s) through
+            Admin Upload.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmReclassify(false)}>Cancel</Button>
+          <Button variant="contained" onClick={runReclassify} disabled={reclassifying}>
+            {reclassifying ? "Reclassifying…" : "Reclassify Now"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!reclassifyResult} onClose={() => setReclassifyResult(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <FactCheckIcon color="primary" fontSize="small" />
+          Reclassification Complete
+        </DialogTitle>
+        <DialogContent>
+          {reclassifyResult && (
+            <>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                Scanned {reclassifyResult.rowsScanned} <code>ChangeHistory</code>-sourced row(s):{" "}
+                <strong>{reclassifyResult.rowsUpdated}</strong> updated, {reclassifyResult.rowsUnchanged} already
+                correct
+                {reclassifyResult.rowsSkippedNoMatch > 0
+                  ? `, ${reclassifyResult.rowsSkippedNoMatch} left as-is (matched neither a carrier nor a technical/admin pattern under the current rules).`
+                  : "."}
+              </Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Event counts by category, before vs. after
+              </Typography>
+              <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }} align="right">
+                        Before
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700 }} align="right">
+                        After
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700 }} align="right">
+                        Δ
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {Array.from(new Set([...Object.keys(reclassifyResult.beforeCounts), ...Object.keys(reclassifyResult.afterCounts)]))
+                      .sort()
+                      .map((type) => {
+                        const before = reclassifyResult.beforeCounts[type] ?? 0;
+                        const after = reclassifyResult.afterCounts[type] ?? 0;
+                        const delta = after - before;
+                        return (
+                          <TableRow key={type}>
+                            <TableCell>{CHANGE_TYPE_LABEL[type as RoutingChangeType] ?? type}</TableCell>
+                            <TableCell align="right">{before}</TableCell>
+                            <TableCell align="right">{after}</TableCell>
+                            <TableCell align="right" sx={{ color: delta > 0 ? "success.main" : delta < 0 ? "error.main" : "text.secondary", fontWeight: delta !== 0 ? 700 : 400 }}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setReclassifyResult(null)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={!!reclassifyError} autoHideDuration={6000} onClose={() => setReclassifyError(null)} message={reclassifyError ?? ""} />
 
       <Dialog open={confirmReprocess} onClose={() => setConfirmReprocess(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>

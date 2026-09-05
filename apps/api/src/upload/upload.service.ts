@@ -13,7 +13,29 @@ import { interpretChangeHistoryDescription, classifyNonCarrierChange } from "./i
 const NON_CARRIER_CHANGE_TYPES = new Set(["IP_SUBNET_UPDATE", "DIAMETER_REALM_UPDATE", "POINT_CODE_GT_UPDATE", "ADMIN_NAME_UPDATE"]);
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
-import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UnresolvedReachRow, UploadResult } from "@ccip/shared-types";
+import {
+  ActiveBaselineInfo,
+  BulkXmlUploadResult,
+  DsxBackfillResult,
+  Ir21ReclassifyTaxonomyResult,
+  UnresolvedReachRow,
+  UploadResult,
+} from "@ccip/shared-types";
+
+/** Informational "Matched Rule / Pattern" label for a carrier-swap
+ * CHANGE_HISTORY row -- shown alongside the 4 non-carrier types' own named
+ * regex rule (e.g. "REGEX_IP_RANGE") in the IR.21 Change Log &
+ * Normalization Review screen, so a carrier ADDED/REMOVED/REPLACED row
+ * isn't the only row in that column left blank. Shared between
+ * backfillChangeHistory (new ingests) and reclassifyChangeHistoryTaxonomy
+ * (existing rows) so both paths stay in sync. */
+function carrierSwapMatchedRule(oldProviderId: number | null, newProviderId: number | null): string {
+  return oldProviderId !== null && newProviderId !== null
+    ? "CARRIER_SWAP_PATTERN (old+new)"
+    : newProviderId !== null
+      ? "CARRIER_SWAP_PATTERN (add-only)"
+      : "CARRIER_SWAP_PATTERN (remove-only)";
+}
 
 // GSMA TADIG codes are always exactly 5 characters: 3-letter country + 2-char operator.
 const TADIG_REGEX = /^[A-Z0-9]{5}$/;
@@ -1195,12 +1217,203 @@ export class UploadService {
           newProviderId,
           newProviderName: newProvider?.providerName ?? null,
           description: item.description,
+          matchedRule: carrierSwapMatchedRule(oldProviderId, newProviderId),
           changeSource: "CHANGE_HISTORY",
           sourceFile: filename,
           effectiveDate,
         },
       });
     }
+  }
+
+  /** Retroactively re-runs every CHANGE_HISTORY row's stored `description`
+   * through the CURRENT interpretChangeHistoryDescription /
+   * classifyNonCarrierChange rules, fixing rows classified under an older,
+   * narrower regex set (e.g. before real-file calibration widened the
+   * carrier-swap patterns -- "Delete"/"GRX provider"/"SCCP gateway"
+   * synonyms, trailing-qualifier stripping -- and reordered the 4
+   * non-carrier buckets' priority). Mirrors backfillChangeHistory's own
+   * classification + anti-double-count logic exactly, just applied to
+   * already-persisted rows instead of freshly-parsed XML items:
+   *   - Tries a carrier interpretation first, exactly like ingestion order;
+   *     only falls back to the 4 non-carrier buckets when that finds
+   *     nothing (or resolves to no real ProviderMaster id on either side).
+   *   - Rebuilds each (mnoId, serviceName) group's "already has this
+   *     provider recorded as an addition" set from that group's LIVE_DIFF
+   *     rows (never touched here) plus every CHANGE_HISTORY row already
+   *     reprocessed earlier in the same chronological pass, so a
+   *     reclassified addition can't suddenly double-count a gain a
+   *     live-diff row (or an earlier history entry) already recorded for
+   *     the same provider.
+   *
+   * LIVE_DIFF rows are never touched -- their changeType comes from a
+   * direct Ir21Connectivity diff, not from classifying free text, so
+   * there's nothing to reclassify. A row whose description matches neither
+   * a carrier nor a non-carrier pattern under the CURRENT rules either
+   * (rowsSkippedNoMatch -- should be rare, since every change made since
+   * the original taxonomy split only widened what matches, never narrowed
+   * it) is left exactly as it was rather than blanked out.
+   *
+   * Idempotent and safe to re-run any time: a row already correct under
+   * the current rules is left alone (rowsUnchanged). Does NOT recover a
+   * <ChangeHistory> entry an older ingestion silently dropped because
+   * nothing matched at the time -- that raw description text was never
+   * persisted as a row at all, so recovering it requires re-uploading the
+   * original IR.21 archive(s) through Admin Upload. */
+  async reclassifyChangeHistoryTaxonomy(): Promise<Ir21ReclassifyTaxonomyResult> {
+    const allRows = await this.prisma.ir21RoutingChange.findMany({
+      select: {
+        id: true,
+        mnoId: true,
+        serviceName: true,
+        changeType: true,
+        changeSource: true,
+        oldProviderId: true,
+        newProviderId: true,
+        matchedRule: true,
+        description: true,
+        effectiveDate: true,
+      },
+    });
+
+    const beforeCounts: Record<string, number> = {};
+    for (const r of allRows) beforeCounts[r.changeType] = (beforeCounts[r.changeType] ?? 0) + 1;
+
+    const providers = await this.prisma.providerMaster.findMany({ select: { id: true, providerName: true } });
+    const providerNameById = new Map(providers.map((p) => [p.id, p.providerName]));
+
+    const byGroup = new Map<string, typeof allRows>();
+    for (const r of allRows) {
+      const key = `${r.mnoId}|${r.serviceName}`;
+      const bucket = byGroup.get(key);
+      if (bucket) bucket.push(r);
+      else byGroup.set(key, [r]);
+    }
+
+    interface Update {
+      id: string;
+      changeType: RoutingChangeType;
+      matchedRule: string | null;
+      oldProviderId: number | null;
+      oldProviderName: string | null;
+      newProviderId: number | null;
+      newProviderName: string | null;
+    }
+    const updates: Update[] = [];
+    let rowsScanned = 0;
+    let rowsUnchanged = 0;
+    let rowsSkippedNoMatch = 0;
+
+    for (const groupRows of byGroup.values()) {
+      const hasAdditionRecorded = new Set<number>(
+        groupRows
+          .filter((r) => r.changeSource === "LIVE_DIFF" && r.newProviderId !== null && (r.changeType === "ADDED" || r.changeType === "REPLACED"))
+          .map((r) => r.newProviderId as number),
+      );
+
+      const historyRows = groupRows
+        .filter((r) => r.changeSource === "CHANGE_HISTORY")
+        .sort((a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime());
+
+      for (const row of historyRows) {
+        rowsScanned++;
+        const description = row.description ?? "";
+        let newChangeType: RoutingChangeType | undefined;
+        let newMatchedRule: string | null = null;
+        let newOldProviderId: number | null = null;
+        let newOldProviderName: string | null = null;
+        let newNewProviderId: number | null = null;
+        let newNewProviderName: string | null = null;
+
+        const interpreted = interpretChangeHistoryDescription(description);
+        if (interpreted) {
+          const oldProviderId = interpreted.oldName
+            ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.oldName)) ?? null)
+            : null;
+          let newProviderId = interpreted.newName
+            ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.newName)) ?? null)
+            : null;
+          if (newProviderId !== null && hasAdditionRecorded.has(newProviderId)) newProviderId = null;
+
+          if (oldProviderId !== null || newProviderId !== null) {
+            newChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";
+            newMatchedRule = carrierSwapMatchedRule(oldProviderId, newProviderId);
+            newOldProviderId = oldProviderId;
+            newOldProviderName = oldProviderId !== null ? (providerNameById.get(oldProviderId) ?? null) : null;
+            newNewProviderId = newProviderId;
+            newNewProviderName = newProviderId !== null ? (providerNameById.get(newProviderId) ?? null) : null;
+            if (newProviderId !== null && newChangeType !== "REMOVED") hasAdditionRecorded.add(newProviderId);
+          }
+        }
+
+        if (newChangeType === undefined) {
+          const nonCarrier = classifyNonCarrierChange(description);
+          if (nonCarrier) {
+            newChangeType = nonCarrier.type;
+            newMatchedRule = nonCarrier.matchedRule;
+          }
+        }
+
+        if (newChangeType === undefined) {
+          rowsSkippedNoMatch++;
+          continue;
+        }
+
+        const unchanged =
+          newChangeType === row.changeType &&
+          newMatchedRule === row.matchedRule &&
+          newOldProviderId === row.oldProviderId &&
+          newNewProviderId === row.newProviderId;
+        if (unchanged) {
+          rowsUnchanged++;
+          continue;
+        }
+
+        updates.push({
+          id: row.id,
+          changeType: newChangeType,
+          matchedRule: newMatchedRule,
+          oldProviderId: newOldProviderId,
+          oldProviderName: newOldProviderName,
+          newProviderId: newNewProviderId,
+          newProviderName: newNewProviderName,
+        });
+      }
+    }
+
+    // Batched rather than one giant transaction -- a production baseline
+    // can carry several thousand CHANGE_HISTORY rows, and pooled
+    // connections have practical limits on a single transaction's
+    // statement count and duration.
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+      const batch = updates.slice(i, i + BATCH_SIZE);
+      await this.prisma.$transaction(
+        batch.map((u) =>
+          this.prisma.ir21RoutingChange.update({
+            where: { id: u.id },
+            data: {
+              changeType: u.changeType,
+              matchedRule: u.matchedRule,
+              oldProviderId: u.oldProviderId,
+              oldProviderName: u.oldProviderName,
+              newProviderId: u.newProviderId,
+              newProviderName: u.newProviderName,
+            },
+          }),
+        ),
+      );
+    }
+
+    const afterCounts: Record<string, number> = { ...beforeCounts };
+    const originalTypeById = new Map(allRows.map((r) => [r.id, r.changeType]));
+    for (const u of updates) {
+      const oldType = originalTypeById.get(u.id)!;
+      afterCounts[oldType] = (afterCounts[oldType] ?? 0) - 1;
+      afterCounts[u.changeType] = (afterCounts[u.changeType] ?? 0) + 1;
+    }
+
+    return { rowsScanned, rowsUpdated: updates.length, rowsUnchanged, rowsSkippedNoMatch, beforeCounts, afterCounts };
   }
 
   /** Best-effort DSX backfill for MNOs ingested before the widened LTE/

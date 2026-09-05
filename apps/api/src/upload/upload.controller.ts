@@ -147,6 +147,18 @@ export class UploadController {
     return this.uploadService.backfillDsxFromSnapshot();
   }
 
+  // Admin-only, idempotent, re-runnable at any time -- retroactively fixes
+  // changeType/matchedRule on existing CHANGE_HISTORY rows whose stored
+  // description was classified under an older, narrower regex set. See
+  // UploadService.reclassifyChangeHistoryTaxonomy's own doc comment for
+  // exactly what this can and can't recover.
+  @Post("reclassify-change-history-taxonomy")
+  @Roles(Role.ADMIN)
+  @HttpCode(200)
+  async reclassifyChangeHistoryTaxonomy() {
+    return this.uploadService.reclassifyChangeHistoryTaxonomy();
+  }
+
   // Full, unscoped purge — deliberately its own explicit endpoint rather
   // than a `replace` flag on either reachlist upload path, both of which
   // are scoped to a single sourceFile precisely so they *can't* do this.

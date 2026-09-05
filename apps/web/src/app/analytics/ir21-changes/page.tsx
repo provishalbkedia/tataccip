@@ -11,6 +11,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Divider,
   Grid,
   IconButton,
   Paper,
@@ -32,6 +33,8 @@ import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
 import {
+  CARRIER_CHURN_TYPES,
+  DIAMETER_SS7_CHANGE_TYPES,
   DIAMETER_SS7_FILTER_VALUE,
   Ir21RoutingChangeRow,
   Ir21RoutingChangeSummary,
@@ -69,15 +72,53 @@ type ChangeFilterValue = RoutingChangeType | "ALL" | "" | typeof DIAMETER_SS7_FI
 // with "ALL", which is itself now a real, distinct filter value.
 const DEFAULT_CHURN_PILL = "DEFAULT_CHURN";
 
-const CHANGE_FILTER_PILLS: { value: ChangeFilterValue; label: string }[] = [
-  { value: "", label: "Commercial Churn (Default)" },
-  { value: "ADDED", label: "+ ADDED" },
-  { value: "REPLACED", label: "⇄ REPLACED" },
-  { value: "REMOVED", label: "− REMOVED" },
-  { value: "IP_SUBNET_UPDATE", label: "🌐 IP & Subnet Updates" },
-  { value: DIAMETER_SS7_FILTER_VALUE, label: "🔄 Diameter & SS7 Config" },
-  { value: "ADMIN_NAME_UPDATE", label: "ℹ Admin & Name Updates" },
-  { value: "ALL", label: "Show Everything" },
+/** In-scope event counts per "Change" pill, computed client-side from an
+ * unfiltered-by-changeType fetch (see countsQueryString/allTypeRows below)
+ * so every pill can show its own subtotal simultaneously, not just whichever
+ * one is currently selected. Mirrors Ir21RoutingChangesService.fetchFiltered's
+ * own changeType semantics exactly: the 3 carrier-churn counts (and their
+ * "commercial" union) exclude onboarding-flagged rows, same as the default
+ * feed view and the KPI cards above; the 4 technical/admin counts never
+ * need that exclusion (onboarding rows are only ever a carrier ADDED), and
+ * "everything" is the one count that deliberately includes onboarding rows,
+ * matching what the "Show Everything" pill itself actually fetches. */
+interface PillCounts {
+  commercial: number;
+  added: number;
+  replaced: number;
+  removed: number;
+  ipSubnet: number;
+  diameterSs7: number;
+  admin: number;
+  everything: number;
+}
+interface ChangeFilterPillDef {
+  value: ChangeFilterValue;
+  label: string;
+  countKey: keyof PillCounts;
+}
+
+// Segment A -- genuine wholesale carrier switches, the "did we win or lose a
+// carrier relationship" view a commercial/carrier-relations reviewer cares
+// about. Segment B -- real IR.21 declarations too, but never a market-churn
+// event: network-layer config, signaling-plane config, and administrative
+// metadata a NOC/engineering reviewer would care about instead. Grouped and
+// rendered as two visually distinct ToggleButtonGroups (see the JSX below)
+// separated by a vertical Divider, but both still drive the single shared
+// `changeType` state -- since every pill's `value` is unique across both
+// groups, at most one button is ever "selected" at a time regardless of
+// which group it lives in.
+const COMMERCIAL_CHURN_PILLS: ChangeFilterPillDef[] = [
+  { value: "", label: "Commercial Churn (Default)", countKey: "commercial" },
+  { value: "ADDED", label: "+ ADDED", countKey: "added" },
+  { value: "REPLACED", label: "⇄ REPLACED", countKey: "replaced" },
+  { value: "REMOVED", label: "− REMOVED", countKey: "removed" },
+];
+const TECHNICAL_ADMIN_PILLS: ChangeFilterPillDef[] = [
+  { value: "IP_SUBNET_UPDATE", label: "🌐 IP & Subnets", countKey: "ipSubnet" },
+  { value: DIAMETER_SS7_FILTER_VALUE, label: "🔄 Diameter & SS7 Config", countKey: "diameterSs7" },
+  { value: "ADMIN_NAME_UPDATE", label: "ℹ Admin & Entity Updates", countKey: "admin" },
+  { value: "ALL", label: "Show Everything", countKey: "everything" },
 ];
 
 const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning" | "info" | "default"> = {
@@ -456,6 +497,71 @@ function SwitchingOperatorAutocomplete({
   );
 }
 
+/** One "Change" filter pill, with its live subtotal badge baked in. Active
+ * styling (solid navy fill, white bold text, teal accent border) is driven
+ * entirely by the "&.Mui-selected" CSS branch rather than a JS-computed
+ * boolean, so it always exactly reflects whichever button the parent
+ * ToggleButtonGroup itself considers selected -- including the badge's own
+ * colors, targeted via the nested ".pill-count-badge" descendant selector.
+ * `disabled` is still a real prop (CSS can't disable a control), so a pill
+ * with zero events in the current scope is dimmed and unclickable -- unless
+ * it's the one currently active, so a filter that was valid a moment ago
+ * never traps the user on a suddenly-disabled selected button. */
+function ChangeFilterPill({ pillValue, label, count, isActive }: { pillValue: string; label: string; count: number; isActive: boolean }) {
+  return (
+    <ToggleButton
+      value={pillValue}
+      disabled={count === 0 && !isActive}
+      sx={{
+        borderRadius: "999px !important",
+        textTransform: "none",
+        px: 1.5,
+        py: 0.5,
+        gap: 0.75,
+        border: "1px solid",
+        borderColor: "#CFD8DC",
+        bgcolor: "#FFFFFF",
+        color: "#0A2540",
+        fontWeight: 500,
+        transition: "box-shadow 0.15s, opacity 0.15s",
+        "&:hover": { bgcolor: "#F4F6F8", boxShadow: "0 2px 6px rgba(10,37,64,0.12)" },
+        "&.Mui-disabled": { opacity: 0.4, bgcolor: "#FFFFFF", color: "#0A2540", borderColor: "#E3E8EC" },
+        "&.Mui-selected, &.Mui-selected:hover": {
+          bgcolor: "#0A2540",
+          color: "#FFFFFF",
+          fontWeight: 700,
+          borderColor: "#00D4B2",
+          boxShadow: "0 2px 8px rgba(10,37,64,0.25)",
+        },
+        "& .pill-count-badge": { bgcolor: "rgba(10,37,64,0.08)", color: "#0A2540" },
+        "&.Mui-selected .pill-count-badge": { bgcolor: "rgba(255,255,255,0.22)", color: "#FFFFFF" },
+        "&.Mui-disabled .pill-count-badge": { bgcolor: "rgba(10,37,64,0.06)", color: "rgba(10,37,64,0.5)" },
+      }}
+    >
+      <span>{label}</span>
+      <Box
+        component="span"
+        className="pill-count-badge"
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 20,
+          height: 18,
+          px: 0.6,
+          borderRadius: "999px",
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {count}
+      </Box>
+    </ToggleButton>
+  );
+}
+
 export default function Ir21ChangesPage() {
   const router = useRouter();
 
@@ -538,6 +644,64 @@ export default function Ir21ChangesPage() {
       cancelled = true;
     };
   }, [queryString]);
+
+  // Same scope as queryString (timeframe/region/service/provider/search) but
+  // always fetched with changeType=ALL, i.e. every RoutingChangeType with no
+  // restriction, so every "Change" pill's subtotal badge can be computed
+  // simultaneously from one fetch -- not just whichever single pill is
+  // currently selected. A separate round trip rather than deriving counts
+  // from `rows` above, since `rows` is itself already narrowed to whichever
+  // one changeType is active.
+  const countsQueryString = React.useMemo(() => {
+    const params = new URLSearchParams();
+    if (timeframe !== "all") params.set("timeframe", timeframe);
+    if (region) params.set("region", region);
+    if (service) params.set("service", service);
+    params.set("changeType", "ALL");
+    if (provider) params.set("providerId", String(provider.id));
+    if (provider && providerRole) params.set("providerRole", providerRole);
+    if (search) params.set("search", search);
+    return params.toString();
+  }, [timeframe, region, service, provider, providerRole, search]);
+
+  const [allTypeRows, setAllTypeRows] = React.useState<Ir21RoutingChangeRow[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Ir21RoutingChangeRow[]>(`/analytics/ir21-changes/feed?${countsQueryString}`)
+      .then((f) => !cancelled && setAllTypeRows(f))
+      .catch(() => !cancelled && setAllTypeRows([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [countsQueryString]);
+
+  // Bucketed exactly the way Ir21RoutingChangesService.fetchFiltered itself
+  // interprets each pill's changeType value -- see PillCounts' own doc
+  // comment for why the carrier-churn counts exclude onboarding rows and
+  // "everything" deliberately doesn't.
+  const pillCounts: PillCounts = React.useMemo(() => {
+    const diameterSs7Types = new Set<string>(DIAMETER_SS7_CHANGE_TYPES);
+    const carrierChurnTypes = new Set<string>(CARRIER_CHURN_TYPES);
+    let commercial = 0;
+    let added = 0;
+    let replaced = 0;
+    let removed = 0;
+    let ipSubnet = 0;
+    let diameterSs7 = 0;
+    let admin = 0;
+    for (const r of allTypeRows) {
+      if (carrierChurnTypes.has(r.changeType) && !r.isInitialOnboarding) {
+        commercial++;
+        if (r.changeType === "ADDED") added++;
+        else if (r.changeType === "REPLACED") replaced++;
+        else if (r.changeType === "REMOVED") removed++;
+      } else if (r.changeType === "IP_SUBNET_UPDATE") ipSubnet++;
+      else if (diameterSs7Types.has(r.changeType)) diameterSs7++;
+      else if (r.changeType === "ADMIN_NAME_UPDATE") admin++;
+    }
+    return { commercial, added, replaced, removed, ipSubnet, diameterSs7, admin, everything: allTypeRows.length };
+  }, [allTypeRows, loading]);
 
   React.useEffect(() => {
     if (!providerInput.trim()) {
@@ -718,19 +882,9 @@ export default function Ir21ChangesPage() {
   return (
     <RequireAuth>
       <AppShell>
-        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 1, mb: 1 }}>
-          <Typography variant="h5" fontWeight={700}>
-            Market Intelligence &amp; Routing Changes
-          </Typography>
-          <Button
-            component={Link}
-            href="/admin/mno-normalization?tab=changelog"
-            size="small"
-            startIcon={<RuleIcon fontSize="small" />}
-          >
-            View Full Normalization Audit
-          </Button>
-        </Box>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
+          Market Intelligence &amp; Routing Changes
+        </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Tracks changes to each MNO / Customer&apos;s canonical declared provider per service (SCCP, DSX, IPX) across
           successive IR.21 re-uploads — provider additions, removals, and replacements, for commercial and
@@ -928,38 +1082,85 @@ export default function Ir21ChangesPage() {
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
+          </Box>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                Change:
-              </Typography>
-              <InfoTooltip title="Defaults to genuine carrier routing switches only (a wholesale provider was actually added, removed, or replaced) -- IP/Subnet, Diameter/SS7, and Admin/Name updates are real IR.21 declarations too, but never count as market churn, so they're hidden unless explicitly selected.">
-                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-              </InfoTooltip>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Change:
+                </Typography>
+                <InfoTooltip title="Left group: genuine wholesale carrier switches -- a provider was actually added, removed, or replaced. This is real market churn, and the commercial/carrier-relations view defaults to it. Right group: real IR.21 declarations too (network config, signaling-plane config, administrative metadata), but never a carrier switch, so they're hidden from the default view unless explicitly selected.">
+                  <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+                </InfoTooltip>
+              </Box>
+
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={changeType || DEFAULT_CHURN_PILL}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+                  setActiveKpi(null);
+                  setProviderRole(null);
+                }}
+                sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
+              >
+                {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey }) => {
+                  const pillValue = value || DEFAULT_CHURN_PILL;
+                  return (
+                    <ChangeFilterPill
+                      key={pillValue}
+                      pillValue={pillValue}
+                      label={label}
+                      count={pillCounts[countKey]}
+                      isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                    />
+                  );
+                })}
+              </ToggleButtonGroup>
+
+              <Divider orientation="vertical" flexItem sx={{ my: 0.5, borderColor: "#CFD8DC" }} />
+
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={changeType || DEFAULT_CHURN_PILL}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+                  setActiveKpi(null);
+                  setProviderRole(null);
+                }}
+                sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
+              >
+                {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey }) => {
+                  const pillValue = value || DEFAULT_CHURN_PILL;
+                  return (
+                    <ChangeFilterPill
+                      key={pillValue}
+                      pillValue={pillValue}
+                      label={label}
+                      count={pillCounts[countKey]}
+                      isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                    />
+                  );
+                })}
+              </ToggleButtonGroup>
             </Box>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={changeType || DEFAULT_CHURN_PILL}
-              onChange={(_, v) => {
-                if (!v) return;
-                setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              sx={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 1,
-                "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" },
-              }}
-            >
-              {CHANGE_FILTER_PILLS.map(({ value, label }) => (
-                <ToggleButton key={value || DEFAULT_CHURN_PILL} value={value || DEFAULT_CHURN_PILL}>
-                  {label}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
+
+            <InfoTooltip title="Inspect raw IR.21 <ChangeHistory> parsing rules and overrides.">
+              <Button
+                component={Link}
+                href="/admin/mno-normalization?tab=changelog"
+                size="small"
+                startIcon={<RuleIcon fontSize="small" />}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                View Full Normalization Audit &rarr;
+              </Button>
+            </InfoTooltip>
           </Box>
 
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>

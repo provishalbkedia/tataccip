@@ -190,6 +190,21 @@ function scopeTo(root: unknown, patterns: RegExp[]): unknown {
   return collectByKey(root, patterns)[0]?.value;
 }
 
+/** Every matching subtree, not just the first -- a real multi-TADIG IR.21
+ * export (a primary network plus one or more secondary TADIGs under the
+ * same OrganisationInfo, e.g. a verified Dialog Axiata LKADG+LKAAT file)
+ * repeats each section once per <Network> block, and scopeTo's "first
+ * match wins" would otherwise silently drop every secondary network's own
+ * <ChangeHistory> entirely. Used only for ChangeHistory extraction below --
+ * every *other* extraction in this parser (which carrier is canonical, IP
+ * ranges, etc.) deliberately keeps using scopeTo/the primary network only,
+ * since Ir21Connectivity models one canonical provider per (MNO, service)
+ * for the whole MnoMaster record, not per-TADIG; widening that too is a
+ * separate, larger design question this fix doesn't take on. */
+function scopeToAll(root: unknown, patterns: RegExp[]): unknown[] {
+  return collectByKey(root, patterns).map((m) => m.value);
+}
+
 /** GSMA RAEX IR.21 XML extractor, built against real sample files (schema
  * versions 8.2-18.0) spanning ROAMSYS and other vendor tooling. Uses a
  * recursive tag-name search (not raw XPath) so it tolerates the nesting
@@ -253,36 +268,42 @@ export class Ir21XmlParserService {
       epcRealms: collectTexts(lteScope, [/^epcrealmsforroaming$/i]),
       ...this.extractContactEmails(contactScope, doc),
       changeHistory: [
-        ...this.extractChangeHistory(sccpScope, "SCCP"),
-        ...this.extractChangeHistory(grxScope, "IPX"),
-        ...this.extractChangeHistory(lteScope, "DSX"),
+        ...this.extractChangeHistory(scopeToAll(doc, [/^internationalsccpgatewaysection$/i]), "SCCP"),
+        ...this.extractChangeHistory(scopeToAll(doc, [/^grxipxroutingfordataroamingsection$/i]), "IPX"),
+        ...this.extractChangeHistory(scopeToAll(doc, [/^lteinfosection$/i]), "DSX"),
       ],
     };
   }
 
   /** Every <ChangeHistoryItem> (Date + Description pair, plus an optional
-   * Author when the file happens to carry one) nested anywhere under one
-   * section's scope -- scoped per-section (not document-wide) so an SCCP
-   * change entry is never misattributed to DSX or vice versa. Tag matching
-   * accepts both the plain names this parser was originally verified
-   * against (<Date>/<Description>) and the <ChangeDate>/<ChangeDescription>
-   * naming GSMA also uses in some exports (e.g. SFR, Viettel), since a real
-   * IR.21 file isn't guaranteed to use one convention over the other.
-   * Interpretation of the free-text Description (which action, which
-   * provider, or which technical/administrative bucket) deliberately
-   * happens elsewhere (ir21-change-history.util.ts) — this method only
-   * extracts the raw Date/Description/Author fields. */
-  private extractChangeHistory(scope: unknown, serviceName: "SCCP" | "IPX" | "DSX"): Ir21ChangeHistoryItem[] {
+   * Author when the file happens to carry one) nested anywhere under any of
+   * this section's scopes -- `scopes` is every matching subtree
+   * (scopeToAll), not just the primary network's, since a multi-TADIG
+   * export repeats each section once per <Network> block and a secondary
+   * TADIG's own <ChangeHistory> is just as real as the primary's. Scoped
+   * per-section (never document-wide) so an SCCP change entry is never
+   * misattributed to DSX or vice versa. Tag matching accepts both the plain
+   * names this parser was originally verified against (<Date>/
+   * <Description>) and the <ChangeDate>/<ChangeDescription> naming GSMA
+   * also uses in some exports (e.g. SFR, Viettel), since a real IR.21 file
+   * isn't guaranteed to use one convention over the other. Interpretation
+   * of the free-text Description (which action, which provider, or which
+   * technical/administrative bucket) deliberately happens elsewhere
+   * (ir21-change-history.util.ts) — this method only extracts the raw
+   * Date/Description/Author fields. */
+  private extractChangeHistory(scopes: unknown[], serviceName: "SCCP" | "IPX" | "DSX"): Ir21ChangeHistoryItem[] {
     const sectionId = SERVICE_SECTION_ID[serviceName];
-    const blocks = collectByKey(scope, [/^changehistory$/i]).map((b) => b.value);
     const out: Ir21ChangeHistoryItem[] = [];
-    for (const block of blocks) {
-      const items = collectByKey(block, [/^changehistoryitem$/i]).flatMap((m) => asArray(m.value));
-      for (const item of items) {
-        const date = firstText(item, [/^date$/i, /^changedate$/i]);
-        const description = firstText(item, [/^description$/i, /^changedescription$/i]);
-        const author = firstText(item, [/^author$/i, /^changeauthor$/i, /^modifiedby$/i]);
-        if (date && description) out.push({ serviceName, sectionId, date, description, author });
+    for (const scope of scopes) {
+      const blocks = collectByKey(scope, [/^changehistory$/i]).map((b) => b.value);
+      for (const block of blocks) {
+        const items = collectByKey(block, [/^changehistoryitem$/i]).flatMap((m) => asArray(m.value));
+        for (const item of items) {
+          const date = firstText(item, [/^date$/i, /^changedate$/i]);
+          const description = firstText(item, [/^description$/i, /^changedescription$/i]);
+          const author = firstText(item, [/^author$/i, /^changeauthor$/i, /^modifiedby$/i]);
+          if (date && description) out.push({ serviceName, sectionId, date, description, author });
+        }
       }
     }
     return out;

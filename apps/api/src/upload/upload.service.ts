@@ -1106,6 +1106,7 @@ export class UploadService {
       select: {
         serviceName: true,
         changeType: true,
+        changeSource: true,
         oldProviderId: true,
         newProviderId: true,
         description: true,
@@ -1113,6 +1114,28 @@ export class UploadService {
         isInitialOnboarding: true,
       },
     });
+
+    // A real IR.21 file often documents a provider swap as two entirely
+    // separate, differently-worded <ChangeHistoryItem> entries (sometimes
+    // even under different sections) rather than one "Delete X and Add Y"
+    // sentence -- confirmed against a real file whose only DSX
+    // <ChangeHistory> entry for the event was the bare "Remove BICS as
+    // secondary IPX", with no "Add ..." sentence anywhere in that section
+    // at all. interpretChangeHistoryDescription correctly extracts no
+    // "new" side from that text (there genuinely isn't one to extract),
+    // leaving a resolved removal with nothing to pair it with -- unless
+    // this MNO's very first upload (this same ingestion) separately
+    // recorded an onboarding-suppressed LIVE_DIFF addition for the same
+    // service, in which case that's the only concrete fact this platform
+    // has about which provider now holds it, and (being onboarding-
+    // flagged) it isn't already contributing to any churn KPI on its own.
+    // See the REMOVED-with-no-newSide reconciliation below.
+    const onboardingAdditionByService = new Map<string, number>();
+    for (const r of existingRows) {
+      if (r.changeSource === "LIVE_DIFF" && r.changeType === "ADDED" && r.isInitialOnboarding && r.newProviderId !== null) {
+        onboardingAdditionByService.set(r.serviceName, r.newProviderId);
+      }
+    }
 
     // Non-carrier rows (the 3 technical types plus ADMIN_NAME_UPDATE) have
     // no provider ids to disambiguate with (both always null), so their
@@ -1209,6 +1232,18 @@ export class UploadService {
         newProviderId = null;
       }
       if (oldProviderId === null && newProviderId === null) continue;
+
+      // Reconciliation: this entry resolved a removal but its own text
+      // named no replacement -- see onboardingAdditionByService's own
+      // comment above for why an onboarding-suppressed addition for the
+      // same service is the right (and only available) fact to pair it
+      // with.
+      if (oldProviderId !== null && newProviderId === null) {
+        const onboardingProviderId = onboardingAdditionByService.get(item.serviceName);
+        if (onboardingProviderId !== undefined && onboardingProviderId !== oldProviderId) {
+          newProviderId = onboardingProviderId;
+        }
+      }
 
       const changeType: RoutingChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";
       const dedupKey = seenKeyFor({ serviceName: item.serviceName, changeType, oldProviderId, newProviderId, dateStr: item.date });
@@ -1343,6 +1378,14 @@ export class UploadService {
           .map((r) => r.newProviderId as number),
       );
 
+      // See backfillChangeHistory's onboardingAdditionByService for why --
+      // this is the reclassify-time mirror of the same reconciliation, for
+      // a REMOVED row already sitting in the DB with no "new" side because
+      // its own <ChangeHistory> text never named one.
+      const onboardingAdditionProviderId = groupRows.find(
+        (r) => r.changeSource === "LIVE_DIFF" && r.changeType === "ADDED" && r.isInitialOnboarding && r.newProviderId !== null,
+      )?.newProviderId;
+
       const historyRows = groupRows
         .filter((r) => r.changeSource === "CHANGE_HISTORY")
         .sort((a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime());
@@ -1366,6 +1409,10 @@ export class UploadService {
             ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.newName)) ?? null)
             : null;
           if (newProviderId !== null && hasAdditionRecorded.has(newProviderId)) newProviderId = null;
+
+          if (oldProviderId !== null && newProviderId === null && onboardingAdditionProviderId !== undefined && onboardingAdditionProviderId !== oldProviderId) {
+            newProviderId = onboardingAdditionProviderId;
+          }
 
           if (oldProviderId !== null || newProviderId !== null) {
             newChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";

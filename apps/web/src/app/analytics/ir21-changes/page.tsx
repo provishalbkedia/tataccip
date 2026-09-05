@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ICellRendererParams } from "ag-grid-community";
 import {
@@ -21,6 +22,7 @@ import {
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
+import RuleIcon from "@mui/icons-material/Rule";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -30,6 +32,7 @@ import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
 import {
+  DIAMETER_SS7_FILTER_VALUE,
   Ir21RoutingChangeRow,
   Ir21RoutingChangeSummary,
   ProviderSuggestion,
@@ -51,25 +54,29 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 const SERVICE_OPTIONS: ServiceName[] = [ServiceName.SCCP, ServiceName.DSX, ServiceName.IPX];
 
-// The "Change" filter's changeType value: "" (the default, pill labeled "All
-// Carrier Churn") and "ALL" ("Show Everything") are query-time-only sentinels
-// -- "" means "don't send changeType at all" (the backend then applies its
-// own default: ADDED/REMOVED/REPLACED, onboarding rows excluded); "ALL" is
-// sent verbatim and means no restriction whatsoever, including onboarding
-// rows. Every other value is a real RoutingChangeType sent as-is.
-type ChangeFilterValue = RoutingChangeType | "ALL" | "";
+// The "Change" filter's changeType value: "" (the default, pill labeled
+// "Commercial Churn") and "ALL" ("Show Everything") are query-time-only
+// sentinels -- "" means "don't send changeType at all" (the backend then
+// applies its own default: ADDED/REMOVED/REPLACED, onboarding rows
+// excluded); "ALL" is sent verbatim and means no restriction whatsoever,
+// including onboarding rows. DIAMETER_SS7_FILTER_VALUE is a comma-joined
+// pair (DIAMETER_REALM_UPDATE,POINT_CODE_GT_UPDATE) -- the "Diameter & SS7
+// Config" pill covers both signaling-plane technical types as one filter.
+// Every other value is a single real RoutingChangeType sent as-is.
+type ChangeFilterValue = RoutingChangeType | "ALL" | "" | typeof DIAMETER_SS7_FILTER_VALUE;
 // Distinct from the "" default above purely so the ToggleButtonGroup (which
 // needs *some* non-empty value to mark a button selected) doesn't collide
 // with "ALL", which is itself now a real, distinct filter value.
 const DEFAULT_CHURN_PILL = "DEFAULT_CHURN";
 
 const CHANGE_FILTER_PILLS: { value: ChangeFilterValue; label: string }[] = [
-  { value: "", label: "All Carrier Churn (Default)" },
+  { value: "", label: "Commercial Churn (Default)" },
   { value: "ADDED", label: "+ ADDED" },
   { value: "REPLACED", label: "⇄ REPLACED" },
   { value: "REMOVED", label: "− REMOVED" },
-  { value: "CONFIG_UPDATE", label: "⚙ Config / IP Updates" },
-  { value: "ADMIN_UPDATE", label: "ℹ Admin / Name Updates" },
+  { value: "IP_SUBNET_UPDATE", label: "🌐 IP & Subnet Updates" },
+  { value: DIAMETER_SS7_FILTER_VALUE, label: "🔄 Diameter & SS7 Config" },
+  { value: "ADMIN_NAME_UPDATE", label: "ℹ Admin & Name Updates" },
   { value: "ALL", label: "Show Everything" },
 ];
 
@@ -77,15 +84,19 @@ const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warnin
   ADDED: "success",
   REMOVED: "error",
   REPLACED: "warning",
-  CONFIG_UPDATE: "info",
-  ADMIN_UPDATE: "default",
+  IP_SUBNET_UPDATE: "info",
+  DIAMETER_REALM_UPDATE: "info",
+  POINT_CODE_GT_UPDATE: "info",
+  ADMIN_NAME_UPDATE: "default",
 };
 const CHANGE_TYPE_LABEL: Record<RoutingChangeType, string> = {
   ADDED: "+ ADDED",
   REMOVED: "− REMOVED",
   REPLACED: "⇄ REPLACED",
-  CONFIG_UPDATE: "⚙ CONFIG UPDATE",
-  ADMIN_UPDATE: "ℹ ADMIN UPDATE",
+  IP_SUBNET_UPDATE: "🌐 IP / SUBNET",
+  DIAMETER_REALM_UPDATE: "🔄 DIAMETER / DEA",
+  POINT_CODE_GT_UPDATE: "📟 SS7 / GT",
+  ADMIN_NAME_UPDATE: "ℹ ADMIN / NAME",
 };
 
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
@@ -143,10 +154,12 @@ function ChangeTypeCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   );
 }
 
+const NON_CARRIER_CHANGE_TYPES = new Set<RoutingChangeType>(["IP_SUBNET_UPDATE", "DIAMETER_REALM_UPDATE", "POINT_CODE_GT_UPDATE", "ADMIN_NAME_UPDATE"]);
+
 function DetailsCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const row = params.data;
   if (!row) return null;
-  if (row.changeType === "CONFIG_UPDATE" || row.changeType === "ADMIN_UPDATE") {
+  if (NON_CARRIER_CHANGE_TYPES.has(row.changeType)) {
     return <span style={{ color: "rgba(0,0,0,0.6)" }}>{row.description ?? "-"}</span>;
   }
   if (row.changeType === "REPLACED") return <span>{row.oldProviderName} &rarr; {row.newProviderName}</span>;
@@ -705,9 +718,19 @@ export default function Ir21ChangesPage() {
   return (
     <RequireAuth>
       <AppShell>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
-          Market Intelligence &amp; Routing Changes
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 1, mb: 1 }}>
+          <Typography variant="h5" fontWeight={700}>
+            Market Intelligence &amp; Routing Changes
+          </Typography>
+          <Button
+            component={Link}
+            href="/admin/mno-normalization?tab=changelog"
+            size="small"
+            startIcon={<RuleIcon fontSize="small" />}
+          >
+            View Full Normalization Audit
+          </Button>
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Tracks changes to each MNO / Customer&apos;s canonical declared provider per service (SCCP, DSX, IPX) across
           successive IR.21 re-uploads — provider additions, removals, and replacements, for commercial and
@@ -719,7 +742,7 @@ export default function Ir21ChangesPage() {
             label="Total Churn Events"
             value={summaryLoading ? "…" : summary?.totalChurnEvents ?? 0}
             color="#0A2540"
-            tooltip="Total count of genuine carrier routing switches (additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period -- excludes Config/IP and Admin/Name updates, and excludes bulk-onboarding rows from an MNO's very first IR.21 upload, neither of which is real market churn."
+            tooltip="Total count of genuine carrier routing switches (additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period -- excludes IP/Subnet, Diameter/SS7, and Admin/Name updates, and excludes bulk-onboarding rows from an MNO's very first IR.21 upload, none of which is real market churn."
             active={activeKpi === "churn"}
             onClick={handleChurnClick}
           />
@@ -910,7 +933,7 @@ export default function Ir21ChangesPage() {
               <Typography variant="body2" color="text.secondary">
                 Change:
               </Typography>
-              <InfoTooltip title="Defaults to genuine carrier routing switches only (a wholesale provider was actually added, removed, or replaced) -- Config/IP and Admin/Name updates are real IR.21 declarations too, but never count as market churn, so they're hidden unless explicitly selected.">
+              <InfoTooltip title="Defaults to genuine carrier routing switches only (a wholesale provider was actually added, removed, or replaced) -- IP/Subnet, Diameter/SS7, and Admin/Name updates are real IR.21 declarations too, but never count as market churn, so they're hidden unless explicitly selected.">
                 <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
               </InfoTooltip>
             </Box>

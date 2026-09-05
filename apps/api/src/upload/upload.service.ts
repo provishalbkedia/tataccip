@@ -9,6 +9,8 @@ import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21ChangeHistoryItem, Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
 import { interpretChangeHistoryDescription, classifyNonCarrierChange } from "./ir21-change-history.util";
+
+const NON_CARRIER_CHANGE_TYPES = new Set(["IP_SUBNET_UPDATE", "DIAMETER_REALM_UPDATE", "POINT_CODE_GT_UPDATE", "ADMIN_NAME_UPDATE"]);
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
 import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UnresolvedReachRow, UploadResult } from "@ccip/shared-types";
@@ -1082,12 +1084,12 @@ export class UploadService {
       select: { serviceName: true, changeType: true, oldProviderId: true, newProviderId: true, description: true, effectiveDate: true },
     });
 
-    // CONFIG_UPDATE/ADMIN_UPDATE rows have no provider ids to disambiguate
-    // with (both always null), so their dedup key includes the raw
-    // description text instead -- carrier-swap rows (ADDED/REMOVED/REPLACED)
-    // keep the exact original key shape, unchanged, so re-uploading a file
-    // ingested before this feature shipped still dedupes against those rows
-    // correctly.
+    // Non-carrier rows (the 3 technical types plus ADMIN_NAME_UPDATE) have
+    // no provider ids to disambiguate with (both always null), so their
+    // dedup key includes the raw description text instead -- carrier-swap
+    // rows (ADDED/REMOVED/REPLACED) keep the exact original key shape,
+    // unchanged, so re-uploading a file ingested before this feature
+    // shipped still dedupes against those rows correctly.
     const seenKeyFor = (r: {
       serviceName: string;
       changeType: string;
@@ -1096,7 +1098,7 @@ export class UploadService {
       description?: string | null;
       dateStr: string;
     }) =>
-      r.changeType === "CONFIG_UPDATE" || r.changeType === "ADMIN_UPDATE"
+      NON_CARRIER_CHANGE_TYPES.has(r.changeType)
         ? `${r.serviceName}|${r.changeType}|${r.description ?? ""}|${r.dateStr}`
         : `${r.serviceName}|${r.changeType}|${r.oldProviderId ?? ""}|${r.newProviderId ?? ""}|${r.dateStr}`;
 
@@ -1122,12 +1124,12 @@ export class UploadService {
         // applies (e.g. "No Change" boilerplate, or free text this keyword
         // set doesn't recognize) -- same conservative failure direction as
         // an unrecognized carrier-swap description above.
-        const nonCarrierType = classifyNonCarrierChange(item.description);
-        if (!nonCarrierType) continue;
+        const nonCarrier = classifyNonCarrierChange(item.description);
+        if (!nonCarrier) continue;
 
         const dedupKey = seenKeyFor({
           serviceName: item.serviceName,
-          changeType: nonCarrierType,
+          changeType: nonCarrier.type,
           oldProviderId: null,
           newProviderId: null,
           description: item.description,
@@ -1143,12 +1145,13 @@ export class UploadService {
             mnoName,
             country,
             serviceName: item.serviceName,
-            changeType: nonCarrierType,
+            changeType: nonCarrier.type,
             oldProviderId: null,
             oldProviderName: null,
             newProviderId: null,
             newProviderName: null,
             description: item.description,
+            matchedRule: nonCarrier.matchedRule,
             changeSource: "CHANGE_HISTORY",
             sourceFile: filename,
             effectiveDate,

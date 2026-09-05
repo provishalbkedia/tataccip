@@ -55,18 +55,21 @@ export class Ir21RoutingChangesService {
         : {};
 
     // changeType semantics (see Ir21RoutingChangeFilters/ChangeTypeFilter):
-    // omitted/"" -> the default "All Carrier Churn" view (ADDED/REMOVED/
+    // omitted/"" -> the default "Commercial Churn" view (ADDED/REMOVED/
     // REPLACED only, onboarding-flagged rows excluded); "ALL" -> "Show
-    // Everything", no restriction at all; any single RoutingChangeType ->
-    // that type only, still excluding onboarding rows for the 3 churn types
-    // (CONFIG_UPDATE/ADMIN_UPDATE are never onboarding-flagged, so the
-    // exclusion is a no-op for them).
+    // Everything", no restriction at all; a single RoutingChangeType -> that
+    // type only, still excluding onboarding rows for the 3 churn types (the
+    // 4 non-carrier types are never onboarding-flagged, so the exclusion is
+    // a no-op for them); a comma-joined list (e.g. DIAMETER_SS7_FILTER_VALUE
+    // -- the "Diameter & SS7 Config" pill covers 2 distinct changeTypes) ->
+    // the union of those types.
     let changeTypeWhere: Record<string, unknown> = {};
     if (!query.changeType) {
       changeTypeWhere = { changeType: { in: CARRIER_CHURN_TYPES as RoutingChangeType[] }, isInitialOnboarding: false };
     } else if (query.changeType !== "ALL") {
-      changeTypeWhere = { changeType: query.changeType as RoutingChangeType };
-      if ((CARRIER_CHURN_TYPES as string[]).includes(query.changeType)) {
+      const types = query.changeType.split(",") as RoutingChangeType[];
+      changeTypeWhere = types.length > 1 ? { changeType: { in: types } } : { changeType: types[0] };
+      if (types.some((t) => (CARRIER_CHURN_TYPES as string[]).includes(t))) {
         changeTypeWhere.isInitialOnboarding = false;
       }
     }
@@ -103,7 +106,12 @@ export class Ir21RoutingChangesService {
       country: r.country,
       region: (getRegionByCountry(r.country) as Region | null) ?? null,
       serviceName: r.serviceName,
-      changeType: r.changeType,
+      // CONFIG_UPDATE survives in the Prisma/Postgres enum only as a
+      // retired legacy label (see the schema's own comment) -- the
+      // reclassify-legacy-config-update-rows migration guarantees no row
+      // actually holds it anymore, so this cast is safe in practice even
+      // though @ccip/shared-types' RoutingChangeType deliberately omits it.
+      changeType: r.changeType as Ir21RoutingChangeRow["changeType"],
       oldProviderId: r.oldProviderId,
       oldProviderName: r.oldProviderName,
       newProviderId: r.newProviderId,
@@ -112,6 +120,7 @@ export class Ir21RoutingChangesService {
       changeSource: r.changeSource,
       isInitialOnboarding: r.isInitialOnboarding,
       isManuallyReviewed: r.isManuallyReviewed,
+      matchedRule: r.matchedRule,
       sourceFile: r.sourceFile,
       effectiveDate: r.effectiveDate.toISOString(),
       ingestedAt: r.ingestedAt.toISOString(),

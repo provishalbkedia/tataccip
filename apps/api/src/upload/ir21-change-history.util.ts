@@ -115,44 +115,87 @@ export function interpretChangeHistoryDescription(descriptionRaw: string): Inter
   return null;
 }
 
-/** The two "non-carrier" buckets a <ChangeHistoryItem><Description> can
+/** The 4 "non-carrier" buckets a <ChangeHistoryItem><Description> can
  * classify into once interpretChangeHistoryDescription has already ruled
- * out a carrier addition/removal/replacement. Matches the codebase's
- * const-object + derived-union convention (see RoutingChangeType in
- * @ccip/shared-types) so this stays structurally assignable to the Prisma
- * enum without a cast. */
+ * out a carrier addition/removal/replacement -- 3 technical/maintenance
+ * categories plus one administrative/metadata category. Matches the
+ * codebase's const-object + derived-union convention (see RoutingChangeType
+ * in @ccip/shared-types) so this stays structurally assignable to the
+ * Prisma enum without a cast. */
 export const NonCarrierChangeType = {
-  CONFIG_UPDATE: "CONFIG_UPDATE",
-  ADMIN_UPDATE: "ADMIN_UPDATE",
+  IP_SUBNET_UPDATE: "IP_SUBNET_UPDATE",
+  DIAMETER_REALM_UPDATE: "DIAMETER_REALM_UPDATE",
+  POINT_CODE_GT_UPDATE: "POINT_CODE_GT_UPDATE",
+  ADMIN_NAME_UPDATE: "ADMIN_NAME_UPDATE",
 } as const;
 export type NonCarrierChangeType = (typeof NonCarrierChangeType)[keyof typeof NonCarrierChangeType];
 
-// Administrative/metadata language -- corporate renames, alias spelling
-// harmonization, NOC/contact-matrix edits. Checked first since it's the more
-// specific vocabulary; a description matching both lists (rare) is more
-// likely administrative than technical.
-const ADMIN_UPDATE_KEYWORDS =
-  /\b(name change|renamed?|rename|spelling|corporate|legal entity|merger|acquisition|rebrand(?:ed|ing)?|contact|escalation|noc|coordinator|organi[sz]ation name|company name|entity name)\b/i;
+/** A non-carrier classification result, carrying which named rule matched --
+ * shown verbatim in the IR.21 Change Log & Normalization Review screen's
+ * "Matched Rule / Pattern" column so an admin can see exactly why an entry
+ * landed in a given bucket, not just the bucket itself. */
+export interface NonCarrierClassification {
+  type: NonCarrierChangeType;
+  matchedRule: string;
+}
 
-// Technical routing-parameter language -- IP/subnet, SS7 point codes,
-// Diameter/DEA, DNS/NTP, ASN. None of these change which wholesale provider
-// carries the route, only how it's configured.
-const CONFIG_UPDATE_KEYWORDS =
-  /\b(ip address(?:es)?|ip range|subnet|prefix|dpc|point code|fqdn|realm|dns|ntp|apn|diameter|edge agent|\bdea\b|hostname|as number|\basn\b|global title|\bgt\b)\b/i;
+// Checked in most-specific-vocabulary-first order, since a description
+// matching more than one list (rare, but "DEA IP address" contains both a
+// Diameter term and a bare "IP") should land on the more specific technical
+// category rather than the generic IP/subnet catch-all.
+
+// Administrative/metadata language -- corporate renames, alias spelling
+// harmonization, NOC/contact-matrix edits. Checked first: the most specific
+// vocabulary of the four, least likely to overlap with a genuine technical
+// change.
+const ADMIN_NAME_UPDATE_PATTERN = {
+  matchedRule: "REGEX_ADMIN_NAME",
+  regex: /\b(name|rebranding|spelling|contact|NOC|legal|editorial)\b/i,
+};
+
+// Diameter/DEA/realm language -- LTE roaming (DSX) signaling-plane config,
+// distinct from a plain IP address change.
+const DIAMETER_REALM_PATTERN = {
+  matchedRule: "REGEX_DIAMETER_REALM",
+  regex: /\b(realm|DEA|FQDN|DRA|diameter agent|S6a|Gy|Gx)\b/i,
+};
+
+// SS7 signaling-point language -- global titles, point codes, STPs.
+const POINT_CODE_GT_PATTERN = {
+  matchedRule: "REGEX_POINT_CODE_GT",
+  regex: /\b(GT|global title|point code|DPC|OPC|SPC|STP)\b/i,
+};
+
+// IP/subnet/prefix language -- the broadest, most generic technical
+// category (a bare "IP" matches), so it's checked last, as a catch-all
+// after the three more specific technical/administrative categories above
+// have already had a chance to claim the description.
+const IP_SUBNET_PATTERN = {
+  matchedRule: "REGEX_IP_RANGE",
+  regex: /\b(IP|range|ranges|subnet|subnets|prefix|prefixes|CIDR|pool|IPv4|IPv6)\b/i,
+};
+
+const NON_CARRIER_PATTERNS: { type: NonCarrierChangeType; matchedRule: string; regex: RegExp }[] = [
+  { type: "ADMIN_NAME_UPDATE", ...ADMIN_NAME_UPDATE_PATTERN },
+  { type: "DIAMETER_REALM_UPDATE", ...DIAMETER_REALM_PATTERN },
+  { type: "POINT_CODE_GT_UPDATE", ...POINT_CODE_GT_PATTERN },
+  { type: "IP_SUBNET_UPDATE", ...IP_SUBNET_PATTERN },
+];
 
 /** Classifies a <ChangeHistoryItem><Description> that
  * interpretChangeHistoryDescription already determined isn't a carrier
- * addition/removal/replacement, into CONFIG_UPDATE or ADMIN_UPDATE -- or
- * null when it's neither (e.g. "No Change", or free text this keyword set
- * doesn't recognize), in which case the caller drops the entry entirely
+ * addition/removal/replacement, into one of the 4 non-carrier buckets above
+ * -- or null when it's neither (e.g. "No Change", or free text this keyword
+ * set doesn't recognize), in which case the caller drops the entry entirely
  * rather than store pure noise. Deliberately keyword-based rather than
  * fuzzy: a false negative here just means an entry is silently dropped
  * (matching the existing conservative behavior for unrecognized carrier-swap
  * text), which is the safe failure direction for an audit feed. */
-export function classifyNonCarrierChange(descriptionRaw: string): NonCarrierChangeType | null {
+export function classifyNonCarrierChange(descriptionRaw: string): NonCarrierClassification | null {
   const s = descriptionRaw.trim();
   if (!s) return null;
-  if (ADMIN_UPDATE_KEYWORDS.test(s)) return "ADMIN_UPDATE";
-  if (CONFIG_UPDATE_KEYWORDS.test(s)) return "CONFIG_UPDATE";
+  for (const { type, matchedRule, regex } of NON_CARRIER_PATTERNS) {
+    if (regex.test(s)) return { type, matchedRule };
+  }
   return null;
 }

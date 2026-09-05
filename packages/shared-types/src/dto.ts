@@ -745,11 +745,12 @@ export type RoutingChangeTimeframe = "1m" | "3m" | "6m" | "12m" | "all";
 export interface Ir21RoutingChangeFilters {
   timeframe?: RoutingChangeTimeframe;
   service?: ServiceName | "ALL";
-  // Omitted entirely = the default "All Carrier Churn" view (ADDED/REMOVED/
+  // Omitted entirely = the default "Commercial Churn" view (ADDED/REMOVED/
   // REPLACED, onboarding-flagged rows excluded). "ALL" = "Show Everything"
-  // (every changeType, including CONFIG_UPDATE/ADMIN_UPDATE and onboarding
-  // rows). Any single RoutingChangeType = that type only, still excluding
-  // onboarding rows for ADDED.
+  // (every changeType, including the 4 non-carrier types and onboarding
+  // rows). A single RoutingChangeType = that type only, still excluding
+  // onboarding rows for ADDED. A comma-joined list (see
+  // DIAMETER_SS7_FILTER_VALUE) = the union of those types.
   changeType?: ChangeTypeFilter;
   providerId?: number;
   // Direction-scoped providerId filter, set only by the Top Gainer/Loser
@@ -777,9 +778,9 @@ export interface Ir21RoutingChangeRow {
   newProviderId: number | null;
   newProviderName: string | null;
   // Raw <ChangeHistory> free text -- set for CHANGE_HISTORY-sourced rows
-  // (always for CONFIG_UPDATE/ADMIN_UPDATE, since they have no provider
-  // names to show instead; also carried on CHANGE_HISTORY carrier-swap rows
-  // for audit review). Null for LIVE_DIFF rows.
+  // (always for the 4 non-carrier types, since they have no provider names
+  // to show instead; also carried on CHANGE_HISTORY carrier-swap rows for
+  // audit review). Null for LIVE_DIFF rows.
   description: string | null;
   changeSource: ChangeSource;
   // True only for a LIVE_DIFF "ADDED" produced by this MNO's very first-ever
@@ -787,6 +788,10 @@ export interface Ir21RoutingChangeRow {
   // UploadService.applyServiceConnectivity.
   isInitialOnboarding: boolean;
   isManuallyReviewed: boolean;
+  // Which named regex rule classified this row into its non-carrier
+  // changeType (e.g. "REGEX_IP_RANGE") -- set only for the 4 non-carrier
+  // types, null otherwise. See Ir21ChangeHistoryUtil.classifyNonCarrierChange.
+  matchedRule: string | null;
   sourceFile: string;
   effectiveDate: string;
   ingestedAt: string;
@@ -796,9 +801,9 @@ export interface Ir21RoutingChangeRow {
 // Every field here is computed strictly from genuine carrier routing
 // switches (ADDED/REMOVED/REPLACED, isInitialOnboarding excluded) regardless
 // of what changeType the feed itself is currently filtered to -- a
-// CONFIG_UPDATE/ADMIN_UPDATE entry or a first-upload onboarding row never
-// contributes to any of these, so the KPI cards always reflect real market
-// churn. See Ir21RoutingChangesService.summary.
+// non-carrier (technical or administrative) entry or a first-upload
+// onboarding row never contributes to any of these, so the KPI cards always
+// reflect real market churn. See Ir21RoutingChangesService.summary.
 export interface Ir21RoutingChangeSummary {
   totalChurnEvents: number;
   addedCount: number;

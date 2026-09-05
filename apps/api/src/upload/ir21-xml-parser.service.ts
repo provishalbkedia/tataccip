@@ -50,9 +50,26 @@ export interface ParsedIr21Document {
 
 export interface Ir21ChangeHistoryItem {
   serviceName: "SCCP" | "IPX" | "DSX";
+  // GSMA's own Table-of-Contents numbering for the section this entry's
+  // <ChangeHistory> block is physically nested under -- 5 (International
+  // SCCP Gateway), 17 (GRX/IPX Routing for Data Roaming), or 20 (LTE
+  // Roaming). Derived from serviceName (itself already correctly scoped per
+  // section, see extractChangeHistory below), not parsed from a separate
+  // <SectionModified>/section-ID XML element -- real IR.21 files don't
+  // reliably carry section membership as an element distinct from which
+  // section's own subtree a <ChangeHistory> block sits inside.
+  sectionId: 5 | 17 | 20;
   date: string;
   description: string;
+  // Best-effort -- present in some GSMA exports as <Author>/<ChangeAuthor>/
+  // <ModifiedBy>, absent in others (e.g. the real Dialog Axiata file this
+  // parser was verified against carries none). Null, never a required field.
+  author: string | null;
 }
+
+// GSMA's own Table-of-Contents section numbering for the 3 sections this
+// parser tracks -- see Ir21ChangeHistoryItem.sectionId.
+const SERVICE_SECTION_ID = { SCCP: 5, IPX: 17, DSX: 20 } as const;
 
 function isLeaf(v: unknown): v is string | number {
   return typeof v === "string" || typeof v === "number";
@@ -243,21 +260,29 @@ export class Ir21XmlParserService {
     };
   }
 
-  /** Every <ChangeHistoryItem> (Date + Description pair) nested anywhere
-   * under one section's scope -- scoped per-section (not document-wide) so
-   * an SCCP change entry is never misattributed to DSX or vice versa.
+  /** Every <ChangeHistoryItem> (Date + Description pair, plus an optional
+   * Author when the file happens to carry one) nested anywhere under one
+   * section's scope -- scoped per-section (not document-wide) so an SCCP
+   * change entry is never misattributed to DSX or vice versa. Tag matching
+   * accepts both the plain names this parser was originally verified
+   * against (<Date>/<Description>) and the <ChangeDate>/<ChangeDescription>
+   * naming GSMA also uses in some exports (e.g. SFR, Viettel), since a real
+   * IR.21 file isn't guaranteed to use one convention over the other.
    * Interpretation of the free-text Description (which action, which
-   * provider) deliberately happens elsewhere (ir21-change-history.util.ts)
-   * — this method only extracts the raw Date/Description pairs. */
+   * provider, or which technical/administrative bucket) deliberately
+   * happens elsewhere (ir21-change-history.util.ts) — this method only
+   * extracts the raw Date/Description/Author fields. */
   private extractChangeHistory(scope: unknown, serviceName: "SCCP" | "IPX" | "DSX"): Ir21ChangeHistoryItem[] {
+    const sectionId = SERVICE_SECTION_ID[serviceName];
     const blocks = collectByKey(scope, [/^changehistory$/i]).map((b) => b.value);
     const out: Ir21ChangeHistoryItem[] = [];
     for (const block of blocks) {
       const items = collectByKey(block, [/^changehistoryitem$/i]).flatMap((m) => asArray(m.value));
       for (const item of items) {
-        const date = firstText(item, [/^date$/i]);
-        const description = firstText(item, [/^description$/i]);
-        if (date && description) out.push({ serviceName, date, description });
+        const date = firstText(item, [/^date$/i, /^changedate$/i]);
+        const description = firstText(item, [/^description$/i, /^changedescription$/i]);
+        const author = firstText(item, [/^author$/i, /^changeauthor$/i, /^modifiedby$/i]);
+        if (date && description) out.push({ serviceName, sectionId, date, description, author });
       }
     }
     return out;

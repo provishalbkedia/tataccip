@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Alert,
   Autocomplete,
@@ -102,9 +103,18 @@ function MnoPicker({ onPick }: { onPick: (mno: MnoSuggestion) => void }) {
 }
 
 export default function MnoNormalizationPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <MnoNormalizationPageInner />
+    </React.Suspense>
+  );
+}
+
+function MnoNormalizationPageInner() {
   const { user } = useAuth();
   const isAdmin = user?.role === Role.ADMIN;
-  const [tab, setTab] = React.useState(0);
+  const searchParams = useSearchParams();
+  const [tab, setTab] = React.useState(() => (searchParams.get("tab") === "changelog" ? 1 : 0));
   const [rows, setRows] = React.useState<MnoNormalizationAuditRow[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);

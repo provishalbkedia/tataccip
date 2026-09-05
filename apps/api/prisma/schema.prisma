@@ -338,19 +338,27 @@ enum RoutingChangeType {
   ADDED
   REMOVED
   REPLACED
-  // Technical parameter change on an existing carrier route (IP subnet, DPC/
-  // point code, Diameter Edge Agent FQDN/realm, DNS/NTP, ...) -- the
+  // Technical parameter changes on an existing carrier route -- the
   // wholesale provider itself didn't change, only how the route is
-  // configured. Only ever produced from a <ChangeHistory> free-text entry
-  // (see Ir21ChangeHistoryUtil.classifyNonCarrierChange); live-diff has no
-  // way to detect these since it only tracks the single canonical provider
-  // per service, not technical parameters.
-  CONFIG_UPDATE
+  // configured. All three are only ever produced from a <ChangeHistory>
+  // free-text entry (see Ir21ChangeHistoryUtil.classifyNonCarrierChange);
+  // live-diff has no way to detect these since it only tracks the single
+  // canonical provider per service, not technical parameters.
+  IP_SUBNET_UPDATE
+  DIAMETER_REALM_UPDATE
+  POINT_CODE_GT_UPDATE
   // Administrative/metadata change -- operator legal-entity rebranding,
   // wholesale carrier alias spelling harmonization, NOC/contact updates --
-  // with no effect on actual routing. Same provenance restriction as
-  // CONFIG_UPDATE above.
-  ADMIN_UPDATE
+  // with no effect on actual routing. Same provenance restriction as the
+  // three technical types above. Named ADMIN_NAME_UPDATE (renamed from the
+  // original ADMIN_UPDATE) to read consistently alongside the technical
+  // trio; see migration 20260906183000_split_non_carrier_change_taxonomy.
+  ADMIN_NAME_UPDATE
+  // Retired: superseded by the three technical types above (a CONFIG_UPDATE
+  // row is re-classified into one of them at migration time). Left in the
+  // enum -- Postgres has no native DROP VALUE -- but no longer producible;
+  // @ccip/shared-types' RoutingChangeType union omits it entirely.
+  CONFIG_UPDATE
 }
 
 // Where an Ir21RoutingChange row came from -- LIVE_DIFF rows are detected by
@@ -414,6 +422,15 @@ model Ir21RoutingChange {
   // correction from the original automatic classification for audit
   // purposes.
   isManuallyReviewed  Boolean @default(false)
+  // Which named regex rule (e.g. "REGEX_IP_RANGE") classified this row into
+  // its non-carrier changeType -- set only for CHANGE_HISTORY rows whose
+  // changeType is one of the 3 technical types or ADMIN_NAME_UPDATE; null
+  // for every carrier-churn row (LIVE_DIFF or CHANGE_HISTORY) and for
+  // onboarding rows, which aren't classified by keyword match. Shown
+  // verbatim in the IR.21 Change Log & Normalization Review screen's
+  // "Matched Rule / Pattern" column. See Ir21ChangeHistoryUtil.
+  // classifyNonCarrierChange.
+  matchedRule     String?
   sourceFile      String
   effectiveDate   DateTime
   ingestedAt      DateTime          @default(now())

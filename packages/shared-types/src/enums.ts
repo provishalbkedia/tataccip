@@ -60,23 +60,45 @@ export const ProviderStatsSource = {
 export type ProviderStatsSource = (typeof ProviderStatsSource)[keyof typeof ProviderStatsSource];
 
 // Ir21RoutingChange.changeType — see UploadService.applyServiceConnectivity
-// (ADDED/REMOVED/REPLACED) and UploadService.backfillChangeHistory /
-// Ir21ChangeHistoryUtil.classifyNonCarrierChange (CONFIG_UPDATE/ADMIN_UPDATE
-// — technical or administrative <ChangeHistory> entries with no carrier
-// switch, only ever CHANGE_HISTORY-sourced).
+// (ADDED/REMOVED/REPLACED, genuine carrier-routing switches) and
+// UploadService.backfillChangeHistory / Ir21ChangeHistoryUtil.
+// classifyNonCarrierChange (the 4 non-carrier types below -- technical
+// parameter or administrative/metadata <ChangeHistory> entries with no
+// carrier switch, only ever CHANGE_HISTORY-sourced). CONFIG_UPDATE (this
+// union's original single technical bucket, now split into the 3 more
+// specific types below) is deliberately omitted here even though it still
+// exists in the Prisma enum -- see the schema's own comment on why Postgres
+// can't drop it outright; no code should ever produce or expect it again.
 export const RoutingChangeType = {
   ADDED: "ADDED",
   REMOVED: "REMOVED",
   REPLACED: "REPLACED",
-  CONFIG_UPDATE: "CONFIG_UPDATE",
-  ADMIN_UPDATE: "ADMIN_UPDATE",
+  IP_SUBNET_UPDATE: "IP_SUBNET_UPDATE",
+  DIAMETER_REALM_UPDATE: "DIAMETER_REALM_UPDATE",
+  POINT_CODE_GT_UPDATE: "POINT_CODE_GT_UPDATE",
+  ADMIN_NAME_UPDATE: "ADMIN_NAME_UPDATE",
 } as const;
 export type RoutingChangeType = (typeof RoutingChangeType)[keyof typeof RoutingChangeType];
 
 // The 3 genuine carrier-routing-switch types -- what "churn" means across
-// the Market Intelligence KPIs and the default feed view. CONFIG_UPDATE/
-// ADMIN_UPDATE are real, storable events but never count as churn.
+// the Market Intelligence KPIs and the default feed view. The 4 non-carrier
+// types are real, storable events but never count as churn.
 export const CARRIER_CHURN_TYPES: RoutingChangeType[] = ["ADDED", "REMOVED", "REPLACED"];
+
+// The Market Intelligence filter row combines these two into one "Diameter
+// & SS7 Config" pill (both are SS7/Diameter signaling-plane parameter
+// changes, as opposed to IP_SUBNET_UPDATE's plain network-layer changes) --
+// sent as a comma-joined changeType value; see
+// Ir21RoutingChangesService.fetchFiltered's multi-value parsing.
+export const DIAMETER_SS7_CHANGE_TYPES: RoutingChangeType[] = ["DIAMETER_REALM_UPDATE", "POINT_CODE_GT_UPDATE"];
+export const DIAMETER_SS7_FILTER_VALUE = DIAMETER_SS7_CHANGE_TYPES.join(",");
+
+// GSMA's own Table-of-Contents section numbering for the 3 sections this
+// platform tracks <ChangeHistory> for -- shown in the IR.21 Change Log &
+// Normalization Review screen's "Section ID & Service" column. Derived from
+// serviceName, not a separately stored field (every Ir21RoutingChange row
+// already carries serviceName, whichever mechanism produced it).
+export const SERVICE_SECTION_ID: Record<ServiceName, 5 | 17 | 20> = { SCCP: 5, IPX: 17, DSX: 20 };
 
 // Ir21RoutingChange.changeSource — which mechanism produced the row. See
 // UploadService.applyServiceConnectivity (LIVE_DIFF) and
@@ -87,12 +109,15 @@ export const ChangeSource = {
 } as const;
 export type ChangeSource = (typeof ChangeSource)[keyof typeof ChangeSource];
 
-// The Market Intelligence feed's changeType filter accepts one more value
-// than the stored enum: "ALL" means "no changeType/onboarding restriction at
-// all" (the "Show Everything" pill) -- distinct from omitting the param
-// entirely, which defaults to the churn-only view (CARRIER_CHURN_TYPES,
-// isInitialOnboarding excluded). See Ir21RoutingChangesService.fetchFiltered.
-export type ChangeTypeFilter = RoutingChangeType | "ALL";
+// The Market Intelligence feed's changeType filter accepts two more shapes
+// than the bare stored enum: "ALL" means "no changeType/onboarding
+// restriction at all" (the "Show Everything" pill) -- distinct from
+// omitting the param entirely, which defaults to the churn-only view
+// (CARRIER_CHURN_TYPES, isInitialOnboarding excluded) -- and a comma-joined
+// list of RoutingChangeType values (currently only ever
+// DIAMETER_SS7_FILTER_VALUE) selects the union of those types. See
+// Ir21RoutingChangesService.fetchFiltered.
+export type ChangeTypeFilter = RoutingChangeType | "ALL" | string;
 
 // The platform's 4-region + Non-Terrestrial grouping for Operator Search —
 // see apps/api/src/common/utils/region-mapper.ts for the country->region

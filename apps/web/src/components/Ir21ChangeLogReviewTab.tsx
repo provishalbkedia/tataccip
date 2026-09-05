@@ -29,23 +29,38 @@ import {
 import RuleIcon from "@mui/icons-material/Rule";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
 import { api, ApiError } from "@/lib/api";
-import { Ir21RoutingChangeRow, RoutingChangeType } from "@ccip/shared-types";
+import { CARRIER_CHURN_TYPES, Ir21RoutingChangeRow, RoutingChangeType, SERVICE_SECTION_ID } from "@ccip/shared-types";
 
-const CHANGE_TYPE_OPTIONS: RoutingChangeType[] = ["ADDED", "REMOVED", "REPLACED", "CONFIG_UPDATE", "ADMIN_UPDATE"];
+const CHANGE_TYPE_OPTIONS: RoutingChangeType[] = [
+  "ADDED",
+  "REMOVED",
+  "REPLACED",
+  "IP_SUBNET_UPDATE",
+  "DIAMETER_REALM_UPDATE",
+  "POINT_CODE_GT_UPDATE",
+  "ADMIN_NAME_UPDATE",
+];
 const CHANGE_TYPE_LABEL: Record<RoutingChangeType, string> = {
   ADDED: "+ ADDED",
   REMOVED: "− REMOVED",
   REPLACED: "⇄ REPLACED",
-  CONFIG_UPDATE: "⚙ CONFIG UPDATE",
-  ADMIN_UPDATE: "ℹ ADMIN UPDATE",
+  IP_SUBNET_UPDATE: "🌐 IP / Subnet Update",
+  DIAMETER_REALM_UPDATE: "🔄 Diameter / DEA Config",
+  POINT_CODE_GT_UPDATE: "📟 SS7 / GT Update",
+  ADMIN_NAME_UPDATE: "ℹ Admin / Name Update",
 };
 const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning" | "info" | "default"> = {
   ADDED: "success",
   REMOVED: "error",
   REPLACED: "warning",
-  CONFIG_UPDATE: "info",
-  ADMIN_UPDATE: "default",
+  IP_SUBNET_UPDATE: "info",
+  DIAMETER_REALM_UPDATE: "info",
+  POINT_CODE_GT_UPDATE: "info",
+  ADMIN_NAME_UPDATE: "default",
 };
+
+const NON_CARRIER_TYPES = new Set<RoutingChangeType>(["IP_SUBNET_UPDATE", "DIAMETER_REALM_UPDATE", "POINT_CODE_GT_UPDATE", "ADMIN_NAME_UPDATE"]);
+const CHURN_TYPES = new Set<RoutingChangeType>(CARRIER_CHURN_TYPES);
 
 // A row "needs review" when it's exactly the kind of thing this screen
 // exists to surface: an automatic non-carrier classification, or a
@@ -53,7 +68,17 @@ const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warnin
 // judgment calls the classifier made from keyword/shape heuristics, not a
 // certainty.
 function needsReview(row: Ir21RoutingChangeRow): boolean {
-  return row.changeType === "CONFIG_UPDATE" || row.changeType === "ADMIN_UPDATE" || row.isInitialOnboarding;
+  return NON_CARRIER_TYPES.has(row.changeType) || row.isInitialOnboarding;
+}
+
+/** "Commercial Churn" for a genuine carrier-routing switch (whether or not
+ * this particular row happens to be onboarding-flagged -- flip that flag
+ * off and it immediately IS churn again, so the scope label reflects the
+ * type, not the flag); "Technical Config / Non-Churn" for the 4 non-carrier
+ * types. Shown in its own column so an admin can see at a glance which side
+ * of the Market Intelligence feed's default filter a row falls on. */
+function marketChurnScope(changeType: RoutingChangeType): string {
+  return CHURN_TYPES.has(changeType) ? "Commercial Churn" : "Technical Config / Non-Churn";
 }
 
 function ReclassifyDialog({
@@ -189,11 +214,11 @@ export default function Ir21ChangeLogReviewTab() {
   return (
     <Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Every routing-change classification the ingestion pipeline assigned automatically, with the raw GSMA IR.21{" "}
-        <code>&lt;ChangeHistory&gt;</code> text behind it where one exists. Config/IP and Admin/Name updates, and
-        onboarding-flagged additions, are hidden from the Market Intelligence feed&apos;s default view by design (they
-        aren&apos;t market churn) — review them here and correct a classification when the automatic heuristics got
-        it wrong.
+        Every routing-change classification the ingestion pipeline assigned automatically to Sections 5 (SCCP), 17
+        (IPX), and 20 (DSX), with the raw GSMA IR.21 <code>&lt;ChangeHistory&gt;</code> text behind it where one
+        exists. IP/Subnet, Diameter/SS7, and Admin/Name updates, and onboarding-flagged additions, are hidden from
+        the Market Intelligence feed&apos;s default view by design (they aren&apos;t market churn) — review them
+        here and correct a classification when the automatic heuristics got it wrong.
       </Typography>
 
       <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5, mb: 2 }}>
@@ -232,9 +257,11 @@ export default function Ir21ChangeLogReviewTab() {
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>MNO / Cust</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Service</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Classification</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Evidence / Details</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Section ID &amp; Service</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Raw Change Description</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Normalized Bucket / Tag</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Matched Rule / Pattern</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Market Churn Scope</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Source</TableCell>
               <TableCell sx={{ fontWeight: 700 }} align="right">
                 Action
@@ -244,7 +271,7 @@ export default function Ir21ChangeLogReviewTab() {
           <TableBody>
             {!loading && visibleRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={9}>
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
                     {scope === "review" ? "Nothing flagged for review." : "No routing changes recorded."}
                   </Typography>
@@ -257,7 +284,16 @@ export default function Ir21ChangeLogReviewTab() {
                 <TableCell>
                   {r.mnoName} <Typography component="span" variant="caption" color="text.secondary">({r.tadigCode})</Typography>
                 </TableCell>
-                <TableCell>{r.serviceName}</TableCell>
+                <TableCell>
+                  ID {SERVICE_SECTION_ID[r.serviceName]} ({r.serviceName})
+                </TableCell>
+                <TableCell sx={{ maxWidth: 280 }}>
+                  {r.description ?? (
+                    <Typography variant="body2" color="text.secondary">
+                      {r.oldProviderName ?? "—"} &rarr; {r.newProviderName ?? "—"}
+                    </Typography>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
                     <Chip size="small" color={CHANGE_TYPE_COLOR[r.changeType]} label={CHANGE_TYPE_LABEL[r.changeType]} sx={{ fontWeight: 600 }} />
@@ -265,12 +301,22 @@ export default function Ir21ChangeLogReviewTab() {
                     {r.isManuallyReviewed && <Chip label="Reviewed" size="small" color="primary" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
                   </Box>
                 </TableCell>
-                <TableCell sx={{ maxWidth: 320 }}>
-                  {r.description ?? (
+                <TableCell>
+                  {r.matchedRule ? (
+                    <Chip size="small" variant="outlined" label={r.matchedRule} sx={{ fontFamily: "monospace", fontSize: 11 }} />
+                  ) : (
                     <Typography variant="body2" color="text.secondary">
-                      {r.oldProviderName ?? "—"} &rarr; {r.newProviderName ?? "—"}
+                      —
                     </Typography>
                   )}
+                </TableCell>
+                <TableCell>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: CHURN_TYPES.has(r.changeType) ? "success.main" : "text.secondary", fontWeight: CHURN_TYPES.has(r.changeType) ? 600 : 400 }}
+                  >
+                    {marketChurnScope(r.changeType)}
+                  </Typography>
                 </TableCell>
                 <TableCell>
                   <Chip size="small" variant="outlined" label={r.changeSource === "CHANGE_HISTORY" ? "ChangeHistory" : "Live Diff"} />
@@ -313,10 +359,11 @@ export default function Ir21ChangeLogReviewTab() {
             <br />
             <br />
             Safe to run any time: only rows still on the old classification are touched, and a row already correct
-            is left alone. This does <strong>not</strong> recover Config/IP or Admin/Name updates from a{" "}
-            <code>&lt;ChangeHistory&gt;</code> entry an older ingestion silently dropped — that raw text was never
-            stored, so recovering those specifically requires re-uploading the original IR.21 archive(s) through
-            Admin Upload (also safe: it won&apos;t create duplicate churn events for data that hasn&apos;t changed).
+            is left alone. This does <strong>not</strong> recover IP/Subnet, Diameter/SS7, or Admin/Name updates
+            from a <code>&lt;ChangeHistory&gt;</code> entry an older ingestion silently dropped — that raw text was
+            never stored, so recovering those specifically requires re-uploading the original IR.21 archive(s)
+            through Admin Upload (also safe: it won&apos;t create duplicate churn events for data that hasn&apos;t
+            changed).
           </DialogContentText>
         </DialogContent>
         <DialogActions>

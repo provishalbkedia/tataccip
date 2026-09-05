@@ -338,6 +338,32 @@ enum RoutingChangeType {
   ADDED
   REMOVED
   REPLACED
+  // Technical parameter change on an existing carrier route (IP subnet, DPC/
+  // point code, Diameter Edge Agent FQDN/realm, DNS/NTP, ...) -- the
+  // wholesale provider itself didn't change, only how the route is
+  // configured. Only ever produced from a <ChangeHistory> free-text entry
+  // (see Ir21ChangeHistoryUtil.classifyNonCarrierChange); live-diff has no
+  // way to detect these since it only tracks the single canonical provider
+  // per service, not technical parameters.
+  CONFIG_UPDATE
+  // Administrative/metadata change -- operator legal-entity rebranding,
+  // wholesale carrier alias spelling harmonization, NOC/contact updates --
+  // with no effect on actual routing. Same provenance restriction as
+  // CONFIG_UPDATE above.
+  ADMIN_UPDATE
+}
+
+// Where an Ir21RoutingChange row came from -- LIVE_DIFF rows are detected by
+// comparing this upload's resolved provider against Ir21Connectivity's prior
+// value (UploadService.applyServiceConnectivity); CHANGE_HISTORY rows are
+// recovered from the IR.21 XML's own <ChangeHistory> free-text log
+// (UploadService.backfillChangeHistory), which can describe events that
+// happened before this platform ever tracked anything, and (from this
+// feature onward) can also carry CONFIG_UPDATE/ADMIN_UPDATE entries
+// live-diff could never produce.
+enum ChangeSource {
+  LIVE_DIFF
+  CHANGE_HISTORY
 }
 
 // A detected change in an MNO's single canonical (per-service) IR.21-
@@ -368,6 +394,26 @@ model Ir21RoutingChange {
   oldProviderName String?
   newProviderId   Int?
   newProviderName String?
+  // Raw <ChangeHistory><Description> text, kept only for CHANGE_HISTORY-
+  // sourced rows (CONFIG_UPDATE/ADMIN_UPDATE always; carrier-swap rows too,
+  // for admin review) -- null for LIVE_DIFF rows, which have no free text to
+  // preserve.
+  description   String?
+  changeSource  ChangeSource      @default(LIVE_DIFF)
+  // True only for a LIVE_DIFF "ADDED" produced by this MNO's very first-ever
+  // IR.21 upload (no MnoMasterConnectivity row existed for it beforehand) --
+  // every service a brand-new MNO declares looks identical in shape to a
+  // genuine new carrier win, but it's onboarding noise, not market churn.
+  // Excluded from the default feed view and every headline KPI; still
+  // stored (and visible via "Show Everything") for full audit trail. Never
+  // set for CHANGE_HISTORY rows, whose dated entries describe real
+  // historical events regardless of when this platform first saw the MNO.
+  isInitialOnboarding Boolean @default(false)
+  // Set once an admin overrides the automatic classification via the IR.21
+  // Change Log & Normalization Review screen -- distinguishes a deliberate
+  // correction from the original automatic classification for audit
+  // purposes.
+  isManuallyReviewed  Boolean @default(false)
   sourceFile      String
   effectiveDate   DateTime
   ingestedAt      DateTime          @default(now())

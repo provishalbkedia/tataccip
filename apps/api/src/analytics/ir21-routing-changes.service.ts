@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { RoutingChangeType, ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { getRegionByCountry } from "../common/utils/region-mapper";
-import { Ir21RoutingChangeRow, Ir21RoutingChangeSummary, Region } from "@ccip/shared-types";
+import { CARRIER_CHURN_TYPES, Ir21RoutingChangeRow, Ir21RoutingChangeSummary, Region } from "@ccip/shared-types";
 
 const TIMEFRAME_DAYS: Record<string, number | null> = {
   "1m": 30,
@@ -54,11 +54,28 @@ export class Ir21RoutingChangesService {
             : { OR: [{ oldProviderId: providerId }, { newProviderId: providerId }] }
         : {};
 
+    // changeType semantics (see Ir21RoutingChangeFilters/ChangeTypeFilter):
+    // omitted/"" -> the default "All Carrier Churn" view (ADDED/REMOVED/
+    // REPLACED only, onboarding-flagged rows excluded); "ALL" -> "Show
+    // Everything", no restriction at all; any single RoutingChangeType ->
+    // that type only, still excluding onboarding rows for the 3 churn types
+    // (CONFIG_UPDATE/ADMIN_UPDATE are never onboarding-flagged, so the
+    // exclusion is a no-op for them).
+    let changeTypeWhere: Record<string, unknown> = {};
+    if (!query.changeType) {
+      changeTypeWhere = { changeType: { in: CARRIER_CHURN_TYPES as RoutingChangeType[] }, isInitialOnboarding: false };
+    } else if (query.changeType !== "ALL") {
+      changeTypeWhere = { changeType: query.changeType as RoutingChangeType };
+      if ((CARRIER_CHURN_TYPES as string[]).includes(query.changeType)) {
+        changeTypeWhere.isInitialOnboarding = false;
+      }
+    }
+
     const rows = await this.prisma.ir21RoutingChange.findMany({
       where: {
         ...(since ? { effectiveDate: { gte: since } } : {}),
         ...(query.service && query.service !== "ALL" ? { serviceName: query.service as ServiceName } : {}),
-        ...(query.changeType && query.changeType !== "ALL" ? { changeType: query.changeType as RoutingChangeType } : {}),
+        ...changeTypeWhere,
         ...providerFilter,
         ...(query.search
           ? {
@@ -91,6 +108,10 @@ export class Ir21RoutingChangesService {
       oldProviderName: r.oldProviderName,
       newProviderId: r.newProviderId,
       newProviderName: r.newProviderName,
+      description: r.description,
+      changeSource: r.changeSource,
+      isInitialOnboarding: r.isInitialOnboarding,
+      isManuallyReviewed: r.isManuallyReviewed,
       sourceFile: r.sourceFile,
       effectiveDate: r.effectiveDate.toISOString(),
       ingestedAt: r.ingestedAt.toISOString(),
@@ -99,7 +120,14 @@ export class Ir21RoutingChangesService {
   }
 
   async summary(query: Ir21RoutingChangeQuery): Promise<Ir21RoutingChangeSummary> {
-    const rows = await this.fetchFiltered(query);
+    // Forced to the default churn-only scope regardless of what changeType
+    // the caller passed -- every KPI here must reflect genuine carrier
+    // routing switches only, never a CONFIG_UPDATE/ADMIN_UPDATE or an
+    // onboarding-flagged row, no matter what the feed table itself is
+    // currently filtered to. The frontend's own overview query already
+    // never sends changeType for this reason; this is the defensive
+    // backstop.
+    const rows = await this.fetchFiltered({ ...query, changeType: undefined });
 
     // Gross gains/losses per provider, not just their net -- a provider
     // can be net-positive overall (more wins than losses) while still
@@ -192,5 +220,22 @@ export class Ir21RoutingChangesService {
           changeCount: v.count,
         })),
     };
+  }
+
+  /** Admin override from the IR.21 Change Log & Normalization Review screen
+   * -- corrects an automatic classification (e.g. a CONFIG_UPDATE that was
+   * actually an ADMIN_UPDATE, or a bulk-load ADDED row that either
+   * genuinely was or wasn't real churn). Always stamps isManuallyReviewed
+   * so a corrected row is distinguishable from the original automatic
+   * classification in the audit trail. */
+  async reclassify(id: string, changeType: RoutingChangeType, isInitialOnboarding?: boolean) {
+    return this.prisma.ir21RoutingChange.update({
+      where: { id },
+      data: {
+        changeType,
+        ...(isInitialOnboarding !== undefined ? { isInitialOnboarding } : {}),
+        isManuallyReviewed: true,
+      },
+    });
   }
 }

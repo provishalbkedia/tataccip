@@ -59,13 +59,40 @@ export const ProviderStatsSource = {
 } as const;
 export type ProviderStatsSource = (typeof ProviderStatsSource)[keyof typeof ProviderStatsSource];
 
-// Ir21RoutingChange.changeType — see UploadService.applyServiceConnectivity.
+// Ir21RoutingChange.changeType — see UploadService.applyServiceConnectivity
+// (ADDED/REMOVED/REPLACED) and UploadService.backfillChangeHistory /
+// Ir21ChangeHistoryUtil.classifyNonCarrierChange (CONFIG_UPDATE/ADMIN_UPDATE
+// — technical or administrative <ChangeHistory> entries with no carrier
+// switch, only ever CHANGE_HISTORY-sourced).
 export const RoutingChangeType = {
   ADDED: "ADDED",
   REMOVED: "REMOVED",
   REPLACED: "REPLACED",
+  CONFIG_UPDATE: "CONFIG_UPDATE",
+  ADMIN_UPDATE: "ADMIN_UPDATE",
 } as const;
 export type RoutingChangeType = (typeof RoutingChangeType)[keyof typeof RoutingChangeType];
+
+// The 3 genuine carrier-routing-switch types -- what "churn" means across
+// the Market Intelligence KPIs and the default feed view. CONFIG_UPDATE/
+// ADMIN_UPDATE are real, storable events but never count as churn.
+export const CARRIER_CHURN_TYPES: RoutingChangeType[] = ["ADDED", "REMOVED", "REPLACED"];
+
+// Ir21RoutingChange.changeSource — which mechanism produced the row. See
+// UploadService.applyServiceConnectivity (LIVE_DIFF) and
+// UploadService.backfillChangeHistory (CHANGE_HISTORY).
+export const ChangeSource = {
+  LIVE_DIFF: "LIVE_DIFF",
+  CHANGE_HISTORY: "CHANGE_HISTORY",
+} as const;
+export type ChangeSource = (typeof ChangeSource)[keyof typeof ChangeSource];
+
+// The Market Intelligence feed's changeType filter accepts one more value
+// than the stored enum: "ALL" means "no changeType/onboarding restriction at
+// all" (the "Show Everything" pill) -- distinct from omitting the param
+// entirely, which defaults to the churn-only view (CARRIER_CHURN_TYPES,
+// isInitialOnboarding excluded). See Ir21RoutingChangesService.fetchFiltered.
+export type ChangeTypeFilter = RoutingChangeType | "ALL";
 
 // The platform's 4-region + Non-Terrestrial grouping for Operator Search —
 // see apps/api/src/common/utils/region-mapper.ts for the country->region

@@ -8,7 +8,7 @@ import { buildMnoResolver, detectReachlistFormat, matrixProviderColumns } from "
 import { normalizeProviderName } from "./provider-alias";
 import { isJunkProviderName, splitCompositeProviderNames } from "./provider-normalize";
 import { Ir21ChangeHistoryItem, Ir21XmlParserService, ParsedIr21Document } from "./ir21-xml-parser.service";
-import { interpretChangeHistoryDescription } from "./ir21-change-history.util";
+import { interpretChangeHistoryDescription, classifyNonCarrierChange } from "./ir21-change-history.util";
 import { ProviderResolverService } from "./provider-resolver.service";
 import { SupabaseStorageService } from "./supabase-storage.service";
 import { ActiveBaselineInfo, BulkXmlUploadResult, DsxBackfillResult, UnresolvedReachRow, UploadResult } from "@ccip/shared-types";
@@ -810,6 +810,16 @@ export class UploadService {
     });
     const overrideByService = new Map(activeOverrides.map((o) => [o.serviceName, o]));
 
+    // Read before this upload's own MnoMasterConnectivity upsert below can
+    // create it -- true only when this is this MNO's very first-ever parsed
+    // IR.21 XML. Every service such an MNO declares looks, to live-diff
+    // below, identical in shape to a genuine new carrier win (oldProviderId
+    // null -> ADDED), but a bulk baseline load of N brand-new MNOs isn't N
+    // MNOs' worth of real market churn -- it's onboarding. See
+    // applyServiceConnectivity's isInitialOnboarding handling.
+    const isFirstIr21Upload =
+      (await this.prisma.mnoMasterConnectivity.findUnique({ where: { mnoId: mno.id }, select: { mnoId: true } })) === null;
+
     unmapped += await this.applyServiceConnectivity(
       mno.id,
       parsed.senderTadig,
@@ -822,6 +832,7 @@ export class UploadService {
       mno.operatorName,
       mno.country,
       preWipeSnapshot,
+      isFirstIr21Upload,
     );
     unmapped += await this.applyServiceConnectivity(
       mno.id,
@@ -835,6 +846,7 @@ export class UploadService {
       mno.operatorName,
       mno.country,
       preWipeSnapshot,
+      isFirstIr21Upload,
     );
     // LTE/Diameter (DSX) is a distinct declared carrier from the GRX/IPX
     // data-roaming provider above — see Ir21XmlParserService.
@@ -852,6 +864,7 @@ export class UploadService {
       mno.operatorName,
       mno.country,
       preWipeSnapshot,
+      isFirstIr21Upload,
     );
 
     // Backfills any provider switch this file's own <ChangeHistory> log
@@ -947,6 +960,7 @@ export class UploadService {
     mnoName: string,
     country: string,
     preWipeSnapshot?: PreWipeConnectivitySnapshot,
+    isFirstIr21Upload = false,
   ): Promise<number> {
     const serviceId = services.get(serviceName)!;
     const existing = await this.prisma.ir21Connectivity.findUnique({
@@ -972,6 +986,8 @@ export class UploadService {
           oldProviderName,
           newProviderId,
           newProviderName,
+          changeSource: "LIVE_DIFF",
+          isInitialOnboarding: changeType === "ADDED" && isFirstIr21Upload,
           sourceFile: filename,
           effectiveDate,
         },
@@ -1063,13 +1079,29 @@ export class UploadService {
 
     const existingRows = await this.prisma.ir21RoutingChange.findMany({
       where: { mnoId },
-      select: { serviceName: true, changeType: true, oldProviderId: true, newProviderId: true, effectiveDate: true },
+      select: { serviceName: true, changeType: true, oldProviderId: true, newProviderId: true, description: true, effectiveDate: true },
     });
 
+    // CONFIG_UPDATE/ADMIN_UPDATE rows have no provider ids to disambiguate
+    // with (both always null), so their dedup key includes the raw
+    // description text instead -- carrier-swap rows (ADDED/REMOVED/REPLACED)
+    // keep the exact original key shape, unchanged, so re-uploading a file
+    // ingested before this feature shipped still dedupes against those rows
+    // correctly.
+    const seenKeyFor = (r: {
+      serviceName: string;
+      changeType: string;
+      oldProviderId: number | null;
+      newProviderId: number | null;
+      description?: string | null;
+      dateStr: string;
+    }) =>
+      r.changeType === "CONFIG_UPDATE" || r.changeType === "ADMIN_UPDATE"
+        ? `${r.serviceName}|${r.changeType}|${r.description ?? ""}|${r.dateStr}`
+        : `${r.serviceName}|${r.changeType}|${r.oldProviderId ?? ""}|${r.newProviderId ?? ""}|${r.dateStr}`;
+
     const seen = new Set(
-      existingRows.map(
-        (r) => `${r.serviceName}|${r.changeType}|${r.oldProviderId ?? ""}|${r.newProviderId ?? ""}|${r.effectiveDate.toISOString().slice(0, 10)}`,
-      ),
+      existingRows.map((r) => seenKeyFor({ ...r, dateStr: r.effectiveDate.toISOString().slice(0, 10) })),
     );
     const hasAdditionRecorded = new Set(
       existingRows
@@ -1078,11 +1110,52 @@ export class UploadService {
     );
 
     for (const item of items) {
-      const interpreted = interpretChangeHistoryDescription(item.description);
-      if (!interpreted) continue;
-
       const effectiveDate = new Date(item.date);
       if (isNaN(effectiveDate.getTime())) continue;
+
+      const interpreted = interpretChangeHistoryDescription(item.description);
+      if (!interpreted) {
+        // Not a carrier addition/removal/replacement -- classify as a
+        // technical or administrative update instead of silently dropping
+        // it, so real (if non-commercial) history entries stay visible for
+        // audit review. Still fully discarded when neither classification
+        // applies (e.g. "No Change" boilerplate, or free text this keyword
+        // set doesn't recognize) -- same conservative failure direction as
+        // an unrecognized carrier-swap description above.
+        const nonCarrierType = classifyNonCarrierChange(item.description);
+        if (!nonCarrierType) continue;
+
+        const dedupKey = seenKeyFor({
+          serviceName: item.serviceName,
+          changeType: nonCarrierType,
+          oldProviderId: null,
+          newProviderId: null,
+          description: item.description,
+          dateStr: item.date,
+        });
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+
+        await this.prisma.ir21RoutingChange.create({
+          data: {
+            mnoId,
+            tadigCode: senderTadig,
+            mnoName,
+            country,
+            serviceName: item.serviceName,
+            changeType: nonCarrierType,
+            oldProviderId: null,
+            oldProviderName: null,
+            newProviderId: null,
+            newProviderName: null,
+            description: item.description,
+            changeSource: "CHANGE_HISTORY",
+            sourceFile: filename,
+            effectiveDate,
+          },
+        });
+        continue;
+      }
 
       let oldProviderId = interpreted.oldName ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.oldName)) ?? null) : null;
       let newProviderId = interpreted.newName ? (this.providerResolver.matchAlias(this.providerResolver.normalize(interpreted.newName)) ?? null) : null;
@@ -1094,7 +1167,7 @@ export class UploadService {
       if (oldProviderId === null && newProviderId === null) continue;
 
       const changeType: RoutingChangeType = oldProviderId === null ? "ADDED" : newProviderId === null ? "REMOVED" : "REPLACED";
-      const dedupKey = `${item.serviceName}|${changeType}|${oldProviderId ?? ""}|${newProviderId ?? ""}|${item.date}`;
+      const dedupKey = seenKeyFor({ serviceName: item.serviceName, changeType, oldProviderId, newProviderId, dateStr: item.date });
       if (seen.has(dedupKey)) continue;
       seen.add(dedupKey);
       if (newProviderId !== null && changeType !== "REMOVED") {
@@ -1118,6 +1191,8 @@ export class UploadService {
           oldProviderName: oldProvider?.providerName ?? null,
           newProviderId,
           newProviderName: newProvider?.providerName ?? null,
+          description: item.description,
+          changeSource: "CHANGE_HISTORY",
           sourceFile: filename,
           effectiveDate,
         },

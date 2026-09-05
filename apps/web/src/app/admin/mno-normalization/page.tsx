@@ -21,12 +21,14 @@ import {
   Paper,
   Slide,
   Snackbar,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -36,9 +38,11 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import BlockIcon from "@mui/icons-material/Block";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ClearIcon from "@mui/icons-material/Clear";
+import RuleIcon from "@mui/icons-material/Rule";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
+import Ir21ChangeLogReviewTab from "@/components/Ir21ChangeLogReviewTab";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -100,6 +104,7 @@ function MnoPicker({ onPick }: { onPick: (mno: MnoSuggestion) => void }) {
 export default function MnoNormalizationPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === Role.ADMIN;
+  const [tab, setTab] = React.useState(0);
   const [rows, setRows] = React.useState<MnoNormalizationAuditRow[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -258,6 +263,19 @@ export default function MnoNormalizationPage() {
   return (
     <RequireAuth>
       <AppShell>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}
+        >
+          <Tab label="MNO / Cust Normalization" icon={<CheckCircleOutlineIcon fontSize="small" />} iconPosition="start" sx={{ minHeight: 48 }} />
+          <Tab label="IR.21 Change Log & Normalization Review" icon={<RuleIcon fontSize="small" />} iconPosition="start" sx={{ minHeight: 48 }} />
+        </Tabs>
+
+        {tab === 1 ? (
+          <Ir21ChangeLogReviewTab />
+        ) : (
+          <>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           Unresolved Reach List Aliases
         </Typography>
@@ -596,6 +614,8 @@ export default function MnoNormalizationPage() {
             </Button>
           </DialogActions>
         </Dialog>
+          </>
+        )}
       </AppShell>
     </RequireAuth>
   );

@@ -50,17 +50,42 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 const SERVICE_OPTIONS: ServiceName[] = [ServiceName.SCCP, ServiceName.DSX, ServiceName.IPX];
-const CHANGE_TYPE_OPTIONS: RoutingChangeType[] = [RoutingChangeType.ADDED, RoutingChangeType.REMOVED, RoutingChangeType.REPLACED];
 
-const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning"> = {
+// The "Change" filter's changeType value: "" (the default, pill labeled "All
+// Carrier Churn") and "ALL" ("Show Everything") are query-time-only sentinels
+// -- "" means "don't send changeType at all" (the backend then applies its
+// own default: ADDED/REMOVED/REPLACED, onboarding rows excluded); "ALL" is
+// sent verbatim and means no restriction whatsoever, including onboarding
+// rows. Every other value is a real RoutingChangeType sent as-is.
+type ChangeFilterValue = RoutingChangeType | "ALL" | "";
+// Distinct from the "" default above purely so the ToggleButtonGroup (which
+// needs *some* non-empty value to mark a button selected) doesn't collide
+// with "ALL", which is itself now a real, distinct filter value.
+const DEFAULT_CHURN_PILL = "DEFAULT_CHURN";
+
+const CHANGE_FILTER_PILLS: { value: ChangeFilterValue; label: string }[] = [
+  { value: "", label: "All Carrier Churn (Default)" },
+  { value: "ADDED", label: "+ ADDED" },
+  { value: "REPLACED", label: "⇄ REPLACED" },
+  { value: "REMOVED", label: "− REMOVED" },
+  { value: "CONFIG_UPDATE", label: "⚙ Config / IP Updates" },
+  { value: "ADMIN_UPDATE", label: "ℹ Admin / Name Updates" },
+  { value: "ALL", label: "Show Everything" },
+];
+
+const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning" | "info" | "default"> = {
   ADDED: "success",
   REMOVED: "error",
   REPLACED: "warning",
+  CONFIG_UPDATE: "info",
+  ADMIN_UPDATE: "default",
 };
 const CHANGE_TYPE_LABEL: Record<RoutingChangeType, string> = {
   ADDED: "+ ADDED",
   REMOVED: "− REMOVED",
   REPLACED: "⇄ REPLACED",
+  CONFIG_UPDATE: "⚙ CONFIG UPDATE",
+  ADMIN_UPDATE: "ℹ ADMIN UPDATE",
 };
 
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
@@ -106,12 +131,24 @@ function ServiceCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
 
 function ChangeTypeCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const v = params.value as RoutingChangeType;
-  return <Chip size="small" color={CHANGE_TYPE_COLOR[v]} label={CHANGE_TYPE_LABEL[v]} sx={{ fontWeight: 600 }} />;
+  const chip = <Chip size="small" color={CHANGE_TYPE_COLOR[v]} label={CHANGE_TYPE_LABEL[v]} sx={{ fontWeight: 600 }} />;
+  if (!params.data?.isInitialOnboarding) return chip;
+  return (
+    <InfoTooltip title="From this MNO's very first-ever IR.21 upload -- onboarding, not a real competitive win. Excluded from Total Churn Events and the Top Provider Gainer/Loser KPIs.">
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        {chip}
+        <Chip label="Onboarding" size="small" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+      </Box>
+    </InfoTooltip>
+  );
 }
 
 function DetailsCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const row = params.data;
   if (!row) return null;
+  if (row.changeType === "CONFIG_UPDATE" || row.changeType === "ADMIN_UPDATE") {
+    return <span style={{ color: "rgba(0,0,0,0.6)" }}>{row.description ?? "-"}</span>;
+  }
   if (row.changeType === "REPLACED") return <span>{row.oldProviderName} &rarr; {row.newProviderName}</span>;
   if (row.changeType === "ADDED") return <span>+ {row.newProviderName}</span>;
   return <span>&minus; {row.oldProviderName}</span>;
@@ -412,7 +449,7 @@ export default function Ir21ChangesPage() {
   const [timeframe, setTimeframe] = React.useState<Timeframe>("3m");
   const [region, setRegion] = React.useState<Region | "">("");
   const [service, setService] = React.useState<ServiceName | "">("");
-  const [changeType, setChangeType] = React.useState<RoutingChangeType | "">("");
+  const [changeType, setChangeType] = React.useState<ChangeFilterValue>("");
   const [search, setSearch] = React.useState("");
   const [provider, setProvider] = React.useState<ProviderSuggestion | null>(null);
   const [providerInput, setProviderInput] = React.useState("");
@@ -682,7 +719,7 @@ export default function Ir21ChangesPage() {
             label="Total Churn Events"
             value={summaryLoading ? "…" : summary?.totalChurnEvents ?? 0}
             color="#0A2540"
-            tooltip="Total count of routing modifications (carrier additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period."
+            tooltip="Total count of genuine carrier routing switches (additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period -- excludes Config/IP and Admin/Name updates, and excludes bulk-onboarding rows from an MNO's very first IR.21 upload, neither of which is real market churn."
             active={activeKpi === "churn"}
             onClick={handleChurnClick}
           />
@@ -717,7 +754,7 @@ export default function Ir21ChangesPage() {
               )
             }
             color="#2E7D32"
-            tooltip="Wholesale carrier that achieved the highest gross new routing wins and competitor replacements across all MNO filings in this timeframe."
+            tooltip="Wholesale carrier that achieved the highest gross new routing wins and competitor replacements across all MNO filings in this timeframe -- genuine carrier switches only, never a bulk-onboarding row from an MNO's first-ever IR.21 upload."
             active={activeKpi === "gainer"}
             disabled={!topGainer}
             onClick={handleGainerClick}
@@ -869,25 +906,34 @@ export default function Ir21ChangesPage() {
               ))}
             </ToggleButtonGroup>
 
-            <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-              Change:
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Change:
+              </Typography>
+              <InfoTooltip title="Defaults to genuine carrier routing switches only (a wholesale provider was actually added, removed, or replaced) -- Config/IP and Admin/Name updates are real IR.21 declarations too, but never count as market churn, so they're hidden unless explicitly selected.">
+                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+              </InfoTooltip>
+            </Box>
             <ToggleButtonGroup
               exclusive
               size="small"
-              value={changeType || "ALL"}
+              value={changeType || DEFAULT_CHURN_PILL}
               onChange={(_, v) => {
                 if (!v) return;
-                setChangeType(v === "ALL" ? "" : v);
+                setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
                 setActiveKpi(null);
                 setProviderRole(null);
               }}
-              sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 1,
+                "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" },
+              }}
             >
-              <ToggleButton value="ALL">All</ToggleButton>
-              {CHANGE_TYPE_OPTIONS.map((c) => (
-                <ToggleButton key={c} value={c}>
-                  {CHANGE_TYPE_LABEL[c]}
+              {CHANGE_FILTER_PILLS.map(({ value, label }) => (
+                <ToggleButton key={value || DEFAULT_CHURN_PILL} value={value || DEFAULT_CHURN_PILL}>
+                  {label}
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>

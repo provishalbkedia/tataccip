@@ -114,3 +114,45 @@ export function interpretChangeHistoryDescription(descriptionRaw: string): Inter
 
   return null;
 }
+
+/** The two "non-carrier" buckets a <ChangeHistoryItem><Description> can
+ * classify into once interpretChangeHistoryDescription has already ruled
+ * out a carrier addition/removal/replacement. Matches the codebase's
+ * const-object + derived-union convention (see RoutingChangeType in
+ * @ccip/shared-types) so this stays structurally assignable to the Prisma
+ * enum without a cast. */
+export const NonCarrierChangeType = {
+  CONFIG_UPDATE: "CONFIG_UPDATE",
+  ADMIN_UPDATE: "ADMIN_UPDATE",
+} as const;
+export type NonCarrierChangeType = (typeof NonCarrierChangeType)[keyof typeof NonCarrierChangeType];
+
+// Administrative/metadata language -- corporate renames, alias spelling
+// harmonization, NOC/contact-matrix edits. Checked first since it's the more
+// specific vocabulary; a description matching both lists (rare) is more
+// likely administrative than technical.
+const ADMIN_UPDATE_KEYWORDS =
+  /\b(name change|renamed?|rename|spelling|corporate|legal entity|merger|acquisition|rebrand(?:ed|ing)?|contact|escalation|noc|coordinator|organi[sz]ation name|company name|entity name)\b/i;
+
+// Technical routing-parameter language -- IP/subnet, SS7 point codes,
+// Diameter/DEA, DNS/NTP, ASN. None of these change which wholesale provider
+// carries the route, only how it's configured.
+const CONFIG_UPDATE_KEYWORDS =
+  /\b(ip address(?:es)?|ip range|subnet|prefix|dpc|point code|fqdn|realm|dns|ntp|apn|diameter|edge agent|\bdea\b|hostname|as number|\basn\b|global title|\bgt\b)\b/i;
+
+/** Classifies a <ChangeHistoryItem><Description> that
+ * interpretChangeHistoryDescription already determined isn't a carrier
+ * addition/removal/replacement, into CONFIG_UPDATE or ADMIN_UPDATE -- or
+ * null when it's neither (e.g. "No Change", or free text this keyword set
+ * doesn't recognize), in which case the caller drops the entry entirely
+ * rather than store pure noise. Deliberately keyword-based rather than
+ * fuzzy: a false negative here just means an entry is silently dropped
+ * (matching the existing conservative behavior for unrecognized carrier-swap
+ * text), which is the safe failure direction for an audit feed. */
+export function classifyNonCarrierChange(descriptionRaw: string): NonCarrierChangeType | null {
+  const s = descriptionRaw.trim();
+  if (!s) return null;
+  if (ADMIN_UPDATE_KEYWORDS.test(s)) return "ADMIN_UPDATE";
+  if (CONFIG_UPDATE_KEYWORDS.test(s)) return "CONFIG_UPDATE";
+  return null;
+}

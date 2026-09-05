@@ -1,4 +1,4 @@
-import { AuthProvider, DiscrepancyType, ProviderStatsSource, Region, Role, RoutingChangeType, ServiceName, UploadStatus, VariantStatus } from "./enums";
+import { AuthProvider, ChangeSource, ChangeTypeFilter, DiscrepancyType, ProviderStatsSource, Region, Role, RoutingChangeType, ServiceName, UploadStatus, VariantStatus } from "./enums";
 
 export interface LoginRequest {
   email: string;
@@ -745,7 +745,12 @@ export type RoutingChangeTimeframe = "1m" | "3m" | "6m" | "12m" | "all";
 export interface Ir21RoutingChangeFilters {
   timeframe?: RoutingChangeTimeframe;
   service?: ServiceName | "ALL";
-  changeType?: RoutingChangeType | "ALL";
+  // Omitted entirely = the default "All Carrier Churn" view (ADDED/REMOVED/
+  // REPLACED, onboarding-flagged rows excluded). "ALL" = "Show Everything"
+  // (every changeType, including CONFIG_UPDATE/ADMIN_UPDATE and onboarding
+  // rows). Any single RoutingChangeType = that type only, still excluding
+  // onboarding rows for ADDED.
+  changeType?: ChangeTypeFilter;
   providerId?: number;
   // Direction-scoped providerId filter, set only by the Top Gainer/Loser
   // KPI cards' click-through -- "gainer" narrows to rows where providerId
@@ -771,12 +776,29 @@ export interface Ir21RoutingChangeRow {
   oldProviderName: string | null;
   newProviderId: number | null;
   newProviderName: string | null;
+  // Raw <ChangeHistory> free text -- set for CHANGE_HISTORY-sourced rows
+  // (always for CONFIG_UPDATE/ADMIN_UPDATE, since they have no provider
+  // names to show instead; also carried on CHANGE_HISTORY carrier-swap rows
+  // for audit review). Null for LIVE_DIFF rows.
+  description: string | null;
+  changeSource: ChangeSource;
+  // True only for a LIVE_DIFF "ADDED" produced by this MNO's very first-ever
+  // IR.21 upload -- onboarding, not market churn. See
+  // UploadService.applyServiceConnectivity.
+  isInitialOnboarding: boolean;
+  isManuallyReviewed: boolean;
   sourceFile: string;
   effectiveDate: string;
   ingestedAt: string;
   hasPdfDocument: boolean;
 }
 
+// Every field here is computed strictly from genuine carrier routing
+// switches (ADDED/REMOVED/REPLACED, isInitialOnboarding excluded) regardless
+// of what changeType the feed itself is currently filtered to -- a
+// CONFIG_UPDATE/ADMIN_UPDATE entry or a first-upload onboarding row never
+// contributes to any of these, so the KPI cards always reflect real market
+// churn. See Ir21RoutingChangesService.summary.
 export interface Ir21RoutingChangeSummary {
   totalChurnEvents: number;
   addedCount: number;

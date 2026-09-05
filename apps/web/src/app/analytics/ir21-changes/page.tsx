@@ -72,6 +72,47 @@ type ChangeFilterValue = RoutingChangeType | "ALL" | "" | typeof DIAMETER_SS7_FI
 // with "ALL", which is itself now a real, distinct filter value.
 const DEFAULT_CHURN_PILL = "DEFAULT_CHURN";
 
+const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning" | "info" | "default"> = {
+  ADDED: "success",
+  REMOVED: "error",
+  REPLACED: "warning",
+  IP_SUBNET_UPDATE: "info",
+  DIAMETER_REALM_UPDATE: "info",
+  POINT_CODE_GT_UPDATE: "info",
+  ADMIN_NAME_UPDATE: "default",
+};
+const CHANGE_TYPE_LABEL: Record<RoutingChangeType, string> = {
+  ADDED: "+ ADDED",
+  REMOVED: "− REMOVED",
+  REPLACED: "⇄ REPLACED",
+  IP_SUBNET_UPDATE: "🌐 IP / SUBNET",
+  DIAMETER_REALM_UPDATE: "🔄 DIAMETER / DEA",
+  POINT_CODE_GT_UPDATE: "📟 SS7 / GT",
+  ADMIN_NAME_UPDATE: "ℹ ADMIN / NAME",
+};
+
+// The REPLACED/REMOVED distinction is the one reviewers ask about most --
+// both mean "this MNO's declared provider for this service is gone", but
+// only REPLACED means a specific competitor is on record as having won
+// it. A REPLACED row can come from the IR.21 file's own text naming both
+// the old and new carrier directly, OR from reconciling a same-service
+// removal against this MNO's very first-upload addition when the file
+// only ever documents the removal by itself (see
+// UploadService.backfillChangeHistory's own reconciliation comment) --
+// either way, the Routing Modification Details column always shows the
+// specific old -> new pair for a REPLACED row, never just "gone".
+const CHANGE_TYPE_TOOLTIP: Record<RoutingChangeType, string> = {
+  ADDED: "This MNO/Customer newly declared this wholesale provider for this service, with no prior provider on file to compare against.",
+  REMOVED:
+    "The declared provider for this service was dropped, with no replacement identified anywhere in this MNO's IR.21 filings -- a pure loss, not (yet) a competitor's win.",
+  REPLACED:
+    "A direct competitive swap: the declared provider for this service changed from one wholesale carrier to another. See Routing Modification Details for the specific old → new providers -- this is what feeds both the Top Provider Gainer and Loser stats for the same event.",
+  IP_SUBNET_UPDATE: "Network-layer configuration only (IP ranges, ASN, DNS) -- no carrier relationship changed.",
+  DIAMETER_REALM_UPDATE: "Signaling-plane configuration only (Diameter realm, DEA, S6a) -- no carrier relationship changed.",
+  POINT_CODE_GT_UPDATE: "SS7 signaling-point configuration only (global title, point code, STP) -- no carrier relationship changed.",
+  ADMIN_NAME_UPDATE: "Administrative or metadata update (rebranding, contact details, spelling) -- no carrier relationship changed.",
+};
+
 /** In-scope event counts per "Change" pill, computed client-side from an
  * unfiltered-by-changeType fetch (see countsQueryString/allTypeRows below)
  * so every pill can show its own subtotal simultaneously, not just whichever
@@ -96,6 +137,7 @@ interface ChangeFilterPillDef {
   value: ChangeFilterValue;
   label: string;
   countKey: keyof PillCounts;
+  tooltip: string;
 }
 
 // Segment A -- genuine wholesale carrier switches, the "did we win or lose a
@@ -109,36 +151,32 @@ interface ChangeFilterPillDef {
 // groups, at most one button is ever "selected" at a time regardless of
 // which group it lives in.
 const COMMERCIAL_CHURN_PILLS: ChangeFilterPillDef[] = [
-  { value: "", label: "Commercial Churn (Default)", countKey: "commercial" },
-  { value: "ADDED", label: "+ ADDED", countKey: "added" },
-  { value: "REPLACED", label: "⇄ REPLACED", countKey: "replaced" },
-  { value: "REMOVED", label: "− REMOVED", countKey: "removed" },
+  {
+    value: "",
+    label: "Commercial Churn (Default)",
+    countKey: "commercial",
+    tooltip: "Aggregates + ADDED, ⇄ REPLACED, and − REMOVED -- every genuine wholesale carrier win, loss, or swap. Excludes onboarding rows from an MNO's very first IR.21 upload, which aren't real competitive activity.",
+  },
+  { value: "ADDED", label: "+ ADDED", countKey: "added", tooltip: CHANGE_TYPE_TOOLTIP.ADDED },
+  { value: "REPLACED", label: "⇄ REPLACED", countKey: "replaced", tooltip: CHANGE_TYPE_TOOLTIP.REPLACED },
+  { value: "REMOVED", label: "− REMOVED", countKey: "removed", tooltip: CHANGE_TYPE_TOOLTIP.REMOVED },
 ];
 const TECHNICAL_ADMIN_PILLS: ChangeFilterPillDef[] = [
-  { value: "IP_SUBNET_UPDATE", label: "🌐 IP & Subnets", countKey: "ipSubnet" },
-  { value: DIAMETER_SS7_FILTER_VALUE, label: "🔄 Diameter & SS7 Config", countKey: "diameterSs7" },
-  { value: "ADMIN_NAME_UPDATE", label: "ℹ Admin & Entity Updates", countKey: "admin" },
-  { value: "ALL", label: "Show Everything", countKey: "everything" },
+  { value: "IP_SUBNET_UPDATE", label: "🌐 IP & Subnets", countKey: "ipSubnet", tooltip: CHANGE_TYPE_TOOLTIP.IP_SUBNET_UPDATE },
+  {
+    value: DIAMETER_SS7_FILTER_VALUE,
+    label: "🔄 Diameter & SS7 Config",
+    countKey: "diameterSs7",
+    tooltip: `${CHANGE_TYPE_TOOLTIP.DIAMETER_REALM_UPDATE} Also covers SS7 signaling-point config (global title, point code, STP).`,
+  },
+  { value: "ADMIN_NAME_UPDATE", label: "ℹ Admin & Entity Updates", countKey: "admin", tooltip: CHANGE_TYPE_TOOLTIP.ADMIN_NAME_UPDATE },
+  {
+    value: "ALL",
+    label: "Show Everything",
+    countKey: "everything",
+    tooltip: "No restriction -- every event of every type, including onboarding rows and technical/administrative updates that the other pills all hide.",
+  },
 ];
-
-const CHANGE_TYPE_COLOR: Record<RoutingChangeType, "success" | "error" | "warning" | "info" | "default"> = {
-  ADDED: "success",
-  REMOVED: "error",
-  REPLACED: "warning",
-  IP_SUBNET_UPDATE: "info",
-  DIAMETER_REALM_UPDATE: "info",
-  POINT_CODE_GT_UPDATE: "info",
-  ADMIN_NAME_UPDATE: "default",
-};
-const CHANGE_TYPE_LABEL: Record<RoutingChangeType, string> = {
-  ADDED: "+ ADDED",
-  REMOVED: "− REMOVED",
-  REPLACED: "⇄ REPLACED",
-  IP_SUBNET_UPDATE: "🌐 IP / SUBNET",
-  DIAMETER_REALM_UPDATE: "🔄 DIAMETER / DEA",
-  POINT_CODE_GT_UPDATE: "📟 SS7 / GT",
-  ADMIN_NAME_UPDATE: "ℹ ADMIN / NAME",
-};
 
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.AMERICAS]: { bgcolor: "#0B6FBF", color: "#fff" },
@@ -184,7 +222,9 @@ function ServiceCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
 function ChangeTypeCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const v = params.value as RoutingChangeType;
   const chip = <Chip size="small" color={CHANGE_TYPE_COLOR[v]} label={CHANGE_TYPE_LABEL[v]} sx={{ fontWeight: 600 }} />;
-  if (!params.data?.isInitialOnboarding) return chip;
+  if (!params.data?.isInitialOnboarding) {
+    return <InfoTooltip title={CHANGE_TYPE_TOOLTIP[v]}>{chip}</InfoTooltip>;
+  }
   return (
     <InfoTooltip title="From this MNO's very first-ever IR.21 upload -- onboarding, not a real competitive win. Excluded from Total Churn Events and the Top Provider Gainer/Loser KPIs.">
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -507,8 +547,21 @@ function SwitchingOperatorAutocomplete({
  * with zero events in the current scope is dimmed and unclickable -- unless
  * it's the one currently active, so a filter that was valid a moment ago
  * never traps the user on a suddenly-disabled selected button. */
-function ChangeFilterPill({ pillValue, label, count, isActive }: { pillValue: string; label: string; count: number; isActive: boolean }) {
+function ChangeFilterPill({
+  pillValue,
+  label,
+  count,
+  isActive,
+  tooltip,
+}: {
+  pillValue: string;
+  label: string;
+  count: number;
+  isActive: boolean;
+  tooltip: string;
+}) {
   return (
+    <InfoTooltip title={tooltip}>
     <ToggleButton
       value={pillValue}
       disabled={count === 0 && !isActive}
@@ -559,6 +612,7 @@ function ChangeFilterPill({ pillValue, label, count, isActive }: { pillValue: st
         {count}
       </Box>
     </ToggleButton>
+    </InfoTooltip>
   );
 }
 
@@ -1107,7 +1161,7 @@ export default function Ir21ChangesPage() {
                 }}
                 sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
               >
-                {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey }) => {
+                {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey, tooltip }) => {
                   const pillValue = value || DEFAULT_CHURN_PILL;
                   return (
                     <ChangeFilterPill
@@ -1116,6 +1170,7 @@ export default function Ir21ChangesPage() {
                       label={label}
                       count={pillCounts[countKey]}
                       isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                      tooltip={tooltip}
                     />
                   );
                 })}
@@ -1135,7 +1190,7 @@ export default function Ir21ChangesPage() {
                 }}
                 sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
               >
-                {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey }) => {
+                {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey, tooltip }) => {
                   const pillValue = value || DEFAULT_CHURN_PILL;
                   return (
                     <ChangeFilterPill
@@ -1144,6 +1199,7 @@ export default function Ir21ChangesPage() {
                       label={label}
                       count={pillCounts[countKey]}
                       isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                      tooltip={tooltip}
                     />
                   );
                 })}

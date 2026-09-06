@@ -42,6 +42,14 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import PlayCircleFilledIcon from "@mui/icons-material/PlayCircleFilled";
+import WavingHandIcon from "@mui/icons-material/WavingHand";
+import Looks1Icon from "@mui/icons-material/LooksOne";
+import Looks2Icon from "@mui/icons-material/LooksTwo";
+import Looks3Icon from "@mui/icons-material/Looks3";
+import Looks4Icon from "@mui/icons-material/Looks4";
+import Looks5Icon from "@mui/icons-material/Looks5";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import VideoModal from "@/components/VideoModal";
@@ -236,11 +244,124 @@ function VideoWalkthroughsSection() {
   );
 }
 
+// ---------- Getting Started (new-user welcome) ----------
+
+const GETTING_STARTED_STEPS: { icon: React.ReactNode; title: string; body: string; route: string }[] = [
+  {
+    icon: <Looks1Icon color="primary" />,
+    title: "Start at the Dashboard",
+    body: "A quick, at-a-glance snapshot of the whole platform — how many operators, providers, and live SCCP/DSX/IPX connections CCIP currently tracks.",
+    route: "/dashboard",
+  },
+  {
+    icon: <Looks2Icon color="primary" />,
+    title: "Look up an operator",
+    body: "Head to MNO / Cust Search and type any operator name, TADIG code, or country. Open one to see exactly which wholesale carriers it has officially declared versus what carriers commercially claim to serve it.",
+    route: "/search/mno",
+  },
+  {
+    icon: <Looks3Icon color="primary" />,
+    title: "See who's winning and losing carriers",
+    body: "Market Intelligence & Routing Changes tracks every provider a carrier gained, lost, or swapped over time — filter by carrier, region, or timeframe to find the story you're after.",
+    route: "/analytics/ir21-changes",
+  },
+  {
+    icon: <Looks4Icon color="primary" />,
+    title: "Browse a wholesale carrier's footprint",
+    body: "Provider Search flips the view around — pick a carrier (e.g. BICS, Tata Comm, Syniverse) to see every operator it serves, worldwide.",
+    route: "/search/provider",
+  },
+  {
+    icon: <Looks5Icon color="primary" />,
+    title: "Bring in new data (Admins only)",
+    body: "The Admin Menu is where a fresh GSMA IR.21 batch or a carrier's Reach List file gets uploaded, and where any name the parser couldn't automatically match gets resolved.",
+    route: "/admin",
+  },
+];
+
+const ROLE_INFO: Record<string, { label: string; color: "default" | "info" | "warning"; icon: React.ReactNode; description: string }> = {
+  VIEWER: {
+    label: "Viewer",
+    color: "default",
+    icon: <VisibilityIcon fontSize="small" />,
+    description:
+      "Full read access: search and browse every screen, open operator and provider detail pages, filter Market Intelligence, and export CSVs. Upload, override, and account-management buttons are hidden or disabled for this role.",
+  },
+  ANALYST: {
+    label: "Analyst",
+    color: "info",
+    icon: <VisibilityIcon fontSize="small" />,
+    description:
+      "The same full read access as Viewer — search, browse, filter, and export everything. In this platform today, Analyst and Viewer see identical capability; only Admin can change data.",
+  },
+  ADMIN: {
+    label: "Admin",
+    color: "warning",
+    icon: <AdminPanelSettingsIcon fontSize="small" />,
+    description:
+      "Everything Viewer/Analyst can do, plus every action that changes data: uploading IR.21/Reach List files, resolving unmapped providers and operators, editing provider overrides, reclassifying routing-change events, and managing user roles.",
+  },
+};
+
+function GettingStartedSection() {
+  const { user } = useAuth();
+  const roleInfo = user ? ROLE_INFO[user.role] : undefined;
+
+  return (
+    <Box sx={{ mb: 4 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 1 }}>
+        <WavingHandIcon sx={{ fontSize: 32, color: "#EF6C00" }} />
+        <Typography variant="h5" fontWeight={700}>
+          Welcome to CCIP!
+        </Typography>
+      </Box>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 2.5, maxWidth: 760 }}>
+        New here? This page is your map to everything the platform can do. If you only read one thing today, read
+        the five steps below — they&apos;ll have you finding real answers within a couple of minutes. Everything
+        else on this page is here for whenever you want to go deeper on a specific feature.
+      </Typography>
+
+      {roleInfo && (
+        <Alert
+          icon={roleInfo.icon}
+          severity={roleInfo.color === "warning" ? "warning" : "info"}
+          sx={{ mb: 2.5, maxWidth: 760 }}
+        >
+          You&apos;re signed in as <strong>{roleInfo.label}</strong>. {roleInfo.description}
+        </Alert>
+      )}
+
+      <Grid container spacing={2}>
+        {GETTING_STARTED_STEPS.map((step) => (
+          <Grid item xs={12} sm={6} md={4} key={step.title}>
+            <Card variant="outlined" sx={{ height: "100%" }}>
+              <CardContent>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+                  {step.icon}
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    {step.title}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  {step.body}
+                </Typography>
+                <GoTo label="Go there now" route={step.route} />
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
+  );
+}
+
 // ---------- Tab content ----------
 
 function OverviewTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
+      <GettingStartedSection />
+
       <Section title="Mission">
         <Typography variant="body2" sx={{ mb: 2 }}>
           CCIP (Connectivity Coverage Intelligence Platform) bridges the gap between the official GSMA IR.21
@@ -438,6 +559,81 @@ function MarketIntelligenceTab() {
               "The four KPI cards always reflect the overall Timeframe/Region/Service scope — clicking or searching within one card narrows the table below without collapsing the other cards' own numbers.",
             ]}
           />
+        </TechAccordion>
+
+        <TechAccordion title="Filtering the feed — the &quot;Change:&quot; pill bar">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Below Timeframe / Region / Service sits a two-segment row of pills, each carrying a live count badge for
+            however the rest of your filters are currently set:
+          </Typography>
+          <Bullets
+            items={[
+              <>
+                <strong>Commercial churn segment</strong> — Commercial Churn (Default), + ADDED, ⇄ REPLACED, and −
+                REMOVED. This is genuine wholesale carrier activity: a provider was actually won, lost, or swapped.
+                Hover any pill for a plain-language explanation — REMOVED means a provider was dropped with no
+                replacement identified anywhere in the operator&apos;s filings, while REPLACED means a specific
+                competitor is on record as having won it; the same distinction is explained again on every row&apos;s
+                Change Action badge in the table.
+              </>,
+              <>
+                <strong>Technical &amp; admin segment</strong> — 🌐 IP &amp; Subnets, 🔄 Diameter &amp; SS7 Config,
+                ℹ Admin &amp; Entity Updates, and Show Everything. These are real declarations too (network
+                config, signaling-plane config, administrative metadata), but never a carrier switch — hidden from
+                the default view for exactly that reason, one click away when you need them.
+              </>,
+              "A pill showing (0) for the current scope is dimmed and unclickable, so you never waste a click opening an empty category.",
+              "On a phone or tablet, the whole filter section collapses behind a single \"Filter & Refine\" button with a badge showing how many filters are active — tap it to open every control in a bottom sheet, with its own Clear All / Show Results buttons.",
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Always knowing what's filtering the view">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Clicking a KPI card, picking a provider, or selecting a Change pill narrows the table — and a
+            &quot;Filtered by:&quot; strip appears directly above it naming every dimension currently in effect
+            (Timeframe, Region, Service, Change, Provider, Search, or which KPI card drove the view), each with its
+            own × to clear just that one thing, plus a single &quot;Reset to Default View&quot; button for
+            everything at once. If a filter combination matches nothing, the table is replaced with a plain
+            explanation and a one-click way to clear the filters, rather than a bare empty grid.
+          </Typography>
+        </TechAccordion>
+
+        <TechAccordion title="IR.21 Change Log & Normalization Review (Admin/Analyst audit screen)">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            &quot;View Full Normalization Audit&quot;, next to the pill bar, opens the full unrestricted history
+            behind every classification decision — every ADDED/REMOVED/REPLACED event and every technical/admin
+            update, together with the raw GSMA IR.21 <code>&lt;ChangeHistory&gt;</code> text that produced it, which
+            named regex rule matched, and whether it counts as commercial churn.
+          </Typography>
+          <Bullets
+            items={[
+              '"Needs Review" pre-filters to exactly the rows worth a second look — an automatic technical/admin classification, or an onboarding-flagged addition — versus "All Events" for the complete unfiltered log.',
+              'Clicking "Review" on any row opens a dialog showing the raw declaration text and lets an admin correct the automatic classification by hand, stamping it "Reviewed" in the audit trail.',
+            ]}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, mt: 1.5 }}>
+            Two admin-only buttons re-run the platform&apos;s classification logic retroactively across the entire
+            existing baseline, for whenever the underlying rules improve:
+          </Typography>
+          <Bullets
+            items={[
+              <>
+                <strong>Reclassify Taxonomy</strong> — re-runs every historical entry&apos;s raw description through
+                the current classification rules, correcting rows that were bucketed under an older, narrower rule
+                set, and shows a before/after breakdown of how many events moved between categories.
+              </>,
+              <>
+                <strong>Reprocess Existing Baseline</strong> — retroactively flags each operator&apos;s very first
+                recorded addition as onboarding rather than market churn, fixing an old bulk-loaded baseline that
+                would otherwise look like a flood of brand-new carrier wins.
+              </>,
+            ]}
+          />
+          <Tip>
+            Both are safe to re-run at any time — only rows that genuinely need correcting are touched, and neither
+            can invent evidence that isn&apos;t already in the source data.
+          </Tip>
         </TechAccordion>
 
         <GoTo label="Open Market Intelligence" route="/analytics/ir21-changes" />
@@ -664,7 +860,13 @@ function AdminTab() {
 
   return (
     <Box role="tabpanel" className="guide-tabpanel">
-      <Section title="Advanced Data Ingestion &amp; Normalization — /admin/upload">
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        The Admin Menu has six areas. Every action that changes data — uploading, resolving, overriding,
+        reclassifying, managing accounts — is restricted to the Admin role; a Viewer or Analyst can open every
+        screen below to see the underlying data, but write controls are hidden or disabled for them.
+      </Typography>
+
+      <Section title="IR.21 &amp; Reach List Uploads — /admin/upload">
         <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
           {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
         </Box>
@@ -781,17 +983,118 @@ function AdminTab() {
           </Typography>
         </TechAccordion>
 
-        <TechAccordion title="Unmapped provider management">
+        <TechAccordion title="Format guide &amp; sample templates (recap)">
           <Typography variant="body2" color="text.secondary">
-            Raw carrier-name strings encountered during ingestion that don&apos;t match any known provider are
-            queued for an admin to resolve, rather than silently auto-created — visible under the{" "}
-            <strong>Unmapped Variants Queue</strong>. <strong>Provider Overrides &amp; Normalization Audit</strong>{" "}
-            lets an admin pin a specific provider to one MNO+service permanently (it survives future re-uploads),
-            and audit every canonical provider&apos;s registered alias variants with live occurrence counts.
+            The Reach List Upload card documents both accepted single-file shapes inline, each with a downloadable
+            sample <code>.xlsx</code> template pre-filled with the expected columns.
           </Typography>
         </TechAccordion>
 
-        <GoTo label="Open Admin Menu" route="/admin" />
+        <GoTo label="Open IR.21 &amp; Reach List Uploads" route="/admin/upload" />
+      </Section>
+
+      <Section title="Unmapped Variants Queue — /admin/provider-aliases">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Every raw carrier-name string encountered during ingestion that doesn&apos;t match any known provider
+          alias lands here for a human decision, rather than being silently auto-created as a new, possibly
+          duplicate provider. Each entry shows the raw text as it appeared in the source file, how many times it has
+          occurred, and which MNOs it affects.
+        </Typography>
+        <Bullets
+          items={[
+            "Map a raw variant to an existing canonical provider — every past and future occurrence of that exact text then resolves there automatically.",
+            "Register it as a brand-new provider if it genuinely isn't one CCIP already knows about.",
+          ]}
+        />
+        <GoTo label="Open Unmapped Variants Queue" route="/admin/provider-aliases" />
+      </Section>
+
+      <Section title="Unresolved Reach List Aliases &amp; Normalization Review — /admin/mno-normalization">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          This page has two tabs. GSMA IR.21 is the platform&apos;s sole authoritative source for brand-new operator
+          records, so a Reach List row whose operator or TADIG doesn&apos;t match an existing IR.21 MNO no longer
+          silently creates one — it queues here instead, under <strong>MNO / Cust Normalization</strong>.
+        </Typography>
+        <Bullets
+          items={[
+            "Map a pending row to the correct existing operator by name/TADIG/country search, or accept a system-suggested auto-match with one click.",
+            'Select several rows at once for bulk actions — accept all suggestions, map them all to one operator, ignore, or dismiss.',
+            '"Create New MNO" registers a genuinely new operator that will never have its own GSMA IR.21 filing (an SMS aggregator, SS7 hub, or MVNO) — it appears under the Reach List Only scope on MNO / Cust Search, kept separate from IR.21-verified coverage.',
+          ]}
+        />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          The second tab, <strong>IR.21 Change Log &amp; Normalization Review</strong>, is the full audit trail
+          behind every Market Intelligence classification — see the &quot;IR.21 Change Log &amp; Normalization
+          Review&quot; topic under the Market Intelligence tab of this guide for what it shows and the Reclassify
+          Taxonomy / Reprocess Existing Baseline actions available there.
+        </Typography>
+        <GoTo label="Open Normalization Review" route="/admin/mno-normalization" />
+      </Section>
+
+      <Section title="Provider Overrides &amp; Normalization Audit — /admin/overrides">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Also a two-tab page. <strong>MNO/Cust-Level Overrides Log</strong> lists every active per-operator,
+          per-service override — a manual pin saying &quot;always resolve this MNO&apos;s SCCP provider to X&quot;,
+          regardless of what a future re-upload&apos;s raw text would otherwise resolve to.
+        </Typography>
+        <Bullets
+          items={[
+            "Edit an override to point it at a different provider, with a reason note kept for the audit trail.",
+            "Revert an override entirely, which goes back to resolving straight from the raw IR.21-declared text.",
+          ]}
+        />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, mb: 1 }}>
+          <strong>Provider Normalization &amp; Alias Dictionary</strong> shows every canonical provider as a card
+          with its known raw-name variants and how many live records currently use each one.
+        </Typography>
+        <Warn>
+          Reassigning an alias to a different canonical provider retroactively repoints every matching operator&apos;s
+          connectivity, not just future uploads — the page warns you before this happens.
+        </Warn>
+        <GoTo label="Open Provider Overrides" route="/admin/overrides" />
+      </Section>
+
+      <Section title="User Access &amp; Roles — /admin/users">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Every registered account — local email/password sign-ins and Microsoft SSO sign-ins alike — with role,
+          active/inactive status, join date, and last-active time. Summary tiles show the total headcount and the
+          split across Admin / Analyst / Viewer.
+        </Typography>
+        <Bullets
+          items={[
+            "Change any user's role via a dropdown — takes effect on their very next request, no re-login required.",
+            "Deactivate or reactivate an account with a single switch.",
+            "You can't change your own role or deactivate your own account, as a safeguard against accidentally locking yourself out.",
+          ]}
+        />
+        <GoTo label="Open User Access &amp; Roles" route="/admin/users" />
+      </Section>
+
+      <Section title="Platform Architecture (HLD &amp; LLD) — /admin/architecture">
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+          {isRestricted && <Chip size="small" color="warning" label="ADMIN ONLY" />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A reference document, not a workflow screen — prepared for IT Security review of the platform&apos;s
+          pending Microsoft Entra ID (Azure AD) single sign-on integration, restricted to
+          @tatacommunications.com accounts. Covers the system architecture (browser → Vercel frontend → Cloud Run
+          backend → Supabase Postgres), the Microsoft sign-in sequence in detail, token lifetime and session
+          handling, and the exact Azure AD App Registration fields IT Security needs to configure. Has its own
+          &quot;Download PDF&quot; button for sharing with reviewers who don&apos;t have platform access.
+        </Typography>
+        <GoTo label="Open Platform Architecture" route="/admin/architecture" />
       </Section>
     </Box>
   );

@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import type { ICellRendererParams } from "ag-grid-community";
 import {
   Autocomplete,
+  Badge,
   Box,
   Button,
   Card,
   CardContent,
   Chip,
   Divider,
+  Drawer,
   Grid,
   IconButton,
   Paper,
@@ -19,11 +21,15 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import RuleIcon from "@mui/icons-material/Rule";
+import TuneIcon from "@mui/icons-material/Tune";
+import CloseIcon from "@mui/icons-material/Close";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -192,6 +198,23 @@ const ACTIVE_KPI_LABEL: Record<"churn" | "gainer" | "loser" | "switching", strin
   loser: "Top Provider Loser",
   switching: "Active Switching MNOs/Custs",
 };
+
+// On mobile, a pill row that used to wrap into many short vertical lines
+// (Timeframe with 5 options, Region with 6, both Change segments) instead
+// becomes one horizontally-scrollable strip -- a touch-swipe row reads far
+// better on a narrow screen than half a dozen wrapped lines of capsules
+// pushing the actual data table below the fold. Every pill inside such a
+// group also needs flexShrink: 0 (see ChangeFilterPill and the two plain
+// ToggleButton groups below) so scrolling, not squeezing, is what happens
+// when the strip doesn't fit.
+function scrollablePillGroupSx(mobile: boolean) {
+  return {
+    flexWrap: mobile ? ("nowrap" as const) : ("wrap" as const),
+    overflowX: mobile ? ("auto" as const) : ("visible" as const),
+    WebkitOverflowScrolling: "touch" as const,
+    pb: mobile ? 0.75 : 0,
+  };
+}
 
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.AMERICAS]: { bgcolor: "#0B6FBF", color: "#fff" },
@@ -586,6 +609,7 @@ function ChangeFilterPill({
         px: 1.5,
         py: 0.5,
         gap: 0.75,
+        flexShrink: 0,
         border: "1px solid",
         borderColor: "#CFD8DC",
         bgcolor: "#FFFFFF",
@@ -633,6 +657,12 @@ function ChangeFilterPill({
 
 export default function Ir21ChangesPage() {
   const router = useRouter();
+  // Below "md" (900px), the filter Paper collapses behind a "Filter &
+  // Refine" trigger + bottom sheet Drawer instead of sitting inline --
+  // three-plus stacked ToggleButtonGroups otherwise push the actual data
+  // table well below the fold on a phone.
+  const isMobile = useMediaQuery((theme: Theme) => theme.breakpoints.down("md"));
+  const [filterDrawerOpen, setFilterDrawerOpen] = React.useState(false);
 
   const [timeframe, setTimeframe] = React.useState<Timeframe>("3m");
   const [region, setRegion] = React.useState<Region | "">("");
@@ -948,6 +978,245 @@ export default function Ir21ChangesPage() {
     setActiveKpi(null);
   };
 
+  // Shared between the inline desktop Paper and the mobile bottom-sheet
+  // Drawer -- identical controls either way, just a different container.
+  // The trailing count/"Clear Filters" pair is desktop-only: the mobile
+  // Drawer has its own dedicated footer (Clear All / Show N Results)
+  // instead, so showing both would be redundant inside the sheet.
+  const filterBody = (
+    <>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Timeframe:
+            </Typography>
+            <InfoTooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+            </InfoTooltip>
+          </Box>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            color="primary"
+            value={timeframe}
+            onChange={(_, v: Timeframe | null) => {
+              if (!v) return;
+              setTimeframe(v);
+              setActiveKpi(null);
+              setProviderRole(null);
+            }}
+            sx={{
+              display: "flex",
+              ...scrollablePillGroupSx(isMobile),
+              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+            }}
+          >
+            {TIMEFRAMES.map((t) => (
+              <ToggleButton key={t} value={t}>
+                {TIMEFRAME_LABELS[t]}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Region:
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={region || "ALL"}
+            onChange={(_, v) => {
+              if (!v) return;
+              setRegion(v === "ALL" ? "" : v);
+              setActiveKpi(null);
+              setProviderRole(null);
+            }}
+            sx={{
+              display: "flex",
+              ...scrollablePillGroupSx(isMobile),
+              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+            }}
+          >
+            <ToggleButton value="ALL">All</ToggleButton>
+            {REGION_OPTIONS.map((r) => (
+              <ToggleButton key={r} value={r}>
+                {r}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Service:
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={service || "ALL"}
+            onChange={(_, v) => {
+              if (!v) return;
+              setService(v === "ALL" ? "" : v);
+              setActiveKpi(null);
+              setProviderRole(null);
+            }}
+            sx={{
+              display: "flex",
+              ...scrollablePillGroupSx(isMobile),
+              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+            }}
+          >
+            <ToggleButton value="ALL">All</ToggleButton>
+            {SERVICE_OPTIONS.map((s) => (
+              <ToggleButton key={s} value={s}>
+                {s}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Change:
+            </Typography>
+            <InfoTooltip title="Left group: genuine wholesale carrier switches -- a provider was actually added, removed, or replaced. This is real market churn, and the commercial/carrier-relations view defaults to it. Right group: real IR.21 declarations too (network config, signaling-plane config, administrative metadata), but never a carrier switch, so they're hidden from the default view unless explicitly selected.">
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+            </InfoTooltip>
+          </Box>
+
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={changeType || DEFAULT_CHURN_PILL}
+            onChange={(_, v) => {
+              if (!v) return;
+              setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+              setActiveKpi(null);
+              setProviderRole(null);
+            }}
+            sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
+          >
+            {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey, tooltip }) => {
+              const pillValue = value || DEFAULT_CHURN_PILL;
+              return (
+                <ChangeFilterPill
+                  key={pillValue}
+                  pillValue={pillValue}
+                  label={label}
+                  count={pillCounts[countKey]}
+                  isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                  tooltip={tooltip}
+                />
+              );
+            })}
+          </ToggleButtonGroup>
+
+          {!isMobile && <Divider orientation="vertical" flexItem sx={{ my: 0.5, borderColor: "#CFD8DC" }} />}
+
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={changeType || DEFAULT_CHURN_PILL}
+            onChange={(_, v) => {
+              if (!v) return;
+              setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+              setActiveKpi(null);
+              setProviderRole(null);
+            }}
+            sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
+          >
+            {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey, tooltip }) => {
+              const pillValue = value || DEFAULT_CHURN_PILL;
+              return (
+                <ChangeFilterPill
+                  key={pillValue}
+                  pillValue={pillValue}
+                  label={label}
+                  count={pillCounts[countKey]}
+                  isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                  tooltip={tooltip}
+                />
+              );
+            })}
+          </ToggleButtonGroup>
+        </Box>
+
+        <InfoTooltip title="Inspect raw IR.21 <ChangeHistory> parsing rules and overrides.">
+          <Button
+            component={Link}
+            href="/admin/mno-normalization?tab=changelog"
+            size="small"
+            startIcon={<RuleIcon fontSize="small" />}
+            sx={{ whiteSpace: "nowrap" }}
+          >
+            View Full Normalization Audit &rarr;
+          </Button>
+        </InfoTooltip>
+      </Box>
+
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+        <Autocomplete
+          size="small"
+          options={providerOptions}
+          value={provider}
+          inputValue={providerInput}
+          onInputChange={(_, v) => setProviderInput(v)}
+          onChange={(_, v) => {
+            setProvider(v);
+            setActiveKpi(null);
+            setProviderRole(null);
+          }}
+          getOptionLabel={(o) => o.providerName}
+          isOptionEqualToValue={(o, v) => o.id === v.id}
+          sx={{ minWidth: 260, flex: isMobile ? "1 1 100%" : undefined }}
+          renderInput={(params) => <TextField {...params} label="Wholesale Provider" placeholder="e.g. Tata Communications" />}
+        />
+        <TextField
+          size="small"
+          label="Search MNO / Cust / TADIG"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setActiveKpi(null);
+            setProviderRole(null);
+          }}
+          sx={{ minWidth: 240, flex: isMobile ? "1 1 100%" : undefined }}
+        />
+        {!isMobile && (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
+              {loading
+                ? "Loading…"
+                : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FilterAltOffIcon />}
+              onClick={resetAllFilters}
+              disabled={activeFilterCount === 0}
+              sx={{
+                ml: "auto",
+                alignSelf: "center",
+                borderColor: "#CFD8DC",
+                color: "#0A2540",
+                "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
+              }}
+            >
+              {activeFilterCount > 0 ? `Clear Filters (${activeFilterCount} active)` : "Clear Filters"}
+            </Button>
+          </>
+        )}
+      </Box>
+    </>
+  );
+
   return (
     <RequireAuth>
       <AppShell>
@@ -1072,227 +1341,64 @@ export default function Ir21ChangesPage() {
           />
         </Grid>
 
-        <Paper sx={{ p: 2, mb: 2 }}>
-          {/* Timeframe/Region/Service consolidated onto one row (previously
-             three separate stacked rows) -- each is a short, single-select
-             toggle group, so they comfortably share a row down to tablet
-             width and only wrap onto their own lines on a narrow phone,
-             instead of always costing three full-width rows regardless of
-             how much horizontal room is actually available. */}
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Timeframe:
-                </Typography>
-                <InfoTooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
-                  <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-                </InfoTooltip>
-              </Box>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                color="primary"
-                value={timeframe}
-                onChange={(_, v: Timeframe | null) => {
-                  if (!v) return;
-                  setTimeframe(v);
-                  setActiveKpi(null);
-                  setProviderRole(null);
-                }}
-                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-              >
-                {TIMEFRAMES.map((t) => (
-                  <ToggleButton key={t} value={t}>
-                    {TIMEFRAME_LABELS[t]}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            </Box>
-
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Region:
+        {isMobile ? (
+          <>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2 }}>
+              <Badge badgeContent={activeFilterCount} color="primary" invisible={activeFilterCount === 0}>
+                <Button
+                  variant="outlined"
+                  startIcon={<TuneIcon />}
+                  onClick={() => setFilterDrawerOpen(true)}
+                  sx={{ minHeight: 44, whiteSpace: "nowrap", borderColor: "#CFD8DC", color: "#0A2540" }}
+                >
+                  Filter &amp; Refine
+                </Button>
+              </Badge>
+              <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {loading ? "Loading…" : `${rows.length} change(s) across ${uniqueOperatorCount} MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
               </Typography>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={region || "ALL"}
-                onChange={(_, v) => {
-                  if (!v) return;
-                  setRegion(v === "ALL" ? "" : v);
-                  setActiveKpi(null);
-                  setProviderRole(null);
-                }}
-                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-              >
-                <ToggleButton value="ALL">All</ToggleButton>
-                {REGION_OPTIONS.map((r) => (
-                  <ToggleButton key={r} value={r}>
-                    {r}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
             </Box>
 
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Service:
-              </Typography>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={service || "ALL"}
-                onChange={(_, v) => {
-                  if (!v) return;
-                  setService(v === "ALL" ? "" : v);
-                  setActiveKpi(null);
-                  setProviderRole(null);
-                }}
-                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-              >
-                <ToggleButton value="ALL">All</ToggleButton>
-                {SERVICE_OPTIONS.map((s) => (
-                  <ToggleButton key={s} value={s}>
-                    {s}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            </Box>
-          </Box>
-
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Change:
-                </Typography>
-                <InfoTooltip title="Left group: genuine wholesale carrier switches -- a provider was actually added, removed, or replaced. This is real market churn, and the commercial/carrier-relations view defaults to it. Right group: real IR.21 declarations too (network config, signaling-plane config, administrative metadata), but never a carrier switch, so they're hidden from the default view unless explicitly selected.">
-                  <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-                </InfoTooltip>
-              </Box>
-
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={changeType || DEFAULT_CHURN_PILL}
-                onChange={(_, v) => {
-                  if (!v) return;
-                  setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
-                  setActiveKpi(null);
-                  setProviderRole(null);
-                }}
-                sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
-              >
-                {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey, tooltip }) => {
-                  const pillValue = value || DEFAULT_CHURN_PILL;
-                  return (
-                    <ChangeFilterPill
-                      key={pillValue}
-                      pillValue={pillValue}
-                      label={label}
-                      count={pillCounts[countKey]}
-                      isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
-                      tooltip={tooltip}
-                    />
-                  );
-                })}
-              </ToggleButtonGroup>
-
-              <Divider orientation="vertical" flexItem sx={{ my: 0.5, borderColor: "#CFD8DC" }} />
-
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={changeType || DEFAULT_CHURN_PILL}
-                onChange={(_, v) => {
-                  if (!v) return;
-                  setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
-                  setActiveKpi(null);
-                  setProviderRole(null);
-                }}
-                sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
-              >
-                {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey, tooltip }) => {
-                  const pillValue = value || DEFAULT_CHURN_PILL;
-                  return (
-                    <ChangeFilterPill
-                      key={pillValue}
-                      pillValue={pillValue}
-                      label={label}
-                      count={pillCounts[countKey]}
-                      isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
-                      tooltip={tooltip}
-                    />
-                  );
-                })}
-              </ToggleButtonGroup>
-            </Box>
-
-            <InfoTooltip title="Inspect raw IR.21 <ChangeHistory> parsing rules and overrides.">
-              <Button
-                component={Link}
-                href="/admin/mno-normalization?tab=changelog"
-                size="small"
-                startIcon={<RuleIcon fontSize="small" />}
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                View Full Normalization Audit &rarr;
-              </Button>
-            </InfoTooltip>
-          </Box>
-
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-            <Autocomplete
-              size="small"
-              options={providerOptions}
-              value={provider}
-              inputValue={providerInput}
-              onInputChange={(_, v) => setProviderInput(v)}
-              onChange={(_, v) => {
-                setProvider(v);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              getOptionLabel={(o) => o.providerName}
-              isOptionEqualToValue={(o, v) => o.id === v.id}
-              sx={{ minWidth: 260 }}
-              renderInput={(params) => <TextField {...params} label="Wholesale Provider" placeholder="e.g. Tata Communications" />}
-            />
-            <TextField
-              size="small"
-              label="Search MNO / Cust / TADIG"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              sx={{ minWidth: 240 }}
-            />
-            <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
-              {loading
-                ? "Loading…"
-                : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
-            </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<FilterAltOffIcon />}
-              onClick={resetAllFilters}
-              disabled={activeFilterCount === 0}
-              sx={{
-                ml: "auto",
-                alignSelf: "center",
-                borderColor: "#CFD8DC",
-                color: "#0A2540",
-                "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
-              }}
+            {/* Bottom-sheet Drawer -- every control from the desktop Paper,
+               unchanged, just reflowed into a scrollable full-width sheet
+               with its own dedicated footer actions, so a phone user never
+               has to scroll past 3+ stacked ToggleButtonGroups to reach the
+               actual data. */}
+            <Drawer
+              anchor="bottom"
+              open={filterDrawerOpen}
+              onClose={() => setFilterDrawerOpen(false)}
+              PaperProps={{ sx: { maxHeight: "88vh", borderTopLeftRadius: 16, borderTopRightRadius: 16, display: "flex", flexDirection: "column" } }}
             >
-              {activeFilterCount > 0 ? `Clear Filters (${activeFilterCount} active)` : "Clear Filters"}
-            </Button>
-          </Box>
-        </Paper>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
+                <Typography variant="h6" fontWeight={700}>
+                  Filter &amp; Refine
+                </Typography>
+                <IconButton onClick={() => setFilterDrawerOpen(false)} aria-label="Close filters" sx={{ minWidth: 44, minHeight: 44 }}>
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+              <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>{filterBody}</Box>
+              <Box sx={{ display: "flex", gap: 1, p: 2, borderTop: "1px solid", borderColor: "divider" }}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={resetAllFilters}
+                  disabled={activeFilterCount === 0}
+                  startIcon={<FilterAltOffIcon />}
+                  sx={{ minHeight: 44, borderColor: "#CFD8DC", color: "#0A2540" }}
+                >
+                  Clear All
+                </Button>
+                <Button fullWidth variant="contained" onClick={() => setFilterDrawerOpen(false)} sx={{ minHeight: 44 }}>
+                  {loading ? "Show Results" : `Show ${rows.length} Result${rows.length === 1 ? "" : "s"}`}
+                </Button>
+              </Box>
+            </Drawer>
+          </>
+        ) : (
+          <Paper sx={{ p: 2, mb: 2 }}>{filterBody}</Paper>
+        )}
 
         {/* Active-filter context strip -- names every dimension currently
            narrowing the table (not just "N active"), each removable on its

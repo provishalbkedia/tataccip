@@ -178,6 +178,21 @@ const TECHNICAL_ADMIN_PILLS: ChangeFilterPillDef[] = [
   },
 ];
 
+// Flat lookup across both pill groups -- used by the active-filter
+// breadcrumb strip below to show a human label for whatever `changeType`
+// value is currently selected, without duplicating the 8 labels again.
+const ALL_CHANGE_PILLS = [...COMMERCIAL_CHURN_PILLS, ...TECHNICAL_ADMIN_PILLS];
+function changeFilterLabel(value: ChangeFilterValue): string {
+  return ALL_CHANGE_PILLS.find((p) => p.value === value)?.label ?? value;
+}
+
+const ACTIVE_KPI_LABEL: Record<"churn" | "gainer" | "loser" | "switching", string> = {
+  churn: "Total Churn Events",
+  gainer: "Top Provider Gainer",
+  loser: "Top Provider Loser",
+  switching: "Active Switching MNOs/Custs",
+};
+
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.AMERICAS]: { bgcolor: "#0B6FBF", color: "#fff" },
   [Region.MEA]: { bgcolor: "#EF6C00", color: "#fff" },
@@ -1058,84 +1073,92 @@ export default function Ir21ChangesPage() {
         </Grid>
 
         <Paper sx={{ p: 2, mb: 2 }}>
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Typography variant="body2" color="text.secondary">
-                Timeframe:
-              </Typography>
-              <InfoTooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
-                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-              </InfoTooltip>
+          {/* Timeframe/Region/Service consolidated onto one row (previously
+             three separate stacked rows) -- each is a short, single-select
+             toggle group, so they comfortably share a row down to tablet
+             width and only wrap onto their own lines on a narrow phone,
+             instead of always costing three full-width rows regardless of
+             how much horizontal room is actually available. */}
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Timeframe:
+                </Typography>
+                <InfoTooltip title="Filters routing changes based on the effective change dates declared by MNOs in their official GSMA IR.21 filings.">
+                  <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+                </InfoTooltip>
+              </Box>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                color="primary"
+                value={timeframe}
+                onChange={(_, v: Timeframe | null) => {
+                  if (!v) return;
+                  setTimeframe(v);
+                  setActiveKpi(null);
+                  setProviderRole(null);
+                }}
+                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
+              >
+                {TIMEFRAMES.map((t) => (
+                  <ToggleButton key={t} value={t}>
+                    {TIMEFRAME_LABELS[t]}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
             </Box>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              color="primary"
-              value={timeframe}
-              onChange={(_, v: Timeframe | null) => {
-                if (!v) return;
-                setTimeframe(v);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-            >
-              {TIMEFRAMES.map((t) => (
-                <ToggleButton key={t} value={t}>
-                  {TIMEFRAME_LABELS[t]}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Box>
 
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Region:
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={region || "ALL"}
-              onChange={(_, v) => {
-                if (!v) return;
-                setRegion(v === "ALL" ? "" : v);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-            >
-              <ToggleButton value="ALL">All</ToggleButton>
-              {REGION_OPTIONS.map((r) => (
-                <ToggleButton key={r} value={r}>
-                  {r}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Box>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Region:
+              </Typography>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={region || "ALL"}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setRegion(v === "ALL" ? "" : v);
+                  setActiveKpi(null);
+                  setProviderRole(null);
+                }}
+                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
+              >
+                <ToggleButton value="ALL">All</ToggleButton>
+                {REGION_OPTIONS.map((r) => (
+                  <ToggleButton key={r} value={r}>
+                    {r}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Box>
 
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Service:
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={service || "ALL"}
-              onChange={(_, v) => {
-                if (!v) return;
-                setService(v === "ALL" ? "" : v);
-                setActiveKpi(null);
-                setProviderRole(null);
-              }}
-              sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
-            >
-              <ToggleButton value="ALL">All</ToggleButton>
-              {SERVICE_OPTIONS.map((s) => (
-                <ToggleButton key={s} value={s}>
-                  {s}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Service:
+              </Typography>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={service || "ALL"}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setService(v === "ALL" ? "" : v);
+                  setActiveKpi(null);
+                  setProviderRole(null);
+                }}
+                sx={{ "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider" } }}
+              >
+                <ToggleButton value="ALL">All</ToggleButton>
+                {SERVICE_OPTIONS.map((s) => (
+                  <ToggleButton key={s} value={s}>
+                    {s}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Box>
           </Box>
 
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
@@ -1271,6 +1294,72 @@ export default function Ir21ChangesPage() {
           </Box>
         </Paper>
 
+        {/* Active-filter context strip -- names every dimension currently
+           narrowing the table (not just "N active"), each removable on its
+           own, so a reviewer who arrived here via a KPI-card click or a
+           provider search always sees exactly what's constraining the view
+           and how to back out of just one piece of it, not only "reset
+           everything". Rendered only when something is actually filtering;
+           the baseline view (3m, no provider/search/change override) shows
+           nothing here at all. */}
+        {activeFilterCount > 0 && (
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Filtered by:
+            </Typography>
+            {timeframe !== "3m" && (
+              <Chip size="small" label={`Timeframe: ${TIMEFRAME_LABELS[timeframe]}`} onDelete={() => setTimeframe("3m")} />
+            )}
+            {region && <Chip size="small" label={`Region: ${region}`} onDelete={() => setRegion("")} />}
+            {service && <Chip size="small" label={`Service: ${service}`} onDelete={() => setService("")} />}
+            {changeType && <Chip size="small" label={`Change: ${changeFilterLabel(changeType)}`} onDelete={() => setChangeType("")} />}
+            {provider && (
+              <Chip
+                size="small"
+                color="primary"
+                label={`Provider: ${provider.providerName}${providerRole ? ` (${providerRole})` : ""}`}
+                onDelete={() => {
+                  setProvider(null);
+                  setProviderInput("");
+                  setProviderRole(null);
+                  setActiveKpi(null);
+                }}
+              />
+            )}
+            {search && (
+              <Chip
+                size="small"
+                label={`Search: "${search}"`}
+                onDelete={() => {
+                  setSearch("");
+                  setActiveKpi(null);
+                }}
+              />
+            )}
+            {activeKpi && <Chip size="small" color="secondary" label={`View: ${ACTIVE_KPI_LABEL[activeKpi]}`} onDelete={() => setActiveKpi(null)} />}
+            <Button size="small" onClick={resetAllFilters} startIcon={<FilterAltOffIcon fontSize="small" />} sx={{ ml: 0.5 }}>
+              Reset to Default View
+            </Button>
+          </Box>
+        )}
+
+        {!loading && rows.length === 0 ? (
+          <Paper variant="outlined" sx={{ p: 5, textAlign: "center" }}>
+            <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
+              No changes match your current filters
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {activeFilterCount > 0
+                ? "Try widening the timeframe, or clear a filter above to see more results."
+                : "No routing changes have been recorded for this scope yet."}
+            </Typography>
+            {activeFilterCount > 0 && (
+              <Button variant="outlined" startIcon={<FilterAltOffIcon />} onClick={resetAllFilters}>
+                Clear Filters
+              </Button>
+            )}
+          </Paper>
+        ) : (
         <DataGrid<Ir21RoutingChangeRow>
           rowData={rows}
           renderRowCount={(rowCount) => `${rowCount} change(s) across ${uniqueOperatorCount} MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
@@ -1333,6 +1422,7 @@ export default function Ir21ChangesPage() {
           showTopPagination
           height={600}
         />
+        )}
       </AppShell>
     </RequireAuth>
   );

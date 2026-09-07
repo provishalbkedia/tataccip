@@ -7,6 +7,7 @@ const REPORT_TITLE = "CCIP — Wholesale Roaming Exclusivity & Account Dominance
 function scopeLineFor(input: ExclusivityReportInput): string {
   return (
     `Dataset: ${input.scope.datasetScope}  |  Region: ${input.scope.region}  |  Exclusivity: ${input.scope.exclusivityMode}  |  Service: ${input.scope.serviceFilter}` +
+    (input.scope.provider ? `  |  Wholesale Provider: ${input.scope.provider}` : "") +
     (input.scope.search ? `  |  Search: "${input.scope.search}"` : "")
   );
 }
@@ -47,10 +48,10 @@ export async function generateExclusivityPdfReport(input: ExclusivityReportInput
     24,
   );
 
-  drawSectionHeading(doc, "Carrier Exclusivity Market Share", MARGIN, 78);
+  drawSectionHeading(doc, "Carrier Exclusivity Market Share (by exclusive service assignments)", MARGIN, 78);
   drawBreakdownChart(
     doc,
-    carrierShare.map((c) => ({ label: c.providerName, count: c.exclusiveMnoCount, pct: c.pctOfExclusive })),
+    carrierShare.map((c) => ({ label: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
     () => REPORT_COLORS.navy,
     MARGIN,
     84,
@@ -63,11 +64,11 @@ export async function generateExclusivityPdfReport(input: ExclusivityReportInput
   autoTable(doc, {
     startY: 38,
     margin: { left: MARGIN, right: MARGIN },
-    head: [["Wholesale Carrier", "Exclusive MNOs Locked In", "% of Exclusive Base", "SCCP-Solo", "DSX-Solo", "IPX-Solo"]],
+    head: [["Wholesale Carrier", "Exclusive MNOs Locked In", "% of Exclusive Assignments", "SCCP-Solo", "DSX-Solo", "IPX-Solo"]],
     body: carrierShare.map((c) => [
       c.providerName,
       String(c.exclusiveMnoCount),
-      `${c.pctOfExclusive.toFixed(1)}%`,
+      `${c.pctOfExclusiveAssignments.toFixed(1)}%`,
       String(c.sccpExclusiveCount),
       String(c.dsxExclusiveCount),
       String(c.ipxExclusiveCount),

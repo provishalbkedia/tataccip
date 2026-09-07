@@ -46,6 +46,7 @@ function buildMarketShareSheet(wb: Workbook, input: ExclusivityReportInput) {
   metaLine(
     "Filter Scope",
     `Dataset: ${input.scope.datasetScope} | Region: ${input.scope.region} | Exclusivity: ${input.scope.exclusivityMode} | Service: ${input.scope.serviceFilter}` +
+      (input.scope.provider ? ` | Wholesale Provider: ${input.scope.provider}` : "") +
       (input.scope.search ? ` | Search: "${input.scope.search}"` : ""),
   );
   row++;
@@ -74,17 +75,17 @@ function buildMarketShareSheet(wb: Workbook, input: ExclusivityReportInput) {
   row++;
 
   const tableHeaderRow = ws.getRow(row);
-  tableHeaderRow.values = ["Wholesale Carrier", "Exclusive MNOs", "% of Exclusive Base", "SCCP-Solo", "DSX-Solo"];
+  tableHeaderRow.values = ["Wholesale Carrier", "Exclusive MNOs", "% of Exclusive Assignments", "SCCP-Solo", "DSX-Solo"];
   styleHeaderRow(tableHeaderRow);
   row++;
   const carrierStartRow = row;
   if (carrierShare.length === 0) {
-    ws.getCell(row, 1).value = "No fully-exclusive MNOs in the current filter scope.";
+    ws.getCell(row, 1).value = "No exclusive service assignments in the current filter scope.";
     ws.getCell(row, 1).font = { italic: true, color: { argb: argb(REPORT_COLORS.textSecondary) } };
     row++;
   }
   for (const c of carrierShare) {
-    ws.getRow(row).values = [c.providerName, c.exclusiveMnoCount, `${c.pctOfExclusive.toFixed(1)}%`, c.sccpExclusiveCount, c.dsxExclusiveCount];
+    ws.getRow(row).values = [c.providerName, c.exclusiveMnoCount, `${c.pctOfExclusiveAssignments.toFixed(1)}%`, c.sccpExclusiveCount, c.dsxExclusiveCount];
     row++;
   }
   if (carrierShare.length > 0) {

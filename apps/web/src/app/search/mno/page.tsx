@@ -46,7 +46,7 @@ import ExclusivityCharts from "./ExclusivityCharts";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { COUNTRY_OPTIONS, getCountryName, resolveCountryCode, type CountryOption } from "@/lib/countries";
-import { MnoSuggestion, MnoSummary, Region } from "@ccip/shared-types";
+import { MnoSuggestion, MnoSummary, ProviderSuggestion, Region } from "@ccip/shared-types";
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 
@@ -168,6 +168,34 @@ const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
   ir21: "IR.21 Verified",
   reachlist: "Reach List Only",
   all: "All MNOs",
+};
+
+// Shared active/inactive pill styling for the master filter row
+// (Dataset scope, Region) -- same high-contrast solid-navy-fill/white-text
+// treatment the Market Intelligence page's masterPillGroupSx uses, so the
+// two pages' primary filter controls read consistently instead of this
+// page's plain border-only pills blending into the background.
+const masterPillGroupSx = {
+  "& .MuiToggleButton-root": {
+    borderRadius: "999px !important",
+    textTransform: "none",
+    px: 2,
+    minHeight: 40,
+    border: "1px solid",
+    borderColor: "#CFD8DC",
+    bgcolor: "#FFFFFF",
+    color: "#0A2540",
+    fontWeight: 500,
+    transition: "box-shadow 0.15s, background-color 0.15s",
+    "&:hover": { bgcolor: "#F4F6F8" },
+    "&.Mui-selected, &.Mui-selected:hover": {
+      bgcolor: "#0A2540",
+      color: "#FFFFFF",
+      fontWeight: 600,
+      borderColor: "#00D4B2",
+      boxShadow: "0 2px 4px rgba(10,37,64,0.15)",
+    },
+  },
 };
 
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
@@ -399,6 +427,29 @@ function MnoSearchPageInner() {
   const [clearSignal, setClearSignal] = React.useState(0);
   const [warmingUp, setWarmingUp] = React.useState(false);
 
+  // Wholesale Provider filter -- narrows to MNOs where this carrier appears
+  // in ANY of sccpProviders/dsxProviders/ipxProviders, entirely client-side
+  // like exclusiveMode/serviceFilter (results is already the full fetched
+  // set). Stored as a plain canonical name (matching how sccp/dsx/ipx
+  // provider arrays are already returned by the API), not an id, so it
+  // round-trips through the URL without a second lookup call.
+  const [providerFilter, setProviderFilter] = React.useState<string>("");
+  const [providerFilterInput, setProviderFilterInput] = React.useState("");
+  const [providerFilterOptions, setProviderFilterOptions] = React.useState<ProviderSuggestion[]>([]);
+  React.useEffect(() => {
+    if (!providerFilterInput.trim()) {
+      setProviderFilterOptions([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .get<ProviderSuggestion[]>(`/provider/suggestions?q=${encodeURIComponent(providerFilterInput)}`)
+        .then(setProviderFilterOptions)
+        .catch(() => setProviderFilterOptions([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [providerFilterInput]);
+
   // Live "search-as-you-type" for the 4 free-text fields (q/tadig/mcc/mnc):
   // filtered entirely client-side against whatever's already loaded in
   // `results` (country/region/onlyWithProviders/datasetScope stay real
@@ -460,6 +511,7 @@ function MnoSearchPageInner() {
 
     return rowsWithExclusivity
       .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r))
+      .filter((r) => !providerFilter || [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(providerFilter))
       .filter((r) => !tadigNorm || r.tadigCode.toLowerCase().includes(tadigNorm))
       .filter((r) => !mccNorm || r.mcc.toLowerCase().includes(mccNorm))
       .filter((r) => !mncNorm || r.mnc.toLowerCase().includes(mncNorm))
@@ -480,7 +532,7 @@ function MnoSearchPageInner() {
           .toLowerCase();
         return haystack.includes(qNorm);
       });
-  }, [rowsWithExclusivity, serviceFilter, debouncedFreeText]);
+  }, [rowsWithExclusivity, serviceFilter, providerFilter, debouncedFreeText]);
 
   const visibleRows = React.useMemo(
     () => baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
@@ -554,6 +606,9 @@ function MnoSearchPageInner() {
     setExclusiveMode(urlExclusiveMode && ALL_EXCLUSIVE_MODE_VALUES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
     setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
+    const urlProvider = searchParams.get("provider") ?? "";
+    setProviderFilter(urlProvider);
+    setProviderFilterInput(urlProvider);
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -567,6 +622,7 @@ function MnoSearchPageInner() {
       exclusiveMode?: ExclusiveMode;
       datasetScope?: DatasetScope;
       service?: ServiceFilter | "";
+      provider?: string;
     }) => {
       // A same-tick caller that just called setQ(...) right before this
       // (e.g. a chart drill-down click) would otherwise have this read the
@@ -583,6 +639,7 @@ function MnoSearchPageInner() {
       const nextExclusiveMode = overrides?.exclusiveMode ?? exclusiveMode;
       const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
       const nextService = overrides?.service ?? serviceFilter;
+      const nextProvider = overrides?.provider ?? providerFilter;
       const params = new URLSearchParams();
       if (nextQ) params.set("q", nextQ);
       if (tadig) params.set("tadig", tadig);
@@ -596,9 +653,10 @@ function MnoSearchPageInner() {
       if (nextExclusiveMode !== "all") params.set("exclusiveMode", nextExclusiveMode);
       if (nextDatasetScope !== "ir21") params.set("datasetScope", nextDatasetScope);
       if (nextService) params.set("service", nextService);
+      if (nextProvider) params.set("provider", nextProvider);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, serviceFilter, pathname, router],
+    [q, tadig, country, mcc, mnc, region, onlyWithProviders, exclusiveMode, datasetScope, serviceFilter, providerFilter, pathname, router],
   );
 
   // Also flushes any pending free-text debounce -- Search/Enter should make
@@ -624,7 +682,8 @@ function MnoSearchPageInner() {
     onlyWithProviders ||
     exclusiveMode !== "all" ||
     datasetScope !== "ir21" ||
-    !!serviceFilter;
+    !!serviceFilter ||
+    !!providerFilter;
 
   const resetAllFilters = React.useCallback(() => {
     setQ("");
@@ -637,6 +696,8 @@ function MnoSearchPageInner() {
     setExclusiveMode("all");
     setDatasetScope("ir21");
     setServiceFilter("");
+    setProviderFilter("");
+    setProviderFilterInput("");
     // Bypasses the debounce -- Reset must restore the full baseline
     // instantly, not up to 250ms later.
     if (freeTextDebounceRef.current) clearTimeout(freeTextDebounceRef.current);
@@ -647,6 +708,12 @@ function MnoSearchPageInner() {
   const clearServiceFilter = React.useCallback(() => {
     setServiceFilter("");
     pushParams({ service: "" });
+  }, [pushParams]);
+
+  const clearProviderFilter = React.useCallback(() => {
+    setProviderFilter("");
+    setProviderFilterInput("");
+    pushParams({ provider: "" });
   }, [pushParams]);
 
   const fetchSuggestions = React.useCallback(
@@ -685,6 +752,7 @@ function MnoSearchPageInner() {
       region: region || "All",
       exclusivityMode: EXCLUSIVE_MODE_LABELS[exclusiveMode],
       serviceFilter: serviceFilter ? SERVICE_FILTER_LABEL[serviceFilter] : "All",
+      provider: providerFilter || null,
       search: q || null,
     },
     rows: visibleRows,
@@ -833,6 +901,26 @@ function MnoSearchPageInner() {
                 )}
               </Box>
             </Grid>
+            <Grid item xs={12} sm={2}>
+              <Autocomplete<ProviderSuggestion>
+                fullWidth
+                options={providerFilterOptions}
+                value={providerFilterOptions.find((o) => o.providerName === providerFilter) ?? (providerFilter ? { id: -1, providerName: providerFilter, matchedAlias: null } : null)}
+                inputValue={providerFilterInput}
+                onInputChange={(_, v) => setProviderFilterInput(v)}
+                onChange={(_, v) => {
+                  const next = v?.providerName ?? "";
+                  setProviderFilter(next);
+                  // A structural (client-side) filter, same as Region --
+                  // applies instantly on selection rather than waiting for
+                  // Search/Enter.
+                  pushParams({ provider: next });
+                }}
+                getOptionLabel={(o) => o.providerName}
+                isOptionEqualToValue={(o, v) => o.providerName === v.providerName}
+                renderInput={(params) => <TextField {...params} label="Wholesale Provider" placeholder="e.g. Tata Comm" />}
+              />
+            </Grid>
             <Grid item xs={6} sm={1}>
               <TextField
                 fullWidth
@@ -928,16 +1016,7 @@ function MnoSearchPageInner() {
               setDatasetScope(value);
               pushParams({ datasetScope: value });
             }}
-            sx={{
-              "& .MuiToggleButton-root": {
-                borderRadius: "999px !important",
-                textTransform: "none",
-                px: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                minHeight: 40,
-              },
-            }}
+            sx={masterPillGroupSx}
           >
             {DATASET_SCOPES.map((s) => (
               <ToggleButton key={s} value={s}>
@@ -962,19 +1041,7 @@ function MnoSearchPageInner() {
               setRegion(nextRegion);
               pushParams({ region: nextRegion });
             }}
-            sx={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 1,
-              "& .MuiToggleButton-root": {
-                borderRadius: "999px !important",
-                textTransform: "none",
-                px: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                minHeight: 44,
-              },
-            }}
+            sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...masterPillGroupSx }}
           >
             <ToggleButton value="ALL">All</ToggleButton>
             {REGION_OPTIONS.map((r) => (
@@ -1109,10 +1176,14 @@ function MnoSearchPageInner() {
         <ExclusivityCharts
           rows={baseFilteredRows}
           onProviderClick={(providerName) => {
-            setExclusiveMode("full");
+            // "any" (Any Service Exclusive), not "full" -- the donut ranks
+            // carriers by exclusive service *assignments* (SCCP/DSX/IPX
+            // solo, independently), so its own drill-down needs the
+            // matching broader mode, not the narrower full-portfolio one.
+            setExclusiveMode("any");
             setQ(providerName);
             flushFreeTextFilter({ q: providerName });
-            pushParams({ exclusiveMode: "full", q: providerName });
+            pushParams({ exclusiveMode: "any", q: providerName });
           }}
           onVulnerabilityClick={(mode) => {
             setExclusiveMode(mode);
@@ -1170,14 +1241,23 @@ function MnoSearchPageInner() {
           </Box>
         </Box>
 
-        {serviceFilter && (
-          <Box sx={{ mb: 1.5 }}>
-            <Chip
-              label={`Filter: ${SERVICE_FILTER_LABEL[serviceFilter]} (${visibleRows.length})`}
-              color="primary"
-              onDelete={clearServiceFilter}
-              sx={{ fontWeight: 600 }}
-            />
+        {(serviceFilter || providerFilter) && (
+          <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", gap: 1 }}>
+            {serviceFilter && (
+              <Chip
+                label={`Filter: ${SERVICE_FILTER_LABEL[serviceFilter]} (${visibleRows.length})`}
+                color="primary"
+                onDelete={clearServiceFilter}
+                sx={{ fontWeight: 600 }}
+              />
+            )}
+            {providerFilter && (
+              <Chip
+                label={`Wholesale Provider: ${providerFilter} (${visibleRows.length})`}
+                onDelete={clearProviderFilter}
+                sx={{ fontWeight: 600, bgcolor: "#0A2540", color: "#fff", "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
+              />
+            )}
           </Box>
         )}
 

@@ -134,6 +134,15 @@ export default function MarketDynamicsCharts({
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie
+                      // Recharts' Pie entrance/update animation interpolates
+                      // sectors by array index; when the slice count itself
+                      // changes between renders (a filter narrowing the
+                      // distinct service/carrier set), that interpolation
+                      // can leave every sector unrendered instead of just
+                      // skipping the animation -- reproduced directly on
+                      // the MNO Search page's equivalent donut. Disabled
+                      // here for the same reliability reason.
+                      isAnimationActive={false}
                       data={serviceData}
                       dataKey="count"
                       nameKey="service"
@@ -178,6 +187,7 @@ export default function MarketDynamicsCharts({
                       }
                     />
                     <Bar
+                      isAnimationActive={false}
                       dataKey="net"
                       cursor="pointer"
                       onClick={(_, index) => onCarrierClick(carrierData[index].providerId, carrierData[index].providerName)}
@@ -198,6 +208,7 @@ export default function MarketDynamicsCharts({
                     <YAxis hide />
                     <RechartsTooltip content={<CustomTooltip formatter={(p) => `${p.label}: ${p.count} events (${(p.pct as number).toFixed(1)}%)`} />} />
                     <Bar
+                      isAnimationActive={false}
                       dataKey="count"
                       cursor="pointer"
                       onClick={(_, index) => onRegionClick(regionData[index].label)}

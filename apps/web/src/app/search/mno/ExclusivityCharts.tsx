@@ -1,18 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Box, Collapse, Grid, IconButton, Paper, Typography } from "@mui/material";
+import { Box, Chip, Collapse, Grid, IconButton, Paper, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
+import { aggregateCarrierExclusivity } from "@/lib/reports/exclusivityReportData";
 import type { MnoSummaryWithExclusivity } from "./page";
 
 // A rotating palette for whichever wholesale carriers turn out to hold
 // exclusive accounts in the current dataset -- carrier identity here isn't
 // fixed the way SCCP/DSX/IPX is on the Market Intelligence page, so colors
 // are assigned by rank rather than by name.
-const DONUT_PALETTE = ["#0A2540", "#00D4B2", "#0B6FBF", "#EF6C00", "#6A1B9A", "#2E7D32", "#9AA5B1"];
+const DONUT_PALETTE = ["#0A2540", "#00D4B2", "#0B6FBF", "#EF6C00", "#6A1B9A", "#2E7D32", "#8E24AA", "#00796B"];
 const OTHERS_COLOR = "#CFD8DC";
 
 function CustomTooltip({
@@ -42,24 +43,40 @@ export default function ExclusivityCharts({
   onVulnerabilityClick: (mode: "full" | "shared") => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
+  const [showOthers, setShowOthers] = React.useState(false);
 
-  const donutData = React.useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const r of rows) {
-      if (!r.isFullyExclusive || !r.soleMasterProvider) continue;
-      counts.set(r.soleMasterProvider, (counts.get(r.soleMasterProvider) ?? 0) + 1);
-    }
-    const total = Array.from(counts.values()).reduce((a, b) => a + b, 0) || 1;
-    const ranked = Array.from(counts.entries())
-      .map(([providerName, count]) => ({ providerName, count, pct: (count / total) * 100 }))
-      .sort((a, b) => b.count - a.count);
-    // Top 6 named slices + an "Others" bucket for the long tail -- a donut
+  // Ranked by exclusive service assignments (SCCP/DSX/IPX-solo, counted
+  // independently per service) rather than only full-portfolio exclusivity
+  // -- see aggregateCarrierExclusivity's own doc comment for why: a
+  // dominant multi-service carrier can hold many single-service exclusive
+  // slots while rarely being the literal sole provider across an MNO's
+  // *entire* declared portfolio, which used to make it vanish from this
+  // chart entirely even while clearly present in the underlying data.
+  const carrierShare = React.useMemo(() => aggregateCarrierExclusivity(rows), [rows]);
+
+  const { donutData, othersBreakdown } = React.useMemo(() => {
+    // Top 7 named slices + an "Others" bucket for the long tail -- a donut
     // with 20+ slivers is unreadable and defeats the "at a glance" purpose.
-    if (ranked.length <= 7) return ranked;
-    const top = ranked.slice(0, 6);
-    const others = ranked.slice(6).reduce((sum, r) => sum + r.count, 0);
-    return [...top, { providerName: "Others", count: others, pct: (others / total) * 100 }];
-  }, [rows]);
+    // "Others" itself stays inspectable via the chip list rendered below
+    // the chart (see showOthers), not just a vague leftover percentage.
+    if (carrierShare.length <= 8) {
+      return {
+        donutData: carrierShare.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
+        othersBreakdown: [] as { providerName: string; count: number }[],
+      };
+    }
+    const top = carrierShare.slice(0, 7);
+    const rest = carrierShare.slice(7);
+    const othersTotal = rest.reduce((sum, c) => sum + c.totalExclusiveAssignments, 0);
+    const grandTotal = carrierShare.reduce((sum, c) => sum + c.totalExclusiveAssignments, 0) || 1;
+    return {
+      donutData: [
+        ...top.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
+        { providerName: "Others", count: othersTotal, pct: (othersTotal / grandTotal) * 100 },
+      ],
+      othersBreakdown: rest.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments })),
+    };
+  }, [carrierShare]);
 
   const vulnerabilityData = React.useMemo(() => {
     const fully = rows.filter((r) => r.isFullyExclusive).length;
@@ -101,41 +118,83 @@ export default function ExclusivityCharts({
                     Carrier Exclusivity Share
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                    Which wholesale carriers control the exclusive accounts
+                    Which wholesale carriers hold the most exclusive service assignments (SCCP/DSX/IPX-solo)
                   </Typography>
                   {donutData.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
-                      No fully-exclusive MNOs in this scope.
+                      No exclusive service assignments in this scope.
                     </Typography>
                   ) : (
-                    <ResponsiveContainer width="100%" height={240}>
-                      <PieChart>
-                        <Pie
-                          data={donutData}
-                          dataKey="count"
-                          nameKey="providerName"
-                          innerRadius={55}
-                          outerRadius={90}
-                          paddingAngle={2}
-                          cursor="pointer"
-                          onClick={(_, index) => {
-                            const entry = donutData[index];
-                            if (entry.providerName !== "Others") onProviderClick(entry.providerName);
-                          }}
-                          label={({ name, percent }: { name?: string; percent?: number }) =>
-                            `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                          }
-                          labelLine={false}
-                        >
-                          {donutData.map((d, i) => (
-                            <Cell key={d.providerName} fill={d.providerName === "Others" ? OTHERS_COLOR : DONUT_PALETTE[i % DONUT_PALETTE.length]} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip
-                          content={<CustomTooltip formatter={(p) => `${p.providerName}: ${p.count} exclusive MNOs (${(p.pct as number).toFixed(1)}%)`} />}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <PieChart>
+                          <Pie
+                            // Animation off: Recharts' Pie entrance/update
+                            // animation interpolates sectors by array index,
+                            // and when the slice count itself changes between
+                            // renders (e.g. narrowing the search changes how
+                            // many distinct carriers show up), that
+                            // interpolation can end up leaving every sector's
+                            // <path> unrendered rather than just skipping the
+                            // animation -- reproduced directly against this
+                            // page's own data. The chart's own click-to-drill
+                            // interactivity matters far more here than an
+                            // entrance flourish.
+                            isAnimationActive={false}
+                            data={donutData}
+                            dataKey="count"
+                            nameKey="providerName"
+                            innerRadius={55}
+                            outerRadius={90}
+                            paddingAngle={2}
+                            cursor="pointer"
+                            onClick={(_, index) => {
+                              const entry = donutData[index];
+                              if (entry.providerName === "Others") setShowOthers((v) => !v);
+                              else onProviderClick(entry.providerName);
+                            }}
+                            label={({ name, percent }: { name?: string; percent?: number }) =>
+                              `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                            }
+                            labelLine={false}
+                          >
+                            {donutData.map((d, i) => (
+                              <Cell key={d.providerName} fill={d.providerName === "Others" ? OTHERS_COLOR : DONUT_PALETTE[i % DONUT_PALETTE.length]} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip
+                            content={
+                              <CustomTooltip
+                                formatter={(p) =>
+                                  p.providerName === "Others"
+                                    ? `Others: ${p.count} exclusive assignments (${(p.pct as number).toFixed(1)}%) — click to see the breakdown`
+                                    : `${p.providerName}: ${p.count} exclusive assignments (${(p.pct as number).toFixed(1)}%)`
+                                }
+                              />
+                            }
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      {othersBreakdown.length > 0 && showOthers && (
+                        <Box sx={{ mt: 1, p: 1, bgcolor: "#F4F6F8", borderRadius: 1 }}>
+                          <Typography variant="caption" fontWeight={700} sx={{ color: "#0A2540", display: "block", mb: 0.5 }}>
+                            Inside &quot;Others&quot; ({othersBreakdown.length} carriers):
+                          </Typography>
+                          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                            {othersBreakdown.map((c) => (
+                              <Chip
+                                key={c.providerName}
+                                size="small"
+                                clickable
+                                onClick={() => onProviderClick(c.providerName)}
+                                label={`${c.providerName} (${c.count})`}
+                                sx={{ bgcolor: "#fff", border: "1px solid #CFD8DC" }}
+                              />
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                    </>
                   )}
                 </Paper>
               </Grid>
@@ -156,6 +215,7 @@ export default function ExclusivityCharts({
                         content={<CustomTooltip formatter={(p) => `${p.label}: ${p.count} MNOs (${rows.length > 0 ? (((p.count as number) / rows.length) * 100).toFixed(1) : "0.0"}%)`} />}
                       />
                       <Bar
+                        isAnimationActive={false}
                         dataKey="count"
                         cursor="pointer"
                         onClick={(_, index) => onVulnerabilityClick(vulnerabilityData[index].mode)}

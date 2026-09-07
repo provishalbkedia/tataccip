@@ -3,18 +3,37 @@
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
-import { Box, Button, Chip, Grid, Paper, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Grid,
+  Link as MuiLink,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import BoltIcon from "@mui/icons-material/Bolt";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ProviderCoverageCharts from "./ProviderCoverageCharts";
 import { api } from "@/lib/api";
+import { ProviderReportInput } from "@/lib/reports/providerReportData";
 import { ProviderStatsSource, ProviderSuggestion, ProviderSummary } from "@ccip/shared-types";
 
 const SOURCE_LABEL: Record<ProviderStatsSource, string> = {
@@ -23,10 +42,46 @@ const SOURCE_LABEL: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.BOTH]: "Both",
 };
 
+// Matches the Dataset Scope pill bar's own button text exactly (e.g. "As
+// per IR.21 Data", not SOURCE_LABEL's short "IR.21") so the Active Filters
+// ribbon and the contextual table banner name the filter the same way the
+// control the user clicked does.
+const SOURCE_PILL_LABEL: Record<ProviderStatsSource, string> = {
+  [ProviderStatsSource.IR21]: "As per IR.21 Data",
+  [ProviderStatsSource.REACH_LIST]: "As per Reach List",
+  [ProviderStatsSource.BOTH]: "Both (Combined)",
+};
+
 const SOURCE_HELPER_TEXT: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.IR21]: "Showing provider coverage footprint as declared in GSMA IR.21 documents.",
   [ProviderStatsSource.REACH_LIST]: "Showing provider coverage footprint claimed in published Reach Lists.",
   [ProviderStatsSource.BOTH]: "Showing one row per source per provider — compare the IR.21 footprint against the Reach List footprint directly.",
+};
+
+// Same high-contrast treatment MNO Search's masterPillGroupSx uses -- the
+// Dataset Scope pills here previously used plain low-contrast outlines that
+// barely stood out even when active, unlike every other pill bar in the app.
+const highContrastPillGroupSx = {
+  "& .MuiToggleButton-root": {
+    borderRadius: "999px !important",
+    textTransform: "none",
+    px: 2,
+    minHeight: 40,
+    border: "1px solid",
+    borderColor: "#CFD8DC",
+    bgcolor: "#FFFFFF",
+    color: "#0A2540",
+    fontWeight: 500,
+    transition: "box-shadow 0.15s, background-color 0.15s",
+    "&:hover": { bgcolor: "#F4F6F8" },
+    "&.Mui-selected, &.Mui-selected:hover": {
+      bgcolor: "#0A2540",
+      color: "#FFFFFF",
+      fontWeight: 600,
+      borderColor: "#00D4B2",
+      boxShadow: "0 2px 4px rgba(10,37,64,0.15)",
+    },
+  },
 };
 
 const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
@@ -55,6 +110,11 @@ function ProviderSearchPageInner() {
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
   const [selected, setSelected] = React.useState<ProviderSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
+  // "How many providers exist under the current Dataset Scope with no
+  // search term" -- independent of `q`, so the "View All N Providers"
+  // quick link always names the real total to escape back to, not just
+  // whatever's currently on screen once a search has narrowed it down.
+  const [baselineCount, setBaselineCount] = React.useState<number | null>(null);
 
   // The URL query string is the single source of truth for "what did we
   // last search for" — fires on initial load, on an explicit Search/toggle
@@ -77,6 +137,18 @@ function ProviderSearchPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Deliberately its own fetch (not derived from `results`) so it stays
+  // accurate to "the whole Dataset Scope, no search applied" regardless of
+  // whatever `q` currently narrows the main results down to.
+  React.useEffect(() => {
+    const urlSource = searchParams.get("source");
+    const effectiveSource =
+      urlSource && VALID_SOURCES.includes(urlSource) ? (urlSource as ProviderStatsSource) : ProviderStatsSource.IR21;
+    api
+      .get<ProviderSummary[]>(`/provider/search?source=${effectiveSource}`)
+      .then((res) => setBaselineCount(new Set(res.map((r) => r.id)).size));
+  }, [searchParams]);
+
   const pushParams = React.useCallback(
     (nextQ: string, nextSource: ProviderStatsSource, nextService?: ServiceFilter | null) => {
       const params = new URLSearchParams();
@@ -93,6 +165,39 @@ function ProviderSearchPageInner() {
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<ProviderSuggestion[]>(`/provider/suggestions?q=${encodeURIComponent(query)}`),
     [],
+  );
+
+  // Full reset -- clears the search term AND restores Dataset Scope to its
+  // own default (IR.21 Verified), the same baseline a fresh page load
+  // starts from. Distinct from clearing just the search term (used by the
+  // "View All N Providers" quick link), which deliberately keeps whichever
+  // Dataset Scope the user had picked.
+  const resetAllFilters = React.useCallback(() => {
+    setQ("");
+    setSource(ProviderStatsSource.IR21);
+    setService(null);
+    router.push(pathname, { scroll: false });
+  }, [pathname, router]);
+
+  const hasActiveFilters = !!q || source !== ProviderStatsSource.IR21 || !!service;
+
+  // Drives the Active Filters ribbon -- one entry per narrowing dimension
+  // currently applied, each individually dismissible, so a user combining
+  // e.g. a search term with a non-default Dataset Scope can back either one
+  // out without losing the other (or without hunting for which pill/field
+  // to go touch again).
+  const activeFilterDimensions = React.useMemo(
+    () =>
+      [
+        !!q && { key: "q", label: `Search: "${q}"`, onClear: () => pushParams("", source, service) },
+        source !== ProviderStatsSource.IR21 && {
+          key: "source",
+          label: `Dataset: ${SOURCE_PILL_LABEL[source]}`,
+          onClear: () => pushParams(q, ProviderStatsSource.IR21, service),
+        },
+        !!service && { key: "service", label: `Declared: ${service} Only`, onClear: () => pushParams(q, source, null) },
+      ].filter((d): d is { key: string; label: string; onClear: () => void } => !!d),
+    [q, source, service, pushParams],
   );
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
@@ -114,6 +219,51 @@ function ProviderSearchPageInner() {
     }
     return Array.from(byId.values()).sort((a, b) => b.stats.totalMnos - a.stats.totalMnos);
   }, [results]);
+
+  // ---- Provider MIS report downloads ----
+  // providerPdfReport/providerExcelReport (and jspdf/jspdf-autotable/
+  // exceljs, which they wrap) are dynamically imported only once a user
+  // actually picks a format -- same "don't pay for a report nobody may ever
+  // generate" reasoning as the other MIS report suites in the app.
+  const [providerReportMenuAnchor, setProviderReportMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [generatingProviderReport, setGeneratingProviderReport] = React.useState<"pdf" | "excel" | null>(null);
+  const PROVIDER_REPORT_GENERATING_LABEL: Record<"pdf" | "excel", string> = {
+    pdf: "Generating Brief…",
+    excel: "Generating Workbook…",
+  };
+
+  const providerReportInput = React.useMemo<ProviderReportInput>(
+    () => ({ generatedAt: new Date(), scope: { source, search: q || null }, rankedProviders }),
+    [source, q, rankedProviders],
+  );
+
+  const handleDownloadProviderPdf = React.useCallback(async () => {
+    setProviderReportMenuAnchor(null);
+    setGeneratingProviderReport("pdf");
+    try {
+      const { generateProviderPdfReport } = await import("@/lib/reports/providerPdfReport");
+      await generateProviderPdfReport(providerReportInput);
+    } finally {
+      setGeneratingProviderReport(null);
+    }
+  }, [providerReportInput]);
+
+  const handleDownloadProviderExcel = React.useCallback(async () => {
+    setProviderReportMenuAnchor(null);
+    setGeneratingProviderReport("excel");
+    try {
+      const { generateProviderExcelReport } = await import("@/lib/reports/providerExcelReport");
+      await generateProviderExcelReport(providerReportInput);
+    } finally {
+      setGeneratingProviderReport(null);
+    }
+  }, [providerReportInput]);
+
+  const handleDownloadProviderCsv = React.useCallback(async () => {
+    setProviderReportMenuAnchor(null);
+    const { generateProviderCsvExport } = await import("@/lib/reports/providerCsvReport");
+    generateProviderCsvExport(providerReportInput);
+  }, [providerReportInput]);
 
   // Chart-driven drill-down (bar click) reuses the same free-text search
   // the manual search box does, matching how a click there is one exact
@@ -247,7 +397,7 @@ function ProviderSearchPageInner() {
         </Typography>
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={9}>
+            <Grid item xs={12} sm={6}>
               <SuggestionAutocomplete<ProviderSuggestion>
                 label={isMobile ? "Provider Name..." : "Provider Name (e.g. Tata Comm, Syniverse, BICS)"}
                 value={q}
@@ -257,9 +407,21 @@ function ProviderSearchPageInner() {
                 onEnter={runSearch}
               />
             </Grid>
-            <Grid item xs={12} sm={3}>
+            <Grid item xs={6} sm={3}>
               <Button fullWidth variant="contained" startIcon={<SearchIcon />} onClick={runSearch}>
                 Search
+              </Button>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<RestartAltIcon />}
+                onClick={resetAllFilters}
+                disabled={!hasActiveFilters}
+                color={hasActiveFilters ? "warning" : "inherit"}
+              >
+                Reset
               </Button>
             </Grid>
             <Grid item xs={12}>
@@ -269,20 +431,7 @@ function ProviderSearchPageInner() {
                 color="primary"
                 value={source}
                 onChange={(_, value) => value && pushParams(q, value, service)}
-                sx={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 1,
-                  "& .MuiToggleButton-root": {
-                    borderRadius: "999px !important",
-                    textTransform: "none",
-                    px: 2,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    minHeight: 44,
-                    flex: { xs: "1 1 100%", sm: "0 1 auto" },
-                  },
-                }}
+                sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
               >
                 <ToggleButton value={ProviderStatsSource.IR21}>As per IR.21 Data</ToggleButton>
                 <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
@@ -291,6 +440,53 @@ function ProviderSearchPageInner() {
             </Grid>
           </Grid>
         </Paper>
+
+        {/* Active Filters ribbon -- previously there was no on-page trace
+           that a search term or non-default Dataset Scope was narrowing
+           everything below (charts, benchmark banner, table) once a user
+           had typed a provider name; the only way out was to notice and
+           manually clear the search box. Each chip removes just its own
+           dimension; "Reset All Filters" clears everything. */}
+        {activeFilterDimensions.length > 0 && (
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 1.5,
+              p: 1.5,
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1.5,
+              borderColor: "#BFD4E8",
+              bgcolor: "#F4F8FC",
+            }}
+          >
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: "#0A2540" }}>
+                Active Filters:
+              </Typography>
+              {activeFilterDimensions.map((d) => (
+                <Chip
+                  key={d.key}
+                  label={d.label}
+                  onDelete={d.onClear}
+                  size="small"
+                  sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600, "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
+                />
+              ))}
+            </Box>
+            <Button
+              startIcon={<RestartAltIcon fontSize="small" />}
+              variant="outlined"
+              size="small"
+              onClick={resetAllFilters}
+              sx={{ borderColor: "#0A2540", color: "#0A2540" }}
+            >
+              Reset All Filters
+            </Button>
+          </Paper>
+        )}
 
         <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} onProviderClick={handleProviderChartClick} />
 
@@ -370,29 +566,82 @@ function ProviderSearchPageInner() {
           )}
         </Paper>
 
-        {/* Results Summary -- same treatment as MNO Search's stat strip: the
-           result count reads at a glance instead of opening a paragraph of
-           grey instructional text, with the "how to use this table" copy
-           demoted to a caption underneath. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.5, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
-            <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, color: "#0A2540", lineHeight: 1 }}>
-                {uniqueProviderCount}
+        {/* Contextual Table Header Banner -- names the table's exact scope
+           in plain language (previously just a bare result count) and, once
+           a search has narrowed the view down, an explicit way back out to
+           the full Dataset Scope baseline rather than only the Reset
+           button up in the search bar. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 2, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5 }}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ color: "#0A2540" }}>
+                Wholesale Provider Footprint &amp; Reach Benchmark
               </Typography>
-              <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>
-                result{uniqueProviderCount === 1 ? "" : "s"}
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                {q
+                  ? `Showing ${uniqueProviderCount} of ${baselineCount ?? "…"} providers matching "${q}" (${SOURCE_PILL_LABEL[source]})`
+                  : `Showing all ${uniqueProviderCount} providers (${SOURCE_PILL_LABEL[source]})`}
+                {service && ` — filtered to declared ${service} providers`}
               </Typography>
+              {q && (
+                <MuiLink
+                  component="button"
+                  variant="body2"
+                  onClick={() => pushParams("", source, service)}
+                  sx={{ mt: 0.5, display: "inline-block", fontWeight: 600 }}
+                >
+                  View All {baselineCount ?? uniqueProviderCount} Providers &rarr;
+                </MuiLink>
+              )}
             </Box>
-            {service && (
-              <Chip
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+              {service && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`Filtered to ${service} providers`}
+                  onDelete={() => pushParams(q, source, null)}
+                  deleteIcon={<CloseIcon fontSize="small" />}
+                />
+              )}
+              <Button
+                variant="contained"
                 size="small"
-                color="primary"
-                label={`Filtered to ${service} providers`}
-                onDelete={() => pushParams(q, source, null)}
-                deleteIcon={<CloseIcon fontSize="small" />}
-              />
-            )}
+                disabled={rankedProviders.length === 0 || !!generatingProviderReport}
+                startIcon={generatingProviderReport ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : <AssessmentOutlinedIcon />}
+                endIcon={!generatingProviderReport && <ArrowDropDownIcon />}
+                onClick={(e) => setProviderReportMenuAnchor(e.currentTarget)}
+                sx={{
+                  minHeight: 40,
+                  background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  border: "1px solid #F59E0B",
+                  whiteSpace: "nowrap",
+                  "&:hover": { background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)", boxShadow: 4 },
+                }}
+              >
+                {generatingProviderReport ? PROVIDER_REPORT_GENERATING_LABEL[generatingProviderReport] : "Download Provider Report"}
+              </Button>
+              <Menu anchorEl={providerReportMenuAnchor} open={!!providerReportMenuAnchor} onClose={() => setProviderReportMenuAnchor(null)}>
+                <MenuItem onClick={handleDownloadProviderPdf}>
+                  <ListItemText
+                    primary="📄 Executive PDF Report (with Charts)"
+                    secondary="Branded brief with KPI banner, coverage charts & provider ranking ledger"
+                  />
+                </MenuItem>
+                <MenuItem onClick={handleDownloadProviderExcel}>
+                  <ListItemText
+                    primary="📊 Detailed MIS Workbook (.xlsx)"
+                    secondary="Executive Summary KPIs + full Provider Directory with auto-filter"
+                  />
+                </MenuItem>
+                <MenuItem onClick={handleDownloadProviderCsv}>
+                  <ListItemText primary="📑 Raw CSV Export (.csv)" secondary="Plain ranked provider list for pipelines & spreadsheets" />
+                </MenuItem>
+              </Menu>
+            </Box>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
             Click anywhere on a row (or its checkbox) to select 2-5 for side-by-side comparison, or click a
@@ -408,7 +657,6 @@ function ProviderSearchPageInner() {
           getRowId={(row) => row.id}
           deselectSignal={deselectSignal}
           showTopPagination
-          exportFileName="provider-search-results"
         />
         </Box>
 

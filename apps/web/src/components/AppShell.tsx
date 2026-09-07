@@ -110,9 +110,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             href={item.href}
             onClick={() => setMobileOpen(false)}
             selected={pathname === item.href || pathname.startsWith(item.href + "/")}
-            sx={{ minHeight: 48, justifyContent: railCollapsed ? "center" : "flex-start", px: railCollapsed ? 1.5 : 2 }}
+            sx={{
+              minHeight: 48,
+              justifyContent: railCollapsed ? "center" : "flex-start",
+              px: railCollapsed ? 1.5 : 2,
+              mx: railCollapsed ? 0 : 0.75,
+              width: railCollapsed ? "100%" : "auto",
+              borderRadius: railCollapsed ? 1 : "0 8px 8px 0",
+              color: "#0A2540",
+              // Reserved on every item (transparent when inactive) so the
+              // active item's accent border doesn't shift its content
+              // relative to its neighbors when selection changes.
+              borderLeft: "4px solid transparent",
+              "&:hover": { bgcolor: "#F1F5F9" },
+              "&.Mui-selected": {
+                bgcolor: "#0A2540",
+                color: "#FFFFFF",
+                borderLeft: "4px solid #00D4B2",
+                "&:hover": { bgcolor: "#0A2540" },
+              },
+              "&.Mui-selected .MuiListItemIcon-root": { color: "#00D4B2" },
+              "&.Mui-selected .MuiListItemText-primary": { fontWeight: 700, letterSpacing: "0.01em" },
+            }}
           >
-            <ListItemIcon sx={{ minWidth: railCollapsed ? 0 : 40, justifyContent: "center" }}>{item.icon}</ListItemIcon>
+            <ListItemIcon sx={{ minWidth: railCollapsed ? 0 : 40, justifyContent: "center", color: "inherit" }}>{item.icon}</ListItemIcon>
             {!railCollapsed && <ListItemText primary={item.label} />}
           </ListItemButton>
         );

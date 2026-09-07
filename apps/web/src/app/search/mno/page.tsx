@@ -508,12 +508,26 @@ function MnoSearchPageInner() {
     }),
     [rowsWithExclusivity],
   );
-  // Every filter except exclusiveMode itself -- the shared base both
-  // visibleRows (below) and exclusivityModeCounts (further down) filter
-  // from, so each exclusivity pill's own count reflects "how many rows
-  // would show if this pill were picked instead", not the currently
-  // active one only.
-  const baseFilteredRows = React.useMemo(() => {
+  // Region/Country/Dataset-scope (already applied server-side, baked into
+  // `results`) plus Service and free-text search are legitimate "which
+  // slice of the market am I analyzing" scoping -- everything downstream,
+  // including the Exclusivity & Market Share chart strip, should respect
+  // them. Deliberately excludes BOTH exclusiveMode (see baseFilteredRows
+  // below) AND providerFilter: unlike a scope narrowing, providerFilter is
+  // a "spotlight one carrier" lens, and computing carrier *market share*
+  // from a row-set already pre-filtered down to "MNOs that happen to
+  // involve carrier X somewhere" produces a statistically misleading
+  // percentage for every OTHER carrier shown alongside it -- e.g. filtering
+  // to Tata Comm and then asking "what's Orange's share" from that same
+  // Tata-Comm-biased subset answers a different, much narrower question
+  // than "what's Orange's real share of this market", and multiple
+  // unrelated carriers can end up looking like they're in a coincidental
+  // tie purely because they all happen to co-occur with the filtered
+  // carrier on the same handful of rows. scopedRows is the shared base for
+  // both the table's own filtering (baseFilteredRows, which legitimately
+  // narrows by providerFilter too) and the chart's (chartRows, which
+  // doesn't) so the two only diverge on that one dimension.
+  const scopedRows = React.useMemo(() => {
     const qNorm = debouncedFreeText.q.trim().toLowerCase();
     const tadigNorm = debouncedFreeText.tadig.trim().toLowerCase();
     const mccNorm = debouncedFreeText.mcc.trim().toLowerCase();
@@ -521,7 +535,6 @@ function MnoSearchPageInner() {
 
     return rowsWithExclusivity
       .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r))
-      .filter((r) => !providerFilter || [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(providerFilter))
       .filter((r) => !tadigNorm || r.tadigCode.toLowerCase().includes(tadigNorm))
       .filter((r) => !mccNorm || r.mcc.toLowerCase().includes(mccNorm))
       .filter((r) => !mncNorm || r.mnc.toLowerCase().includes(mncNorm))
@@ -542,7 +555,26 @@ function MnoSearchPageInner() {
           .toLowerCase();
         return haystack.includes(qNorm);
       });
-  }, [rowsWithExclusivity, serviceFilter, providerFilter, debouncedFreeText]);
+  }, [rowsWithExclusivity, serviceFilter, debouncedFreeText]);
+
+  // Every filter except exclusiveMode itself -- the shared base both
+  // visibleRows (below) and exclusivityModeCounts (further down) filter
+  // from, so each exclusivity pill's own count reflects "how many rows
+  // would show if this pill were picked instead", not the currently
+  // active one only. Includes providerFilter, unlike scopedRows/chartRows
+  // -- the table and pill counts SHOULD narrow to just that carrier's own
+  // rows once one is selected, that's what a filter is for.
+  const baseFilteredRows = React.useMemo(
+    () => scopedRows.filter((r) => !providerFilter || [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(providerFilter)),
+    [scopedRows, providerFilter],
+  );
+
+  // Feeds the Exclusivity & Market Share chart strip specifically -- see
+  // scopedRows' own comment for why this must NOT also filter by
+  // providerFilter. The selected carrier is still highlighted (active
+  // stroke on its own slice, via activeProviderFilter) without reshaping
+  // the comparison universe every other slice is measured against.
+  const chartRows = scopedRows;
 
   const visibleRows = React.useMemo(
     () => baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
@@ -1141,7 +1173,7 @@ function MnoSearchPageInner() {
         </Paper>
 
         <ExclusivityCharts
-          rows={baseFilteredRows}
+          rows={chartRows}
           aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
           onProviderClick={(providerName) => {

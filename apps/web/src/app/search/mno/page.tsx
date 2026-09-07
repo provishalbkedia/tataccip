@@ -1389,55 +1389,79 @@ function MnoSearchPageInner() {
           }}
         />
 
-        <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              {visibleRows.length} result(s) — {exclusivityCounts.sccp} SCCP exclusive, {exclusivityCounts.dsx} DSX
-              exclusive, {exclusivityCounts.ipx} IPX exclusive, {exclusivityCounts.full} fully exclusive. Showing MNO /
-              Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click anywhere on
-              a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO / Customer&apos;s name
-              to open its connectivity details.
+        {/* Results Summary -- previously a single plain grey sentence that
+           blended into the page and buried the actual numbers inside a
+           paragraph of instructional text. Now a bordered stat strip: the
+           result count reads at a glance, the SCCP/DSX/IPX/Full breakdown
+           are individually-colored chips instead of prose, and the
+           "how to use this table" instructions are demoted to a caption
+           underneath rather than competing with the numbers for attention. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.5, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+              <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
+                <Typography variant="h5" sx={{ fontWeight: 800, color: "#0A2540", lineHeight: 1 }}>
+                  {visibleRows.length}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                  result{visibleRows.length === 1 ? "" : "s"}
+                </Typography>
+              </Box>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+                <Chip size="small" label={`${exclusivityCounts.sccp} SCCP exclusive`} sx={{ bgcolor: "#E7F0FA", color: "#0A2540", fontWeight: 700 }} />
+                <Chip size="small" label={`${exclusivityCounts.dsx} DSX exclusive`} sx={{ bgcolor: "#E7F0FA", color: "#0A2540", fontWeight: 700 }} />
+                <Chip size="small" label={`${exclusivityCounts.ipx} IPX exclusive`} sx={{ bgcolor: "#E7F0FA", color: "#0A2540", fontWeight: 700 }} />
+                <Chip size="small" label={`★ ${exclusivityCounts.full} fully exclusive`} sx={{ bgcolor: "#FFF3DC", color: "#7C4A03", fontWeight: 700 }} />
+              </Box>
+            </Box>
+
+            <Box sx={{ flexShrink: 0 }}>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={visibleRows.length === 0 || !!generatingExclusivityReport}
+                startIcon={
+                  generatingExclusivityReport ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : <WorkspacePremiumIcon />
+                }
+                endIcon={!generatingExclusivityReport && <ArrowDropDownIcon />}
+                onClick={(e) => setExclusivityReportMenuAnchor(e.currentTarget)}
+                sx={{
+                  minHeight: 40,
+                  background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  border: "1px solid #F59E0B",
+                  "&:hover": { background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)", boxShadow: 4 },
+                }}
+              >
+                {generatingExclusivityReport ? EXCLUSIVITY_REPORT_GENERATING_LABEL[generatingExclusivityReport] : "Download Exclusivity MIS Report"}
+              </Button>
+              <Menu
+                anchorEl={exclusivityReportMenuAnchor}
+                open={!!exclusivityReportMenuAnchor}
+                onClose={() => setExclusivityReportMenuAnchor(null)}
+              >
+                <MenuItem onClick={handleDownloadExclusivityPdf}>
+                  <ListItemText primary="📄 Executive PDF Report" secondary="Branded brief with exclusivity charts, carrier footprint matrix & MNO inventory" />
+                </MenuItem>
+                <MenuItem onClick={handleDownloadExclusivityExcel}>
+                  <ListItemText primary="📊 Exclusivity Workbook (.xlsx)" secondary="Market share KPIs + full MNO roster with frozen headers & auto-filter" />
+                </MenuItem>
+              </Menu>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Showing MNO / Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click
+              anywhere on a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO /
+              Customer&apos;s name to open its connectivity details.
             </Typography>
             <Tooltip title="Select 2 to 5 MNOs / Customers to launch the side-by-side Interconnect Parity Comparison Drawer.">
               <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
             </Tooltip>
           </Box>
-
-          <Box sx={{ flexShrink: 0 }}>
-            <Button
-              variant="contained"
-              size="small"
-              disabled={visibleRows.length === 0 || !!generatingExclusivityReport}
-              startIcon={
-                generatingExclusivityReport ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : <WorkspacePremiumIcon />
-              }
-              endIcon={!generatingExclusivityReport && <ArrowDropDownIcon />}
-              onClick={(e) => setExclusivityReportMenuAnchor(e.currentTarget)}
-              sx={{
-                minHeight: 40,
-                background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
-                color: "#FFFFFF",
-                fontWeight: 700,
-                border: "1px solid #F59E0B",
-                "&:hover": { background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)", boxShadow: 4 },
-              }}
-            >
-              {generatingExclusivityReport ? EXCLUSIVITY_REPORT_GENERATING_LABEL[generatingExclusivityReport] : "Download Exclusivity MIS Report"}
-            </Button>
-            <Menu
-              anchorEl={exclusivityReportMenuAnchor}
-              open={!!exclusivityReportMenuAnchor}
-              onClose={() => setExclusivityReportMenuAnchor(null)}
-            >
-              <MenuItem onClick={handleDownloadExclusivityPdf}>
-                <ListItemText primary="📄 Executive PDF Report" secondary="Branded brief with exclusivity charts, carrier footprint matrix & MNO inventory" />
-              </MenuItem>
-              <MenuItem onClick={handleDownloadExclusivityExcel}>
-                <ListItemText primary="📊 Exclusivity Workbook (.xlsx)" secondary="Market share KPIs + full MNO roster with frozen headers & auto-filter" />
-              </MenuItem>
-            </Menu>
-          </Box>
-        </Box>
+        </Paper>
 
         {activeOutputDimensions.length > 0 && (
           <Box

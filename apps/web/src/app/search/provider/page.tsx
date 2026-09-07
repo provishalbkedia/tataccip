@@ -13,6 +13,7 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
+import ProviderCoverageCharts from "./ProviderCoverageCharts";
 import { api } from "@/lib/api";
 import { ProviderStatsSource, ProviderSuggestion, ProviderSummary } from "@ccip/shared-types";
 
@@ -95,6 +96,15 @@ function ProviderSearchPageInner() {
   );
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
+
+  // Chart-driven drill-down (bar click) reuses the same free-text search
+  // the manual search box does, matching how a click there is one exact
+  // provider name -- Provider Search has no separate provider-filter
+  // dimension the way MNO Search's Wholesale Provider Autocomplete does.
+  const handleProviderChartClick = React.useCallback(
+    (providerName: string) => pushParams(providerName, source, service),
+    [pushParams, source, service],
+  );
 
   // BOTH mode returns two rows per provider (IR21-only + REACH_LIST-only) —
   // dedupe by id so selecting both of one provider's rows still counts as
@@ -223,22 +233,37 @@ function ProviderSearchPageInner() {
           </Grid>
         </Paper>
 
-        <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-          <Typography variant="body2" color="text.secondary">
-            {uniqueProviderCount} result(s) — click anywhere on a row (or its checkbox) to select 2-5 for
-            side-by-side comparison, or click a provider&apos;s name to open its coverage stats.{" "}
-            {SOURCE_HELPER_TEXT[source]}
+        <ProviderCoverageCharts rows={results} source={source} onProviderClick={handleProviderChartClick} />
+
+        {/* Results Summary -- same treatment as MNO Search's stat strip: the
+           result count reads at a glance instead of opening a paragraph of
+           grey instructional text, with the "how to use this table" copy
+           demoted to a caption underneath. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.5, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: "#0A2540", lineHeight: 1 }}>
+                {uniqueProviderCount}
+              </Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                result{uniqueProviderCount === 1 ? "" : "s"}
+              </Typography>
+            </Box>
+            {service && (
+              <Chip
+                size="small"
+                color="primary"
+                label={`Filtered to ${service} providers`}
+                onDelete={() => pushParams(q, source, null)}
+                deleteIcon={<CloseIcon fontSize="small" />}
+              />
+            )}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+            Click anywhere on a row (or its checkbox) to select 2-5 for side-by-side comparison, or click a
+            provider&apos;s name to open its coverage stats. {SOURCE_HELPER_TEXT[source]}
           </Typography>
-          {service && (
-            <Chip
-              size="small"
-              color="primary"
-              label={`Filtered to ${service} providers`}
-              onDelete={() => pushParams(q, source, null)}
-              deleteIcon={<CloseIcon fontSize="small" />}
-            />
-          )}
-        </Box>
+        </Paper>
         <DataGrid<ProviderSummary>
           rowData={results}
           columnDefs={columnDefs}

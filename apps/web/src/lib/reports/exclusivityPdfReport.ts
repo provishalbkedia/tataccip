@@ -19,8 +19,8 @@ export async function generateExclusivityPdfReport(input: ExclusivityReportInput
 
   const doc = new JsPdfCtor({ orientation: "landscape", unit: "mm", format: "a4" });
   const scopeLine = scopeLineFor(input);
-  const kpis = computeExclusivityKpis(input.rows);
-  const carrierShare = aggregateCarrierExclusivity(input.rows);
+  const kpis = computeExclusivityKpis(input.rows, input.aggregationMode);
+  const carrierShare = aggregateCarrierExclusivity(input.rows, input.aggregationMode);
 
   // ---- Page 1: Executive summary + carrier dominance ----
   drawMasthead(doc, REPORT_TITLE, scopeLine, input.generatedAt, "Executive Summary");

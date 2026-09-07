@@ -51,8 +51,8 @@ function buildMarketShareSheet(wb: Workbook, input: ExclusivityReportInput) {
   );
   row++;
 
-  const kpis = computeExclusivityKpis(input.rows);
-  const carrierShare = aggregateCarrierExclusivity(input.rows);
+  const kpis = computeExclusivityKpis(input.rows, input.aggregationMode);
+  const carrierShare = aggregateCarrierExclusivity(input.rows, input.aggregationMode);
 
   styleHeaderRow(ws.getRow(row));
   ws.getRow(row).values = ["Executive Summary KPIs", "", "", "", ""];

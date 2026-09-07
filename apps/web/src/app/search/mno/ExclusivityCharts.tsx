@@ -27,8 +27,16 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import CloseIcon from "@mui/icons-material/Close";
 import StarIcon from "@mui/icons-material/Star";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
-import { aggregateCarrierExclusivity } from "@/lib/reports/exclusivityReportData";
+import { aggregateCarrierExclusivity, ExclusivityAggregationMode } from "@/lib/reports/exclusivityReportData";
 import type { MnoSummaryWithExclusivity } from "./page";
+
+const AGGREGATION_MODE_LABEL: Record<ExclusivityAggregationMode, string> = {
+  full: "Fully Exclusive",
+  sccp: "SCCP-solo",
+  dsx: "DSX-solo",
+  ipx: "IPX-solo",
+  any: "any exclusive (SCCP/DSX/IPX-solo)",
+};
 
 // This platform is Tata Communications' own CCIP -- leadership specifically
 // wants Tata Comm's own competitive standing surfaced explicitly (see the
@@ -81,12 +89,21 @@ function CustomTooltip({
 
 export default function ExclusivityCharts({
   rows,
+  aggregationMode,
   activeProviderFilter,
   onProviderClick,
   onResetProviderFilter,
   onVulnerabilityClick,
 }: {
   rows: MnoSummaryWithExclusivity[];
+  // Mirrors the page's own active Exclusivity Scope pill (mapped via
+  // toAggregationMode) -- "full"/"sccp"/"dsx"/"ipx" scope the donut and the
+  // Tata Comm KPI strip to exactly that pill's own definition; "any" is the
+  // default cross-service view. Reacting to this is what keeps the chart in
+  // sync with the pill bar above it -- selecting "Fully Exclusive" now
+  // shows Tata Comm's *fully exclusive* count/share/rank here too, not the
+  // broad "any service" figures regardless of which pill is active.
+  aggregationMode: ExclusivityAggregationMode;
   activeProviderFilter: string;
   onProviderClick: (providerName: string) => void;
   onResetProviderFilter: () => void;
@@ -95,14 +112,12 @@ export default function ExclusivityCharts({
   const [expanded, setExpanded] = React.useState(true);
   const [showOthers, setShowOthers] = React.useState(false);
 
-  // Ranked by exclusive service assignments (SCCP/DSX/IPX-solo, counted
-  // independently per service) rather than only full-portfolio exclusivity
-  // -- see aggregateCarrierExclusivity's own doc comment for why: a
-  // dominant multi-service carrier can hold many single-service exclusive
-  // slots while rarely being the literal sole provider across an MNO's
-  // *entire* declared portfolio, which used to make it vanish from this
-  // chart entirely even while clearly present in the underlying data.
-  const carrierShare = React.useMemo(() => aggregateCarrierExclusivity(rows), [rows]);
+  // Ranked within the active Exclusivity Scope (aggregationMode) -- "any"
+  // counts exclusive service assignments (SCCP/DSX/IPX-solo, independently
+  // per service) rather than only full-portfolio exclusivity; see
+  // aggregateCarrierExclusivity's own doc comment for why "any" exists and
+  // how each single-dimension mode differs from it.
+  const carrierShare = React.useMemo(() => aggregateCarrierExclusivity(rows, aggregationMode), [rows, aggregationMode]);
 
   const { donutData, othersBreakdown } = React.useMemo(() => {
     // Top 7 named slices + an "Others" bucket for the long tail -- a donut
@@ -247,17 +262,21 @@ export default function ExclusivityCharts({
                 </Box>
                 {homeCarrierEntry ? (
                   <>
-                    <Chip size="small" label={`${homeCarrierEntry.exclusiveMnoCount} Exclusive MNOs`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
                     <Chip
                       size="small"
-                      label={`${homeCarrierEntry.pctOfExclusiveAssignments.toFixed(1)}% of Exclusive Footprint`}
+                      label={`${homeCarrierEntry.exclusiveMnoCount} ${AGGREGATION_MODE_LABEL[aggregationMode]} MNOs`}
+                      sx={{ fontWeight: 700, bgcolor: "#fff" }}
+                    />
+                    <Chip
+                      size="small"
+                      label={`${homeCarrierEntry.pctOfExclusiveAssignments.toFixed(1)}% of ${AGGREGATION_MODE_LABEL[aggregationMode]} Footprint`}
                       sx={{ fontWeight: 700, bgcolor: "#fff" }}
                     />
                     <Chip size="small" label={`Rank #${homeCarrierRank + 1} of ${carrierShare.length}`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
                   </>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    No exclusive service assignments in the current scope.
+                    No {AGGREGATION_MODE_LABEL[aggregationMode]} accounts for Tata Comm in the current scope.
                   </Typography>
                 )}
               </Box>
@@ -269,11 +288,23 @@ export default function ExclusivityCharts({
                       Carrier Exclusivity Share
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      Which wholesale carriers hold the most exclusive service assignments (SCCP/DSX/IPX-solo)
+                      Which wholesale carriers hold the most {AGGREGATION_MODE_LABEL[aggregationMode]} accounts
                     </Typography>
+                    {/* Fixed minHeight + position:relative so this card never
+                       collapses smaller than the chart needs, even for a
+                       single render frame -- ResponsiveContainer's own
+                       height is already a literal number below, not a
+                       percentage needing a ResizeObserver pass, but the
+                       *empty*-state branch (a short text line) previously
+                       had no equivalent height reservation, which is
+                       exactly the kind of asymmetry that lets a card
+                       flash short if `rows` starts empty (before the API
+                       response lands) and then jumps taller once it
+                       arrives. */}
+                    <Box sx={{ position: "relative", minHeight: 240 }}>
                     {donutData.length === 0 ? (
                       <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
-                        No exclusive service assignments in this scope.
+                        No {AGGREGATION_MODE_LABEL[aggregationMode]} accounts in this scope.
                       </Typography>
                     ) : (
                       <ResponsiveContainer width="100%" height={240}>
@@ -338,6 +369,7 @@ export default function ExclusivityCharts({
                         </PieChart>
                       </ResponsiveContainer>
                     )}
+                    </Box>
                   </Paper>
                 </Grid>
 
@@ -349,6 +381,7 @@ export default function ExclusivityCharts({
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                       Single-provider lock-in vs multi-provider redundancy, current scope
                     </Typography>
+                    <Box sx={{ position: "relative", minHeight: 240 }}>
                     <ResponsiveContainer width="100%" height={240}>
                       <BarChart data={vulnerabilityData} layout="vertical" margin={{ left: 8, right: 24 }}>
                         <XAxis type="number" hide />
@@ -373,6 +406,7 @@ export default function ExclusivityCharts({
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                    </Box>
                   </Paper>
                 </Grid>
               </Grid>

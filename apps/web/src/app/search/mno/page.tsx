@@ -145,6 +145,16 @@ const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusiv
   shared: (r) => !r.isFullyExclusive,
 };
 
+// "full"/"sccp"/"dsx"/"ipx" map 1:1 onto aggregateCarrierExclusivity's own
+// dimensions; "all" (no exclusivity pill selected) and "shared" don't
+// correspond to a single dimension, so both fall back to "any" -- the
+// broad cross-service view, matching what the Exclusivity & Market Share
+// chart strip already showed before per-mode scoping existed.
+function toAggregationMode(mode: ExclusiveMode): "full" | "sccp" | "dsx" | "ipx" | "any" {
+  if (mode === "full" || mode === "sccp" || mode === "dsx" || mode === "ipx") return mode;
+  return "any";
+}
+
 // Drill-in from the Dashboard's SCCP/DSX/IPX Relationships cards
 // (?service=SCCP|DSX|IPX) -- narrows to MNOs that declare at least one
 // provider for that specific service, independent of (and combinable
@@ -755,6 +765,7 @@ function MnoSearchPageInner() {
       provider: providerFilter || null,
       search: q || null,
     },
+    aggregationMode: toAggregationMode(exclusiveMode),
     rows: visibleRows,
   });
   const handleDownloadExclusivityPdf = async () => {
@@ -1175,12 +1186,16 @@ function MnoSearchPageInner() {
 
         <ExclusivityCharts
           rows={baseFilteredRows}
+          aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
           onProviderClick={(providerName) => {
-            // "any" (Any Service Exclusive), not "full" -- the donut ranks
-            // carriers by exclusive service *assignments* (SCCP/DSX/IPX
-            // solo, independently), so its own drill-down needs the
-            // matching broader mode, not the narrower full-portfolio one.
+            // Deliberately leaves exclusiveMode untouched -- the donut now
+            // scopes itself to whichever Exclusivity Scope pill is already
+            // active (see aggregationMode above), so clicking a slice while
+            // e.g. "Fully Exclusive" is selected should narrow to that
+            // carrier *within* that same scope, not silently jump back to
+            // the broad "Any Service Exclusive" view.
+            //
             // Routed through the dedicated providerFilter (exact match
             // against the sccp/dsx/ipx provider arrays), not the free-text
             // `q` search -- a chart-driven drill-down is a precise "this
@@ -1188,10 +1203,9 @@ function MnoSearchPageInner() {
             // using providerFilter also gives it the same active-filter
             // chip/reset affordances the manual Wholesale Provider
             // dropdown already has.
-            setExclusiveMode("any");
             setProviderFilter(providerName);
             setProviderFilterInput(providerName);
-            pushParams({ exclusiveMode: "any", provider: providerName });
+            pushParams({ provider: providerName });
           }}
           onResetProviderFilter={clearProviderFilter}
           onVulnerabilityClick={(mode) => {

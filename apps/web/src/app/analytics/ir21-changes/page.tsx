@@ -227,6 +227,36 @@ function scrollablePillGroupSx(mobile: boolean) {
   };
 }
 
+// Shared active/inactive pill styling for the Master Filter Bar's three
+// ToggleButtonGroups (Timeframe, Region, Service) -- a solid navy fill with
+// white bold text and a teal accent border on the selected pill, matching
+// the same high-contrast treatment ChangeFilterPill already uses for the
+// Change filter row below, so "what's actively scoping the data" reads at
+// a glance instead of blending into a faint gray. Centralized here rather
+// than repeated per group so all three stay visually identical.
+const masterPillGroupSx = {
+  "& .MuiToggleButton-root": {
+    borderRadius: "999px !important",
+    textTransform: "none",
+    px: 1.5,
+    border: "1px solid",
+    borderColor: "#CFD8DC",
+    bgcolor: "#FFFFFF",
+    color: "#0A2540",
+    fontWeight: 500,
+    flexShrink: 0,
+    transition: "box-shadow 0.15s, background-color 0.15s",
+    "&:hover": { bgcolor: "#F4F6F8" },
+    "&.Mui-selected, &.Mui-selected:hover": {
+      bgcolor: "#0A2540",
+      color: "#FFFFFF",
+      fontWeight: 600,
+      borderColor: "#00D4B2",
+      boxShadow: "0 2px 4px rgba(10,37,64,0.15)",
+    },
+  },
+};
+
 const REGION_CHIP_COLOR: Record<Region, { bgcolor: string; color: string }> = {
   [Region.AMERICAS]: { bgcolor: "#0B6FBF", color: "#fff" },
   [Region.MEA]: { bgcolor: "#EF6C00", color: "#fff" },
@@ -1165,7 +1195,7 @@ export default function Ir21ChangesPage() {
             sx={{
               display: "flex",
               ...scrollablePillGroupSx(isMobile),
-              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+              ...masterPillGroupSx,
             }}
           >
             {TIMEFRAMES.map((t) => (
@@ -1253,7 +1283,7 @@ export default function Ir21ChangesPage() {
             sx={{
               display: "flex",
               ...scrollablePillGroupSx(isMobile),
-              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+              ...masterPillGroupSx,
             }}
           >
             <ToggleButton value="ALL">All</ToggleButton>
@@ -1282,7 +1312,7 @@ export default function Ir21ChangesPage() {
             sx={{
               display: "flex",
               ...scrollablePillGroupSx(isMobile),
-              "& .MuiToggleButton-root": { borderRadius: "999px !important", textTransform: "none", px: 1.5, border: "1px solid", borderColor: "divider", flexShrink: 0 },
+              ...masterPillGroupSx,
             }}
           >
             <ToggleButton value="ALL">All</ToggleButton>
@@ -1296,15 +1326,47 @@ export default function Ir21ChangesPage() {
       </Box>
 
       <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<PivotTableChartIcon fontSize="small" />}
-          onClick={() => setPivotOpen(true)}
-          sx={{ borderColor: "#CFD8DC", color: "#0A2540", "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" } }}
-        >
-          Market Share Pivot Summary
-        </Button>
+        <InfoTooltip title="Click to view carrier win/loss pivot matrix & MNO drill-down">
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<PivotTableChartIcon fontSize="small" sx={{ color: "#00D4B2" }} />}
+            onClick={() => setPivotOpen(true)}
+            sx={{
+              background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
+              color: "#FFFFFF",
+              fontWeight: 700,
+              letterSpacing: "0.02em",
+              border: "1px solid #00D4B2",
+              boxShadow: "0 2px 6px rgba(10,37,64,0.2)",
+              transition: "transform 0.15s ease, box-shadow 0.15s ease",
+              "&:hover": {
+                background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
+                transform: "translateY(-1px)",
+                boxShadow: "0 4px 12px rgba(10,37,64,0.25)",
+              },
+            }}
+          >
+            Market Share Pivot Summary
+            <Box
+              component="span"
+              sx={{
+                ml: 1,
+                px: 0.75,
+                py: 0.2,
+                borderRadius: "999px",
+                bgcolor: "rgba(0,212,178,0.18)",
+                color: "#00D4B2",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "normal",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ⚡ Executive Pivot
+            </Box>
+          </Button>
+        </InfoTooltip>
         <Button
           variant="outlined"
           size="small"

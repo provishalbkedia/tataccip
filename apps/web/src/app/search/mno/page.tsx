@@ -1140,50 +1140,6 @@ function MnoSearchPageInner() {
           </ToggleButtonGroup>
         </Paper>
 
-        {/* Header metric badges -- each clickable, activating that
-           exclusivity mode instantly, same as clicking its pill above. */}
-        <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", gap: 1 }}>
-          <Chip
-            clickable
-            onClick={() => {
-              setExclusiveMode("full");
-              pushParams({ exclusiveMode: "full" });
-            }}
-            label={`Fully Exclusive: ${exclusivityModeCounts.full} / ${exclusivityModeCounts.all} (${exclusivityModeCounts.all > 0 ? ((exclusivityModeCounts.full / exclusivityModeCounts.all) * 100).toFixed(1) : "0.0"}%)`}
-            sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 700 }}
-          />
-          <Chip
-            clickable
-            onClick={() => {
-              setExclusiveMode("sccp");
-              pushParams({ exclusiveMode: "sccp" });
-            }}
-            label={`SCCP Exclusive: ${exclusivityModeCounts.sccp}`}
-            variant="outlined"
-            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
-          />
-          <Chip
-            clickable
-            onClick={() => {
-              setExclusiveMode("dsx");
-              pushParams({ exclusiveMode: "dsx" });
-            }}
-            label={`DSX Exclusive: ${exclusivityModeCounts.dsx}`}
-            variant="outlined"
-            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
-          />
-          <Chip
-            clickable
-            onClick={() => {
-              setExclusiveMode("ipx");
-              pushParams({ exclusiveMode: "ipx" });
-            }}
-            label={`IPX Exclusive: ${exclusivityModeCounts.ipx}`}
-            variant="outlined"
-            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
-          />
-        </Box>
-
         <ExclusivityCharts
           rows={baseFilteredRows}
           aggregationMode={toAggregationMode(exclusiveMode)}

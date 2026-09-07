@@ -601,11 +601,37 @@ export interface ProviderCompareMatrixItem {
   operatorName: string;
   country: string;
   tadigCode: string;
+  // The MNO's own declared routing AS Number(s) -- IR.21's GRX/IPX ASN
+  // table's "Network Owner" = the MNO itself (as opposed to
+  // providerAsNumbers's per-carrier entries). See
+  // MnoMasterConnectivity.mnoAsNumbers. Empty when never declared.
+  mnoAsNumbers: string[];
   providers: Record<number, {
     providerName: string;
     ir21: ServicePresence;
     reachList: ServicePresence;
   }>;
+}
+
+// One entry per compared provider, independent of whether it ends up
+// covering any MNO row (a zero-footprint provider still needs a column
+// header) -- see ProviderService.compareMatrix.
+export interface ProviderCompareMatrixProviderMeta {
+  id: number;
+  providerName: string;
+  // ASN(s) this provider has been observed declaring for itself, parsed
+  // from every ingested IR.21 XML's GRX/IPX ASN table ("ProviderName: ASN"
+  // entries in MnoMasterConnectivity.providerAsNumbers, matched the same
+  // alias-aware way ProviderService.provenance() matches observedRawStrings).
+  // ProviderMaster has no dedicated canonical-ASN field today, so this
+  // reflects real observed declarations rather than a fabricated value --
+  // empty if this provider has never been declared with an ASN.
+  asns: string[];
+}
+
+export interface ProviderCompareMatrixResponse {
+  providers: ProviderCompareMatrixProviderMeta[];
+  rows: ProviderCompareMatrixItem[];
 }
 
 // --- Multi-operator comparative connectivity matrix ----------------------

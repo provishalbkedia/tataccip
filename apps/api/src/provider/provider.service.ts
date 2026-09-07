@@ -6,6 +6,7 @@ import { ProviderResolverService } from "../upload/provider-resolver.service";
 import {
   OnNetMnoRow,
   ProviderCompareMatrixItem,
+  ProviderCompareMatrixResponse,
   ProviderCoverageStats,
   ProviderDetail,
   ProviderStatsSource,
@@ -347,11 +348,11 @@ export class ProviderService {
    * one row per MNO covered by ANY selected provider, with each provider's
    * own IR.21/Reach List service breakdown nested under its id. Powers
    * /search/provider/compare's grouped-column matrix. */
-  async compareMatrix(providerIds: number[]): Promise<ProviderCompareMatrixItem[]> {
+  async compareMatrix(providerIds: number[]): Promise<ProviderCompareMatrixResponse> {
     const providers = await this.prisma.providerMaster.findMany({ where: { id: { in: providerIds } } });
     const providerNameById = new Map(providers.map((p) => [p.id, p.providerName]));
 
-    const [ir21Rows, reachRows, multiHomedIndex] = await Promise.all([
+    const [ir21Rows, reachRows, multiHomedIndex, providerAsnsById] = await Promise.all([
       this.prisma.ir21Connectivity.findMany({
         where: { providerId: { in: providerIds } },
         include: { mno: true, service: true },
@@ -361,6 +362,7 @@ export class ProviderService {
         include: { mno: true, service: true },
       }),
       this.buildMultiHomedProviderIndex(providerIds),
+      this.resolveProviderAsns(providers),
     ]);
 
     const byMno = new Map<number, ProviderCompareMatrixItem>();
@@ -373,7 +375,7 @@ export class ProviderService {
     ) => {
       let item = byMno.get(mnoId);
       if (!item) {
-        item = { mnoId, operatorName: mno.operatorName, country: mno.country, tadigCode: mno.tadigCode, providers: {} };
+        item = { mnoId, operatorName: mno.operatorName, country: mno.country, tadigCode: mno.tadigCode, mnoAsNumbers: [], providers: {} };
         byMno.set(mnoId, item);
       }
       let p = item.providers[providerId];
@@ -399,9 +401,61 @@ export class ProviderService {
       }
     }
 
-    return Array.from(byMno.values()).sort(
-      (a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName),
-    );
+    if (byMno.size > 0) {
+      const asnRows = await this.prisma.mnoMasterConnectivity.findMany({
+        where: { mnoId: { in: Array.from(byMno.keys()) } },
+        select: { mnoId: true, mnoAsNumbers: true },
+      });
+      const mnoAsnById = new Map(asnRows.map((r) => [r.mnoId, r.mnoAsNumbers]));
+      for (const item of byMno.values()) item.mnoAsNumbers = mnoAsnById.get(item.mnoId) ?? [];
+    }
+
+    return {
+      providers: providers.map((p) => ({ id: p.id, providerName: p.providerName, asns: providerAsnsById.get(p.id) ?? [] })),
+      rows: Array.from(byMno.values()).sort(
+        (a, b) => a.country.localeCompare(b.country) || a.operatorName.localeCompare(b.operatorName),
+      ),
+    };
+  }
+
+  /** ASN(s) each given provider has been observed declaring for itself,
+   * parsed from every MNO's "ProviderName: ASN" GRX/IPX ASN table entries
+   * (MnoMasterConnectivity.providerAsNumbers) across the whole platform —
+   * ProviderMaster has no dedicated canonical-ASN field, so this surfaces
+   * real ingested IR.21 data rather than a fabricated value. One full
+   * table scan regardless of how many providers are being compared (2-5),
+   * matching buildMultiHomedProviderIndex's own "scan once, filter by
+   * wanted id" batching. */
+  private async resolveProviderAsns(providers: { id: number; providerName: string }[]): Promise<Map<number, string[]>> {
+    const result = new Map<number, string[]>(providers.map((p) => [p.id, []]));
+    if (providers.length === 0) return result;
+
+    const aliasRows = await this.prisma.providerAlias.findMany({
+      where: { providerId: { in: providers.map((p) => p.id) } },
+      select: { providerId: true, aliasPattern: true },
+    });
+    const patternsByProvider = new Map<number, string[]>(providers.map((p) => [p.id, [normalizeCarrierName(p.providerName)]]));
+    for (const a of aliasRows) patternsByProvider.get(a.providerId)?.push(a.aliasPattern);
+
+    const asnSets = new Map<number, Set<string>>(providers.map((p) => [p.id, new Set<string>()]));
+    const connectivityRows = await this.prisma.mnoMasterConnectivity.findMany({ select: { providerAsNumbers: true } });
+    for (const row of connectivityRows) {
+      for (const entry of row.providerAsNumbers) {
+        const separatorIndex = entry.indexOf(":");
+        if (separatorIndex === -1) continue;
+        const declaredName = normalizeCarrierName(entry.slice(0, separatorIndex).trim());
+        const asn = entry.slice(separatorIndex + 1).trim();
+        if (!asn) continue;
+        for (const [providerId, patterns] of patternsByProvider) {
+          if (patterns.some((pattern) => isConfidentSubstringMatch(declaredName, pattern))) {
+            asnSets.get(providerId)!.add(asn);
+          }
+        }
+      }
+    }
+
+    for (const [providerId, set] of asnSets) result.set(providerId, Array.from(set));
+    return result;
   }
 
   /** All known alias patterns for this provider, plus every distinct raw

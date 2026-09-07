@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ColDef, ColGroupDef } from "ag-grid-community";
-import { Alert, Box, Button, MenuItem, Paper, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, MenuItem, Paper, TextField, Tooltip, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
@@ -11,7 +11,9 @@ import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
 import { getCountryName } from "@/lib/countries";
-import { ProviderCompareMatrixItem } from "@ccip/shared-types";
+import { ProviderCompareMatrixItem, ProviderCompareMatrixProviderMeta, ProviderCompareMatrixResponse } from "@ccip/shared-types";
+
+const EMPTY_COMPARE_RESPONSE: ProviderCompareMatrixResponse = { providers: [], rows: [] };
 
 type FilterMode = "all" | "common" | "gaps";
 
@@ -28,6 +30,28 @@ function OperatorLinkHeader(props: { displayName: string }) {
       <Tooltip title="Click any MNO name to open its complete technical routing profile, DPC point codes, and IP ranges.">
         <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 15 }} />
       </Tooltip>
+    </Box>
+  );
+}
+
+/** AG Grid `headerGroupComponent` for each provider's column group --
+ * appends the provider's own observed ASN(s) as a chip beside its name, so
+ * a network engineer can tell peering identity apart at a glance without
+ * opening each provider's own detail page. */
+function ProviderGroupHeader(props: { displayName: string; asns: string[] }) {
+  const { asns } = props;
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, width: "100%" }}>
+      <Typography sx={{ fontWeight: 700, fontSize: "0.875rem" }}>{props.displayName}</Typography>
+      {asns.length > 0 && (
+        <Tooltip title={asns.length > 1 ? `Observed ASNs: ${asns.join(", ")}` : ""}>
+          <Chip
+            label={`ASN ${asns[0]}${asns.length > 1 ? ` +${asns.length - 1}` : ""}`}
+            size="small"
+            sx={{ bgcolor: "#0A2540", color: "#E2E8F0", fontSize: "0.72rem", height: 20, fontWeight: 600 }}
+          />
+        </Tooltip>
+      )}
     </Box>
   );
 }
@@ -57,6 +81,7 @@ function ProviderComparePageInner() {
   );
 
   const [rows, setRows] = React.useState<ProviderCompareMatrixItem[]>([]);
+  const [providerMeta, setProviderMeta] = React.useState<ProviderCompareMatrixProviderMeta[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [filterMode, setFilterMode] = React.useState<FilterMode>("all");
@@ -71,27 +96,31 @@ function ProviderComparePageInner() {
     setLoading(true);
     setError(null);
     api
-      .get<ProviderCompareMatrixItem[]>(`/provider/compare-matrix?ids=${ids.join(",")}`)
+      .get<ProviderCompareMatrixResponse>(`/provider/compare-matrix?ids=${ids.join(",")}`)
       .then((res) => {
-        setRows(res);
+        setRows(res.rows);
+        setProviderMeta(res.providers);
         setLoading(false);
       })
       .catch((e) => {
         setError(e instanceof ApiError ? e.message : "Failed to load comparison matrix");
+        setRows(EMPTY_COMPARE_RESPONSE.rows);
+        setProviderMeta(EMPTY_COMPARE_RESPONSE.providers);
         setLoading(false);
       });
   }, [ids]);
 
-  // Column-group headers need every selected provider's name up front, even
-  // one with zero MNOs of its own (which would never appear inside any
-  // row's `providers` map) — derived from whichever row happens to carry
-  // it, falling back to a generic label for the (rare) zero-footprint case.
+  // Column-group headers need every selected provider's name (and ASNs) up
+  // front, even one with zero MNOs of its own -- now sourced directly from
+  // the backend's own providers metadata (authoritative, unlike the prior
+  // approach of scanning rows for whichever one happened to carry a given
+  // provider's name), ordered to match the URL's own id order.
   const providerList = React.useMemo(() => {
     return ids.map((id) => {
-      const named = rows.find((r) => r.providers[id]?.providerName)?.providers[id];
-      return { id, providerName: named?.providerName ?? `Provider ${id}` };
+      const meta = providerMeta.find((p) => p.id === id);
+      return { id, providerName: meta?.providerName ?? `Provider ${id}`, asns: meta?.asns ?? [] };
     });
-  }, [ids, rows]);
+  }, [ids, providerMeta]);
 
   const hasPresence = (row: ProviderCompareMatrixItem, id: number) => {
     const p = row.providers[id];
@@ -126,10 +155,28 @@ function ProviderComparePageInner() {
       },
       { field: "operatorName", headerName: "MNO / Cust", pinned: "left", flex: 1.2, minWidth: 160, headerComponent: OperatorLinkHeader },
       { field: "tadigCode", headerName: "TADIG", pinned: "left", maxWidth: 100 },
+      {
+        field: "mnoAsNumbers",
+        headerName: "ASN",
+        pinned: "left",
+        maxWidth: 110,
+        cellStyle: { fontFamily: "monospace", fontSize: "0.8rem" },
+        // Primary (first-declared) ASN on the cell itself; the full list
+        // (when an MNO declares more than one) only shows on hover, so a
+        // dense grid doesn't grow ragged row heights for the rare
+        // multi-ASN operator.
+        valueFormatter: (p) => (p.value?.length ? p.value[0] : "—"),
+        tooltipValueGetter: (p) => (p.value?.length > 1 ? `All declared ASNs: ${p.value.join(", ")}` : ""),
+      },
     ];
 
-    const providerGroups: ColGroupDef<ProviderCompareMatrixItem>[] = providerList.map(({ id, providerName }) => ({
-      headerName: providerName,
+    const providerGroups: ColGroupDef<ProviderCompareMatrixItem>[] = providerList.map(({ id, providerName, asns }) => ({
+      // headerGroupComponent renders the richer name+chip on screen; this
+      // string headerName is what CSV export and screen readers fall back
+      // to, so it carries the ASN too (e.g. "Arelion (ASN 1299)").
+      headerName: asns.length > 0 ? `${providerName} (ASN ${asns[0]})` : providerName,
+      headerGroupComponent: ProviderGroupHeader,
+      headerGroupComponentParams: { displayName: providerName, asns },
       children: [
         {
           headerName: "IR.21",

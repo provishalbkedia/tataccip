@@ -75,6 +75,22 @@ function Warn({ children }: { children: React.ReactNode }) {
   );
 }
 
+// A third callout tier alongside Tip (ℹ Note) and Warn (⚠ Key Distinction) --
+// for a genuinely time-saving shortcut rather than a caveat or a warning,
+// styled in the platform's own teal accent so it reads as "worth trying",
+// not "be careful".
+function ProTip({ children }: { children: React.ReactNode }) {
+  return (
+    <Alert
+      icon={<span style={{ fontSize: 16 }}>⚡</span>}
+      severity="success"
+      sx={{ mb: 2, bgcolor: "rgba(0,212,178,0.1)", color: "#0A2540", "& .MuiAlert-icon": { color: "#00A98A" } }}
+    >
+      <strong>Pro-Tip:</strong> {children}
+    </Alert>
+  );
+}
+
 function Bullets({ items }: { items: React.ReactNode[] }) {
   return (
     <List dense disablePadding>
@@ -477,6 +493,36 @@ function OverviewTab() {
         />
         <GoTo label="Open Dashboard" route="/dashboard" />
       </Section>
+
+      <Section title="Navigation, Filters &amp; Escape Hatches">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A few conventions repeat across every search and analytics screen — once you recognize them on one
+          page, every other page behaves the same way.
+        </Typography>
+        <Bullets
+          items={[
+            "The active section in the left sidebar is always high-contrast: solid navy fill, white bold text, a teal left accent bar, and a teal icon — never guess which page you're on.",
+            <>
+              Wherever a filter can narrow a table (MNO / Cust Search, Provider Search, Market Intelligence), an
+              <strong> active filter ribbon</strong> appears directly above it once anything is applied — one
+              removable <code>(✕)</code> chip per dimension, plus a single &quot;Reset All Filters&quot; /
+              &quot;Reset to Default View&quot; action for everything at once.
+            </>,
+            "Dismissing one chip removes only that constraint; the rest of your filters stay exactly as they were.",
+            "A contextual banner directly above each results table names the table's exact scope in plain language (e.g. \"Showing 1 of 8 providers matching 'Tata Comm'\") — with a quick link back to the unfiltered baseline once a search has narrowed things down.",
+          ]}
+        />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ mt: 2 }}>
+          Mobile &amp; tablet
+        </Typography>
+        <Bullets
+          items={[
+            "The sidebar collapses behind a hamburger menu; filter pill bars wrap and remain fully tappable rather than truncating.",
+            "Wide tables (comparison matrices, the Market Intelligence feed) scroll horizontally inside their own container — the page itself never scrolls sideways.",
+            "Floating action docks (the multi-provider compare bar, selection summaries) stack their buttons vertically on narrow screens and reserve enough bottom padding to never cover a table's own pagination controls.",
+          ]}
+        />
+      </Section>
     </Box>
   );
 }
@@ -636,6 +682,46 @@ function MarketIntelligenceTab() {
           </Tip>
         </TechAccordion>
 
+        <TechAccordion title="Executive Market Dynamics — interactive charts" defaultExpanded>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            A collapsible strip directly below the KPI cards, wired to the page&apos;s own filter state — clicking
+            a slice or bar sets Service / Provider / Region exactly as if you&apos;d used the manual controls, and
+            the strip re-renders around whatever the rest of your filters already narrowed it to.
+          </Typography>
+          <Bullets
+            items={[
+              <><strong>Routing Changes by Service donut</strong> — change volume by layer (SCCP / DSX / IPX). Click a slice to filter Service.</>,
+              <><strong>Carrier Net Movement bar</strong> — a diverging green (net gain) / red (net loss) bar chart, capped to the 5 strongest gainers and 5 strongest losers so a long tail doesn't turn it into a wall of thin bars. Click a bar to filter by Provider.</>,
+              <><strong>Regional Churn Distribution</strong> — geographic breakdown of carrier switches by region. Click a bar to filter Region.</>,
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Market Share &amp; Churn Pivot Summary">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            The &quot;⚡ Executive Pivot&quot; button (&quot;Market Share Pivot Summary&quot;) opens a full-screen
+            per-carrier win/loss pivot for the current filter scope — a different shape than the row-level change
+            feed below it, built for a commercial &quot;who&apos;s actually capturing this market&quot; read.
+          </Typography>
+          <Bullets
+            items={[
+              "One row per wholesale carrier: Net Movement, Service Gains, Service Losses, Impacted MNOs / Custs, and a Market Share Trend badge (Capturing Market / Defending / Losing Share).",
+              "Expand the [+] on any carrier row to see its full granular migration list — Date, MNO / Customer Name, TADIG, Country, Service, Action, and the specific Displaced / Competing Carrier for each event.",
+              'One-click "Export Pivot to Excel (.xlsx)" for the whole pivot, scoped to whatever the Master Filter Bar currently shows.',
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Download MIS Report">
+          <Bullets
+            items={[
+              <><strong>Executive PDF Report (with Charts)</strong> — formatted CXO brief with market-share graphs and KPIs, scoped to the current filters.</>,
+              <><strong>Detailed MIS Workbook (.xlsx)</strong> — formatted multi-tab spreadsheet with summary KPIs and the underlying data.</>,
+              "Raw CSV Export — unformatted raw feed for downstream data pipelines.",
+            ]}
+          />
+        </TechAccordion>
+
         <GoTo label="Open Market Intelligence" route="/analytics/ir21-changes" />
       </Section>
     </Box>
@@ -668,24 +754,43 @@ function OperatorTab() {
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
           Dataset scope filtering
         </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Each scope combines two things: which operators are included, and which source&apos;s provider names
+          are shown for them. The header badge beside the page title always reflects whichever scope is active.
+        </Typography>
         <Bullets
           items={[
             <>
-              <strong>IR.21 Verified</strong> — only operators with a parsed IR.21 XML declaration on file
-              (default). This is the platform&apos;s ground-truth baseline.
+              <strong>IR.21 Verified</strong> (default, badge: <em>GSMA IR.21 Declared</em>) — only operators with
+              a parsed IR.21 XML declaration on file, showing only IR.21-declared providers. This is the
+              platform&apos;s ground-truth baseline: direct operator declarations from IR.21 Section 5 (SCCP
+              Signaling), Section 17 (IPX/GRX Roaming Peering &amp; ASNs), and Section 20 (DSX/Diameter Routing
+              Agent).
             </>,
             <>
-              <strong>Reach List Only</strong> — operators known solely from a legacy Reach List upload, from
-              before MNO normalization was enforced. A newer unresolved Reach List row no longer creates one of
-              these at all — see the Unresolved Reach List Aliases queue in Admin instead.
+              <strong>As per Reach List</strong> (badge: <em>As per Reach List</em>) — every operator with at
+              least one wholesale Reach List claim, whether or not it also has an IR.21 declaration, showing only
+              Reach-List-claimed providers. This answers &quot;what do the reach lists say&quot;, distinct from
+              &quot;which operators did IR.21 never see&quot; below.
             </>,
             <>
-              <strong>All MNOs</strong> — the unified view across both. A companion &quot;Only with listed
-              providers&quot; toggle hides any operator with nothing to show in the SCCP/DSX/IPX columns, on by
-              default.
+              <strong>Reach List Exclusive only</strong> (badge: <em>Reach List Exclusive Only</em>) — operators
+              whose connectivity footprint is present solely via wholesale reach lists, with no official GSMA
+              IR.21 declaration on file at all; also shows only Reach-List-sourced providers.
+            </>,
+            <>
+              <strong>All MNOs (IR.21 + Reach List)</strong> (badge: <em>Combined (IR.21 + Reach List)</em>) —
+              the full merged market view, every operator with providers shown from whichever source declared
+              them. A companion &quot;Only with listed providers&quot; toggle hides any operator with nothing to
+              show in the SCCP/DSX/IPX columns, on by default.
             </>,
           ]}
         />
+        <ProTip>
+          The Dataset Scope, Exclusivity Scope, Region, and Wholesale Provider filters all combine — e.g. &quot;As
+          per Reach List&quot; + &quot;SCCP Solo&quot; + a specific carrier shows exactly that carrier&apos;s
+          Reach-List-sourced SCCP monopolies, nothing broader.
+        </ProTip>
 
         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2, mt: 2 }}>
           <Table size="small">
@@ -711,14 +816,120 @@ function OperatorTab() {
         </Typography>
         <Bullets
           items={[
-            "Multi-parameter filtering by MNO / Cust Name, TADIG, Country, MCC, and MNC — press Enter in any field to search instantly, no separate click required.",
+            "Multi-parameter filtering by MNO / Cust Name, TADIG, Country, Region, Wholesale Provider, MCC, and MNC — press Enter in any field to search instantly, no separate click required.",
             "Country accepts either a full country name or its ISO-3 code, with a searchable autocomplete dropdown of matching countries as you type.",
             "One-click Region toggle pills (All / Americas / MEA / Europe / APAC / Non-Terrestrial) filter the result set without touching the text fields.",
+            "Wholesale Provider is a searchable autocomplete — narrows the table to that carrier's own accounts, and (see Exclusivity Intelligence below) is service-aware once a single-service Exclusivity Scope pill is active.",
             "Database-backed autocomplete suggestions as you type the MNO / Customer name.",
             "Search criteria and results are synchronized to the URL, so browser Back/Forward restores the exact search you had.",
+            <>
+              An <strong>Active Output Scope Banner</strong> sits directly above the table whenever any filter is
+              narrowing the view (Dataset Scope, Exclusivity Scope, Wholesale Provider, Region, Search) — a
+              plain-language summary sentence (e.g. &quot;Showing 9 MNOs matching: As per Reach List · IPX Solo ·
+              Wholesale Provider: Tata Comm&quot;) plus one removable chip per dimension, and a single
+              &quot;Clear All Filters&quot; action.
+            </>,
             "CSV export of the current result set — includes a legal footnote noting the data is sourced from declared IR.21 & Reach List archives without operational warranty.",
           ]}
         />
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Exclusivity Intelligence — the platform&apos;s key strategic differentiator
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Beyond &quot;who serves this operator&quot;, CCIP surfaces <strong>who serves it exclusively</strong> —
+          a single-provider lock-in is commercially very different from an account any competitor could contest.
+          The amber &quot;EXCLUSIVITY SCOPE&quot; pill bar (directly below Dataset Scope and Region) narrows the
+          table, and every chart beneath it, to one of six lock-in definitions:
+        </Typography>
+        <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 700 }}>Exclusivity Scope pill</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Meaning</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {[
+                ["All MNOs", "No exclusivity narrowing — every operator in the current Dataset Scope / Region."],
+                ["★ Fully Exclusive", "One carrier is the sole declared provider across all three services (SCCP + DSX + IPX) at once — total lock-in."],
+                ["SCCP Solo", "Exactly one carrier declared for SCCP signaling on that operator, independent of DSX/IPX."],
+                ["DSX Solo", "Exactly one carrier declared for DSX / LTE Diameter routing."],
+                ["IPX Solo", "Exactly one carrier declared for GRX/IPX data roaming."],
+                ["Any Service Exclusive", "The operator has single-provider lock-in on at least one of the three services, even if the others are shared."],
+              ].map(([pill, desc]) => (
+                <TableRow key={pill}>
+                  <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>{pill}</TableCell>
+                  <TableCell>{desc}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Every provider name in the table carries the same visual legend, shown again in the table&apos;s own
+          Legend row:
+        </Typography>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Box component="span" sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#2E7D32", display: "inline-block", flexShrink: 0 }} />
+              <Typography variant="caption" color="text.secondary">
+                <strong>Green provider name</strong> — exclusive / sole provider for that service
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Box component="span" sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#5A6B7B", display: "inline-block", flexShrink: 0 }} />
+              <Typography variant="caption" color="text.secondary">
+                <strong>Dark / gray provider name</strong> — multi-provider, shared service
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Exclusivity &amp; Market Share chart strip
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>Carrier Exclusivity Share donut</strong> — interactive market-share breakdown of exclusive
+              accounts by carrier, scoped to whichever Exclusivity Scope pill is active. Click any slice to drill
+              the table down to just that carrier&apos;s exclusive accounts; click &quot;Others&quot; to open a
+              modal listing every secondary carrier with its own one-click filter action.
+            </>,
+            <>
+              <strong>Tata Comm Exclusivity Standing</strong> — a dedicated teal KPI banner, always visible,
+              showing Tata Comm&apos;s own exclusive-account count, market-share percentage, and rank among all
+              carriers in the current scope — surfaced explicitly rather than left to however tall its own donut
+              slice happens to be.
+            </>,
+            <>
+              <strong>Exclusivity Vulnerability bar</strong> — the ratio of fully-locked-in accounts vs.
+              multi-provider (contestable) accounts. With a carrier drill-down active, it reflects that carrier&apos;s
+              own accounts specifically: how many are safely exclusive to them vs. shared with a competitor who
+              could win them.
+            </>,
+            "Clicking a drill-down (a donut slice, or the Wholesale Provider filter) narrows the donut, KPI, and vulnerability chart together — an amber \"Filtering by Carrier\" ribbon and a one-click \"Reset Chart Filter\" always show above the charts while one is active.",
+            "Download Exclusivity MIS Report — a PDF (KPI banner + carrier exclusivity chart + full MNO roster) or Excel workbook (market-share sheet with data-bar conditional formatting + MNO exclusivity roster), scoped to exactly whatever's currently filtered.",
+          ]}
+        />
+        <ProTip>
+          The donut&apos;s carrier percentages are computed from the full scoped result set, not the
+          Wholesale-Provider-filtered table — filtering the table to one carrier doesn&apos;t skew every other
+          carrier&apos;s share, so the market picture stays statistically honest even while you&apos;re drilled
+          into one carrier&apos;s own accounts.
+        </ProTip>
+        <Warn>
+          <strong>Key distinction:</strong> a single-service pill (e.g. SCCP Solo) plus a Wholesale Provider
+          filter shows only rows where that carrier is <em>specifically</em> the exclusive provider for that
+          service — not rows where the carrier merely appears somewhere on the row (e.g. as the DSX or IPX
+          provider instead). This keeps every visible row genuinely matching the scope you selected.
+        </Warn>
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
@@ -830,13 +1041,135 @@ function ProviderSearchTab() {
         <Bullets
           items={[
             "Aggregated metrics per provider — total MNOs served, total countries covered, and a protocol breakdown (SCCP / DSX / IPX counts).",
-            'Tri-view data mode toggle — "As per IR.21 Data" (declared footprint), "As per Reach List" (commercial claimed footprint), or "Both (Combined)" (union view).',
-            "Select 2-5 providers via the row checkboxes to open the Provider Comparison Matrix, or select both the IR.21 and Reach List row of the same provider to jump straight to its own declared-vs-claimed breakdown.",
+            'Three high-contrast Dataset Scope pills — "As per IR.21 Data" (declared footprint), "As per Reach List" (commercial claimed footprint), or "Both (Combined)" (union view, one row per source per provider).',
+            'A Reset button beside Search clears the search term and returns Dataset Scope to its own default — greyed out whenever nothing is actually filtered.',
+            <>
+              An <strong>Active Filters ribbon</strong> appears whenever a search term or non-default Dataset
+              Scope is applied — a removable chip per dimension plus a &quot;Reset All Filters&quot; button, so
+              narrowing to one carrier never traps you without a visible way back to the full list.
+            </>,
           ]}
         />
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Provider Coverage Overview — charts above the table
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A collapsible chart panel, mirroring MNO Search&apos;s own Exclusivity charts, gives Provider Search the
+          same at-a-glance visual read before anyone opens the raw table:
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>Tata Comm Coverage Standing</strong> — a teal KPI banner showing Tata Comm&apos;s own MNO
+              count, country count, and rank among every provider in the current search scope.
+            </>,
+            <>
+              <strong>Top Providers by MNO Coverage</strong> — a ranked bar chart (top 10) of every provider by
+              total MNOs served; Tata Comm&apos;s own bar is always highlighted in gold regardless of rank. Click
+              any bar to filter the search straight to that provider.
+            </>,
+            <>
+              <strong>Service Coverage Mix</strong> — total SCCP / DSX / IPX provider-to-MNO relationships summed
+              across every provider currently in scope, showing which service has the broadest wholesale coverage
+              overall.
+            </>,
+            <>
+              In &quot;Both (Combined)&quot; mode, a provider appearing under both sources is de-duplicated to one
+              bar (its larger of the two MNO counts), never double-counted or double-listed.
+            </>,
+          ]}
+        />
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Side-by-Side Carrier Benchmark (Select 2–5 Providers)
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A dedicated banner, directly above the table, makes the multi-carrier compare feature impossible to
+          miss:
+        </Typography>
+        <Bullets
+          items={[
+            "5 live selection slots — check a row's checkbox (or click anywhere on the row) and it fills the next open slot as a removable chip; an empty slot shows a dashed placeholder.",
+            'Once 2+ carriers are selected, an inline "Compare Selected Providers (N) →" button appears right in the banner.',
+            <>
+              Two <strong>Quick Benchmark Shortcuts</strong> — &quot;Compare Top 2&quot; and &quot;Compare Top
+              3&quot; — one-click straight into the comparison matrix using whichever carriers currently rank
+              top-2/top-3 by MNO coverage in the active search scope (not a fixed carrier list, so the shortcut is
+              always comparing what&apos;s actually on top right now).
+            </>,
+            <>
+              A high-contrast navy/teal floating dock appears at the bottom of the screen once 2+ carriers are
+              selected — &quot;N of 5 Providers Selected&quot;, a &quot;Launch Comparative Analysis →&quot;
+              button, and &quot;Clear All&quot;. It never covers the table&apos;s own pagination controls.
+            </>,
+          ]}
+        />
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+          Multi-Provider Comparison Matrix — /search/provider/compare
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          One row per MNO covered by <em>any</em> of the 2–5 selected providers, with each provider&apos;s own
+          IR.21 vs. Reach List service breakdown in its own grouped column block.
+        </Typography>
+        <Bullets
+          items={[
+            'Quick Filter: "All MNOs", "Show common MNOs only" (covered by every selected provider), or "Show exclusivity/gap MNOs" (covered by some but not all — where the real competitive gaps are).',
+            "A live search box narrows the matrix by Country or MNO / Cust name.",
+            "Clicking any MNO row opens that operator's own full Detail page in a new context.",
+          ]}
+        />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ mt: 1.5 }}>
+          Autonomous System Numbers (ASNs)
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>MNO ASN column</strong> — pinned directly beside TADIG, showing that operator&apos;s own
+              declared routing AS Number(s) from its IR.21 GRX/IPX ASN table (e.g. <code>AS271773</code>). An
+              operator with more than one declares its primary on the cell itself, with the full list on hover.
+            </>,
+            <>
+              <strong>Wholesale Provider ASN</strong> — each provider&apos;s own column-group header carries a
+              chip showing the ASN(s) that provider has been observed declaring for itself across every ingested
+              IR.21 filing (e.g. <em>Arelion</em> <Chip label="ASN 1299" size="small" sx={{ height: 18, fontSize: "0.68rem", bgcolor: "#0A2540", color: "#E2E8F0" }} />). This is parsed from real IR.21 GRX/IPX ASN table data, not a separate registered-ASN field — a provider never observed with a self-declared ASN anywhere shows no chip.
+            </>,
+          ]}
+        />
+        <ProTip>
+          Use the ASN columns for peering and IPX routing audits — cross-check a wholesale provider&apos;s
+          claimed ASN against what your own BGP session actually sees before escalating a routing discrepancy.
+        </ProTip>
+        <Bullets
+          items={["CSV export of the full comparison matrix, including every ASN and service column."]}
+        />
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Download Provider Report
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>Executive PDF Report (with Charts)</strong> — branded brief with a KPI banner (providers in
+              scope, total MNO relationships, broadest reach, Tata Comm standing) plus the Top Providers by MNO
+              Coverage and Service Coverage Mix charts, followed by a full provider ranking ledger.
+            </>,
+            <>
+              <strong>Detailed MIS Workbook (.xlsx)</strong> — an &quot;Executive Summary&quot; tab (KPI blocks +
+              top-ranked table with data-bar conditional formatting) and a &quot;Provider Directory&quot; tab
+              (full roster, frozen header, auto-filter, Tata Comm&apos;s own row highlighted).
+            </>,
+            "Raw CSV Export — the same ranked provider list, unformatted, for pipelines and spreadsheets.",
+          ]}
+        />
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>
           Provider Detail — /search/provider/[id]
         </Typography>
         <Bullets
@@ -845,6 +1178,7 @@ function ProviderSearchTab() {
             "A dedicated in-table search bar instantly filters the served-MNO list by operator name, country, or TADIG as you type.",
             "Clicking any MNO row deep-links straight into that operator's own Detail page.",
             "Dual top-and-bottom pagination — built for large footprints (one major IPX provider alone spans 300+ MNOs) — plus a per-row IR.21 PDF button.",
+            "Select both the IR.21 and Reach List row of the same provider (Both Combined mode) to jump straight to its own declared-vs-claimed breakdown instead of the multi-provider matrix.",
           ]}
         />
 

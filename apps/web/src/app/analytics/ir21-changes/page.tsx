@@ -12,10 +12,14 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Divider,
   Drawer,
   Grid,
   IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   TextField,
   ToggleButton,
@@ -30,6 +34,8 @@ import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import RuleIcon from "@mui/icons-material/Rule";
 import TuneIcon from "@mui/icons-material/Tune";
 import CloseIcon from "@mui/icons-material/Close";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -38,6 +44,7 @@ import InfoTooltip from "@/components/InfoTooltip";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
+import type { MisReportInput } from "@/lib/reports/misReportData";
 import {
   CARRIER_CHURN_TYPES,
   DIAMETER_SS7_CHANGE_TYPES,
@@ -978,6 +985,69 @@ export default function Ir21ChangesPage() {
     setActiveKpi(null);
   };
 
+  // ---- MIS report downloads ----
+  // pdfReport/excelReport/csvReport (and the heavy libraries they wrap --
+  // jspdf, jspdf-autotable, exceljs) are dynamically imported only once a
+  // user actually picks a format, so this page's own initial bundle never
+  // pays for a report nobody may ever generate this session.
+  const [reportMenuAnchor, setReportMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [generatingReport, setGeneratingReport] = React.useState<"pdf" | "excel" | "csv" | null>(null);
+
+  // Every format reports on exactly the same two things currently on
+  // screen: `summary` (the KPI cards' own Timeframe/Region/Service-only
+  // scope) for the executive KPI blocks, and `rows` (the fully filtered
+  // dataset behind the table -- every matching row, not just the current
+  // grid page) for the ledger and every chart/aggregate derived from it.
+  const buildReportInput = (): MisReportInput => ({
+    generatedAt: new Date(),
+    scope: {
+      timeframe: TIMEFRAME_LABELS[timeframe],
+      region: region || "All",
+      service: service || "All",
+      changeCategory: changeFilterLabel(changeType),
+      provider: provider?.providerName ?? null,
+      search: search || null,
+    },
+    summary,
+    rows,
+  });
+
+  const handleDownloadPdf = async () => {
+    setReportMenuAnchor(null);
+    setGeneratingReport("pdf");
+    try {
+      const { generatePdfReport } = await import("@/lib/reports/pdfReport");
+      await generatePdfReport(buildReportInput());
+    } finally {
+      setGeneratingReport(null);
+    }
+  };
+  const handleDownloadExcel = async () => {
+    setReportMenuAnchor(null);
+    setGeneratingReport("excel");
+    try {
+      const { generateExcelReport } = await import("@/lib/reports/excelReport");
+      await generateExcelReport(buildReportInput());
+    } finally {
+      setGeneratingReport(null);
+    }
+  };
+  const handleDownloadCsv = async () => {
+    setReportMenuAnchor(null);
+    setGeneratingReport("csv");
+    try {
+      const { generateCsvExport } = await import("@/lib/reports/csvReport");
+      generateCsvExport(rows);
+    } finally {
+      setGeneratingReport(null);
+    }
+  };
+  const REPORT_GENERATING_LABEL: Record<"pdf" | "excel" | "csv", string> = {
+    pdf: "Generating CXO Brief…",
+    excel: "Generating Workbook…",
+    csv: "Generating CSV…",
+  };
+
   // Shared between the inline desktop Paper and the mobile bottom-sheet
   // Drawer -- identical controls either way, just a different container.
   // The trailing count/"Clear Filters" pair is desktop-only: the mobile
@@ -1449,6 +1519,36 @@ export default function Ir21ChangesPage() {
           </Box>
         )}
 
+        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1.5 }}>
+          <Button
+            variant="contained"
+            disabled={rows.length === 0 || !!generatingReport}
+            startIcon={generatingReport ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : <AssessmentOutlinedIcon />}
+            endIcon={!generatingReport && <ArrowDropDownIcon />}
+            onClick={(e) => setReportMenuAnchor(e.currentTarget)}
+            sx={{
+              minHeight: 44,
+              bgcolor: "#0A2540",
+              color: "#FFFFFF",
+              "&:hover": { bgcolor: "#0A2540", boxShadow: 4 },
+              "&.Mui-disabled": { bgcolor: generatingReport ? "#0A2540" : undefined, color: generatingReport ? "#FFFFFF" : undefined },
+            }}
+          >
+            {generatingReport ? REPORT_GENERATING_LABEL[generatingReport] : "Download MIS Report"}
+          </Button>
+          <Menu anchorEl={reportMenuAnchor} open={!!reportMenuAnchor} onClose={() => setReportMenuAnchor(null)}>
+            <MenuItem onClick={handleDownloadPdf}>
+              <ListItemText primary="📄 Executive PDF Report (with Charts)" secondary="Formatted CXO executive brief with market share graphs & KPIs" />
+            </MenuItem>
+            <MenuItem onClick={handleDownloadExcel}>
+              <ListItemText primary="📊 Detailed MIS Workbook (.xlsx)" secondary="Formatted multi-tab spreadsheet with summary KPIs & data" />
+            </MenuItem>
+            <MenuItem onClick={handleDownloadCsv}>
+              <ListItemText primary="📑 Raw CSV Export (.csv)" secondary="Unformatted raw feed for data pipelines" />
+            </MenuItem>
+          </Menu>
+        </Box>
+
         {!loading && rows.length === 0 ? (
           <Paper variant="outlined" sx={{ p: 5, textAlign: "center" }}>
             <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
@@ -1524,7 +1624,6 @@ export default function Ir21ChangesPage() {
             { field: "hasPdfDocument", headerName: "IR.21 PDF", cellRenderer: PdfCell, sortable: false, filter: false, minWidth: 100, flex: 0.6 },
           ]}
           onRowClicked={(row) => router.push(`/search/mno/${row.mnoId}`)}
-          exportFileName="ir21-routing-changes"
           showTopPagination
           height={600}
         />

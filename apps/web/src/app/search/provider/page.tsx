@@ -8,7 +8,7 @@ import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
-import ClearIcon from "@mui/icons-material/Clear";
+import BoltIcon from "@mui/icons-material/Bolt";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -97,6 +97,24 @@ function ProviderSearchPageInner() {
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
 
+  // In "Both (Combined)" source mode, `results` carries two rows per
+  // provider (IR21-sourced + REACH_LIST-sourced) with the same id. Both the
+  // coverage charts and the Quick Benchmark Shortcuts below need "one row
+  // per provider, ranked by reach" -- computed once here so both consume
+  // the identical ranking rather than deriving their own copies. Taking the
+  // larger of the two totalMnos per provider avoids both double-listing the
+  // same provider under two bars and overstating its reach by summing two
+  // counts that plausibly overlap (the same MNO can appear in both source's
+  // figures for that provider).
+  const rankedProviders = React.useMemo(() => {
+    const byId = new Map<number, ProviderSummary>();
+    for (const r of results) {
+      const existing = byId.get(r.id);
+      if (!existing || r.stats.totalMnos > existing.stats.totalMnos) byId.set(r.id, r);
+    }
+    return Array.from(byId.values()).sort((a, b) => b.stats.totalMnos - a.stats.totalMnos);
+  }, [results]);
+
   // Chart-driven drill-down (bar click) reuses the same free-text search
   // the manual search box does, matching how a click there is one exact
   // provider name -- Provider Search has no separate provider-filter
@@ -128,6 +146,37 @@ function ProviderSearchPageInner() {
       ? uniqueSelected[0]
       : null;
   }, [selected, uniqueSelected]);
+
+  // Removing one carrier's chip from the benchmark banner's selection slots
+  // -- updates our own state immediately (chip disappears without waiting
+  // on a grid round-trip) and tells the grid to deselect that provider's
+  // row(s) too (both its IR21 and REACH_LIST rows share this id in "Both"
+  // mode), so its checkbox doesn't stay visually checked.
+  const [deselectSignal, setDeselectSignal] = React.useState<{ ids: number[] } | null>(null);
+  const handleRemoveFromSelection = React.useCallback((providerId: number) => {
+    setSelected((prev) => prev.filter((s) => s.id !== providerId));
+    setDeselectSignal({ ids: [providerId] });
+  }, []);
+
+  // Quick Benchmark Shortcuts -- one-click comparisons of the current
+  // scope's own top 2 / top 3 providers by MNO coverage (the same ranking
+  // "Top Providers by MNO Coverage" charts), rather than hardcoded carrier
+  // names. A fixed name list would silently do nothing (or compare fewer
+  // than intended) whenever one of those names isn't in the current search
+  // scope or dataset -- deriving from rankedProviders instead means the
+  // shortcut is always comparing whatever's actually top-ranked right now.
+  const quickShortcuts = React.useMemo(() => {
+    const top2 = rankedProviders.slice(0, 2);
+    const top3 = rankedProviders.slice(0, 3);
+    const shortcuts: { label: string; ids: number[] }[] = [];
+    if (top2.length === 2) {
+      shortcuts.push({ label: `Compare Top 2: ${top2.map((p) => p.providerName).join(" vs ")}`, ids: top2.map((p) => p.id) });
+    }
+    if (top3.length === 3) {
+      shortcuts.push({ label: `Compare Top 3: ${top3.map((p) => p.providerName).join(" vs ")}`, ids: top3.map((p) => p.id) });
+    }
+    return shortcuts;
+  }, [rankedProviders]);
 
   const columnDefs = React.useMemo<ColDef<ProviderSummary>[]>(() => {
     const cols: ColDef<ProviderSummary>[] = [
@@ -180,9 +229,19 @@ function ProviderSearchPageInner() {
     return cols;
   }, [source, router]);
 
+  // Reserves space below the grid's own pagination bar so the fixed-
+  // position selection dock (bottom: 16, ~64px tall) never sits on top of
+  // it on a short page -- only applied while a dock is actually showing.
+  const bottomDockVisible = !!selfCompareTarget || uniqueSelected.length >= 2;
+
   return (
     <RequireAuth>
       <AppShell>
+        {/* The dock is taller on mobile (text + 2 buttons stacked in a
+           column) than on desktop (single row) -- a flat padding sized for
+           the desktop dock left the mobile one still overlapping the
+           pagination bar's last line. */}
+        <Box sx={{ pb: bottomDockVisible ? { xs: 24, sm: 10 } : 0 }}>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
           Provider Search
         </Typography>
@@ -233,7 +292,83 @@ function ProviderSearchPageInner() {
           </Grid>
         </Paper>
 
-        <ProviderCoverageCharts rows={results} source={source} onProviderClick={handleProviderChartClick} />
+        <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} onProviderClick={handleProviderChartClick} />
+
+        {/* Side-by-Side Carrier Benchmark -- the multi-provider compare
+           feature was previously discoverable only via a faint instructional
+           sentence inside the results summary box, easy for a first-time
+           user (or an executive skimming the page) to miss entirely. This
+           surfaces it as its own high-visibility action strip directly above
+           the table, with live selection slots so progress toward the 2-5
+           range is visible without scrolling down to the floating dock. */}
+        <Paper
+          variant="outlined"
+          sx={{
+            mb: 1.5,
+            p: 2,
+            borderColor: "#CFD8DC",
+            borderLeft: "4px solid #00D4B2",
+            background: "linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%)",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, flexWrap: "wrap" }}>
+            <CompareArrowsIcon sx={{ color: "#0A2540", mt: 0.25 }} />
+            <Box sx={{ flex: 1, minWidth: 260 }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ color: "#0A2540" }}>
+                Side-by-Side Carrier Benchmark (Select 2–5 Providers)
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                Select checkboxes or click rows to compare global footprint, shared MNO accounts, and service
+                dominance side-by-side.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            {Array.from({ length: 5 }).map((_, i) => {
+              const p = uniqueSelected[i];
+              return p ? (
+                <Chip
+                  key={p.id}
+                  label={p.providerName}
+                  onDelete={() => handleRemoveFromSelection(p.id)}
+                  sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600, "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
+                />
+              ) : (
+                <Chip
+                  key={`slot-${i}`}
+                  variant="outlined"
+                  label={i < 2 ? `Carrier ${i + 1}` : `+ Slot ${i + 1}`}
+                  sx={{ borderStyle: "dashed", borderColor: "#CFD8DC", color: "text.disabled" }}
+                />
+              );
+            })}
+            {uniqueSelected.length >= 2 && (
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)}
+                sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 700, ml: "auto" }}
+              >
+                Compare Selected Providers ({uniqueSelected.length}) &rarr;
+              </Button>
+            )}
+          </Box>
+
+          {quickShortcuts.length > 0 && (
+            <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {quickShortcuts.map((s) => (
+                <Chip
+                  key={s.label}
+                  icon={<BoltIcon fontSize="small" sx={{ color: "#B45309 !important" }} />}
+                  label={s.label}
+                  onClick={() => router.push(`/search/provider/compare?ids=${s.ids.join(",")}`)}
+                  sx={{ bgcolor: "#FFF3DC", color: "#7C4A03", fontWeight: 600, cursor: "pointer", "&:hover": { bgcolor: "#FFE9B8" } }}
+                />
+              ))}
+            </Box>
+          )}
+        </Paper>
 
         {/* Results Summary -- same treatment as MNO Search's stat strip: the
            result count reads at a glance instead of opening a paragraph of
@@ -270,9 +405,12 @@ function ProviderSearchPageInner() {
           rowSelection="multiRow"
           onSelectionChanged={setSelected}
           clearSelectionSignal={clearSignal}
+          getRowId={(row) => row.id}
+          deselectSignal={deselectSignal}
           showTopPagination
           exportFileName="provider-search-results"
         />
+        </Box>
 
         {selfCompareTarget && (
           <Paper
@@ -310,7 +448,7 @@ function ProviderSearchPageInner() {
 
         {!selfCompareTarget && uniqueSelected.length >= 2 && (
           <Paper
-            elevation={4}
+            elevation={0}
             sx={{
               position: "fixed",
               bottom: 16,
@@ -325,10 +463,13 @@ function ProviderSearchPageInner() {
               zIndex: 1200,
               borderRadius: { xs: 3, sm: 999 },
               maxWidth: "94vw",
+              bgcolor: "#0A2540",
+              border: "1px solid #00D4B2",
+              boxShadow: "0 8px 24px rgba(10, 37, 64, 0.3)",
             }}
           >
-            <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {uniqueSelected.length} Provider(s) Selected: {uniqueSelected.map((p) => p.providerName).join(", ")}
+            <Typography variant="body2" noWrap sx={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", color: "#fff" }}>
+              {uniqueSelected.length} of 5 Providers Selected: {uniqueSelected.map((p) => p.providerName).join(", ")}
               {uniqueSelected.length > 5 && " — max 5, deselect some to compare"}
             </Typography>
             <Box sx={{ display: "flex", gap: 1, width: { xs: "100%", sm: "auto" } }}>
@@ -340,20 +481,26 @@ function ProviderSearchPageInner() {
                 onClick={() =>
                   router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)
                 }
-                sx={{ flex: { xs: 1, sm: "0 0 auto" } }}
+                sx={{
+                  flex: { xs: 1, sm: "0 0 auto" },
+                  bgcolor: "#00D4B2",
+                  color: "#0A2540",
+                  fontWeight: 700,
+                  "&:hover": { bgcolor: "#00E8C4" },
+                }}
               >
-                Compare Selected Providers (Matrix)
+                Launch Comparative Analysis &rarr;
               </Button>
               <Button
                 size="small"
-                startIcon={<ClearIcon />}
+                startIcon={<CloseIcon />}
                 onClick={() => {
                   setSelected([]);
                   setClearSignal((n) => n + 1);
                 }}
-                sx={{ flex: { xs: "0 0 auto", sm: "0 0 auto" } }}
+                sx={{ flex: { xs: "0 0 auto", sm: "0 0 auto" }, color: "#fff" }}
               >
-                Clear Selection
+                Clear All
               </Button>
             </Box>
           </Paper>

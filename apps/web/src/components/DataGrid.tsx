@@ -109,6 +109,8 @@ export default function DataGrid<T>({
   showTopPagination = false,
   suppressRowClickSelection,
   clearSelectionSignal,
+  getRowId,
+  deselectSignal,
   renderRowCount,
 }: {
   rowData: T[];
@@ -136,6 +138,15 @@ export default function DataGrid<T>({
   // the reverse; resetting the caller's own `selected` array to [] alone
   // leaves AG Grid's checkboxes still visually checked.
   clearSelectionSignal?: number;
+  // Identifies a row for deselectSignal below (e.g. `(row) => row.id`) --
+  // only needed by callers that also pass deselectSignal.
+  getRowId?: (row: T) => string | number;
+  // Deselect just the rows whose getRowId() is in `ids`, without touching
+  // the rest of the selection -- e.g. removing one carrier's chip from a
+  // "2-5 selected" summary shouldn't clear the other selected rows the way
+  // clearSelectionSignal does. Pass a new object each time (even for the
+  // same ids) so the effect below re-fires; requires getRowId.
+  deselectSignal?: { ids: Array<string | number> } | null;
   // Also renders the pagination bar above the grid, not just below — for
   // long lists (300+ rows, e.g. a Tier-1 provider's full MNO footprint)
   // that would otherwise need scrolling all the way down just to change
@@ -229,6 +240,15 @@ export default function DataGrid<T>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearSelectionSignal]);
 
+  React.useEffect(() => {
+    const api = gridRef.current?.api;
+    if (!deselectSignal || !getRowId || !api) return;
+    api.forEachNode((node) => {
+      if (node.data && deselectSignal.ids.includes(getRowId(node.data))) node.setSelected(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deselectSignal]);
+
   // Any time the row data set itself changes -- a filter, live search term,
   // or exclusivity mode narrowing/widening the result set -- land back on
   // page 1, skipping the very first mount (nothing to "reset" from yet).
@@ -250,6 +270,14 @@ export default function DataGrid<T>({
   }
 
   const isAllSelected = rowData.length > 0 && pageInfo.pageSize >= rowData.length;
+
+  // Whether clicking a row (anywhere, not just a specific cell control) does
+  // something -- either navigates (onRowClicked) or toggles its checkbox
+  // (rowSelection enabled without suppressRowClickSelection). Drives both
+  // the pointer cursor and the hover tint below, so a purely read-only grid
+  // (no onRowClicked, no click-to-select) doesn't visually imply
+  // interactivity it doesn't have.
+  const isRowInteractive = !!onRowClicked || (!!rowSelection && !suppressRowClickSelection);
 
   const handleExport = React.useCallback(() => {
     const api = gridRef.current?.api;
@@ -321,6 +349,13 @@ export default function DataGrid<T>({
             boxShadow: "inset 3px 0 0 0 #0B6FBF",
             transition: "background-color 180ms ease-in-out, box-shadow 180ms ease-in-out",
           },
+          // A lighter version of the same blue, one step below the selected
+          // state's tint -- signals "clickable" before a row is selected.
+          // Only applied when the row actually IS clickable (see
+          // isRowInteractive above); a read-only grid keeps no hover cue.
+          ...(isRowInteractive && {
+            "& .ag-row:not(.ag-row-selected):hover": { backgroundColor: "rgba(11, 111, 191, 0.04)" },
+          }),
           "& .ag-row": { transition: "background-color 180ms ease-in-out" },
           // AG Grid's own resize handle is a bare 8px strip exactly on the
           // column boundary -- an easy miss, especially at a glance. Widens
@@ -363,7 +398,7 @@ export default function DataGrid<T>({
             paginationPageSize={20}
             paginationPageSizeSelector={[20, 50, 100]}
             animateRows
-            rowStyle={onRowClicked ? { cursor: "pointer" } : undefined}
+            rowStyle={isRowInteractive ? { cursor: "pointer" } : undefined}
             onRowClicked={onRowClicked ? (e) => e.data && onRowClicked(e.data) : undefined}
             rowSelection={rowSelection ? { mode: rowSelection, enableClickSelection: !suppressRowClickSelection } : undefined}
             onSelectionChanged={

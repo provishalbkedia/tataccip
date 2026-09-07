@@ -61,36 +61,21 @@ const SOURCE_SCOPE_LABEL: Record<ProviderStatsSource, string> = {
 const TOP_N = 10;
 
 export default function ProviderCoverageCharts({
-  rows,
+  rankedProviders,
   source,
   onProviderClick,
 }: {
-  rows: ProviderSummary[];
+  // Already deduped (one entry per provider id, even in "Both (Combined)"
+  // source mode) and sorted descending by stats.totalMnos -- the page
+  // computes this once and shares it with the "Quick Benchmark Shortcuts"
+  // banner too, rather than each place re-deriving its own copy.
+  rankedProviders: ProviderSummary[];
   source: ProviderStatsSource;
   onProviderClick: (providerName: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
-
-  // In "Both (Combined)" mode, `rows` carries two entries per provider (one
-  // IR21-sourced, one REACH_LIST-sourced) with the same id. Charting both as
-  // separate bars would double-count the same provider under one name, and
-  // summing their totalMnos would overstate its reach since the same MNO
-  // can plausibly appear in both source's counts for that provider. Taking
-  // the larger of the two per provider gives "best-known footprint" without
-  // either distortion.
-  const dedupedRows = React.useMemo(() => {
-    const byId = new Map<number, ProviderSummary>();
-    for (const r of rows) {
-      const existing = byId.get(r.id);
-      if (!existing || r.stats.totalMnos > existing.stats.totalMnos) byId.set(r.id, r);
-    }
-    return Array.from(byId.values());
-  }, [rows]);
-
-  const rankedByMnos = React.useMemo(
-    () => [...dedupedRows].sort((a, b) => b.stats.totalMnos - a.stats.totalMnos),
-    [dedupedRows],
-  );
+  const rankedByMnos = rankedProviders;
+  const dedupedRows = rankedProviders;
 
   const topProvidersData = React.useMemo(
     () =>

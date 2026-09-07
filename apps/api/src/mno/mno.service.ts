@@ -88,7 +88,7 @@ export class MnoService {
     mnc?: string;
     region?: string;
     onlyWithProviders?: boolean;
-    datasetScope?: "ir21" | "reachlist" | "all";
+    datasetScope?: "ir21" | "reachlist_claimed" | "reachlist_only" | "all";
   }): Promise<MnoSummary[]> {
     const { q, tadig, country, mcc, mnc, region, onlyWithProviders = false, datasetScope = "ir21" } = params;
     const requestedRegions = region
@@ -140,19 +140,48 @@ export class MnoService {
           })
         : rows;
 
-    // "IR.21 Verified" (default) vs "Reach List Only" is a real, meaningful
-    // distinction: whether this MnoMaster row has a parsed IR.21 XML
-    // declaration on file (connectivity relation present) or not (a legacy
-    // row auto-created from a Reach List upload before MNO normalization
-    // was enforced -- see MnoNormalizationAudit for how new unresolved
-    // Reach List rows are handled instead, in a separate admin queue that
-    // never becomes a MnoMaster row at all).
-    const scopedRows =
-      datasetScope === "all"
-        ? regionFilteredRows
-        : datasetScope === "reachlist"
-          ? regionFilteredRows.filter((r) => r.connectivity === null)
-          : regionFilteredRows.filter((r) => r.connectivity !== null);
+    // Four distinct scopes, each combining "which MNOs are included" with
+    // "which source's provider data gets shown for them" (see
+    // resolvedProvidersByMno's own `source` param below):
+    // - "ir21": has a parsed IR.21 XML on file (connectivity relation
+    //   present); providers shown are IR.21-sourced only.
+    // - "reachlist_claimed" ("As per Reach List"): has at least one
+    //   ProviderReachlist entry, REGARDLESS of whether it also has an IR.21
+    //   declaration; providers shown are Reach-List-sourced only. Distinct
+    //   from "reachlist_only" below -- an MNO can be IR.21-verified AND
+    //   separately claimed by a reach list, and this mode is specifically
+    //   "show me what the reach lists say", not "show me MNOs IR.21 never
+    //   saw".
+    // - "reachlist_only" ("Only in Reach List"): a legacy row auto-created
+    //   from a Reach List upload before MNO normalization was enforced, with
+    //   no IR.21 XML ever ingested (connectivity === null) -- see
+    //   MnoNormalizationAudit for how new unresolved Reach List rows are
+    //   handled instead, in a separate admin queue that never becomes a
+    //   MnoMaster row at all. connectivity === null only means no XML
+    //   *snapshot* was recorded for the MNO -- it does NOT guarantee no
+    //   Ir21Connectivity rows exist for it (that table is populated
+    //   per-service and can be seeded/backfilled independently), so this
+    //   mode still explicitly forces Reach-List-sourced providers below
+    //   rather than assuming the merged view happens to match.
+    // - "all": every MNO, providers merged from both sources -- the original
+    //   "All MNOs" behavior, unchanged.
+    let scopedRows = regionFilteredRows;
+    if (datasetScope === "reachlist_only") {
+      scopedRows = regionFilteredRows.filter((r) => r.connectivity === null);
+    } else if (datasetScope === "ir21") {
+      scopedRows = regionFilteredRows.filter((r) => r.connectivity !== null);
+    } else if (datasetScope === "reachlist_claimed") {
+      const claimedMnoIds = new Set(
+        (
+          await this.prisma.providerReachlist.findMany({
+            where: { mnoId: { in: regionFilteredRows.map((r) => r.id) } },
+            select: { mnoId: true },
+            distinct: ["mnoId"],
+          })
+        ).map((r) => r.mnoId),
+      );
+      scopedRows = regionFilteredRows.filter((r) => claimedMnoIds.has(r.id));
+    }
 
     // Relevance-ranked when there's a free-text query — the alphabetical
     // DB order above stays as-is otherwise (and doubles as the tie-breaker
@@ -166,7 +195,14 @@ export class MnoService {
       : scopedRows;
 
     const mnoIds = scopedRows.map((r) => r.id);
-    const providersByMno = await this.resolvedProvidersByMno(mnoIds);
+    // Which source(s) of provider data to surface, matching each scope's own
+    // framing above: "ir21" shows only IR.21-declared providers;
+    // "reachlist_claimed" and "reachlist_only" both show only Reach-List-
+    // sourced providers (the two differ in which MNOs are *included*, not in
+    // which source is shown once included); "all" merges both sources.
+    const providerSource =
+      datasetScope === "ir21" ? "ir21" : datasetScope === "reachlist_claimed" || datasetScope === "reachlist_only" ? "reachlist" : "both";
+    const providersByMno = await this.resolvedProvidersByMno(mnoIds, providerSource);
 
     // An MNO with no resolved provider on any service (no Ir21Connectivity,
     // no ProviderReachlist row) has nothing comparable to show in Operator
@@ -226,23 +262,34 @@ export class MnoService {
       .slice(0, SUGGESTION_LIMIT);
   }
 
-  /** Canonical (resolved) provider names per service for a batch of MNOs,
-   * merging Ir21Connectivity and ProviderReachlist — the authoritative
-   * source for "which provider(s) serve this MNO", independent of whether
-   * an actual IR.21 XML was ever uploaded (MnoMasterConnectivity is XML-
-   * only, so it's null for reach-list-only or seeded MNOs). */
-  private async resolvedProvidersByMno(mnoIds: number[]): Promise<Map<number, ProvidersByService>> {
+  /** Canonical (resolved) provider names per service for a batch of MNOs.
+   * `source` selects which underlying table(s) feed the result: "both"
+   * (default) merges Ir21Connectivity and ProviderReachlist -- the
+   * authoritative "which provider(s) serve this MNO" view, independent of
+   * whether an actual IR.21 XML was ever uploaded (MnoMasterConnectivity is
+   * XML-only, so it's null for reach-list-only or seeded MNOs); "ir21" or
+   * "reachlist" narrow to just that one table, for the Dataset Scope modes
+   * that specifically want to show one source's own claims rather than the
+   * merged picture. */
+  private async resolvedProvidersByMno(
+    mnoIds: number[],
+    source: "ir21" | "reachlist" | "both" = "both",
+  ): Promise<Map<number, ProvidersByService>> {
     if (mnoIds.length === 0) return new Map();
 
     const [ir21Rows, reachRows] = await Promise.all([
-      this.prisma.ir21Connectivity.findMany({
-        where: { mnoId: { in: mnoIds } },
-        select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
-      }),
-      this.prisma.providerReachlist.findMany({
-        where: { mnoId: { in: mnoIds } },
-        select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
-      }),
+      source !== "reachlist"
+        ? this.prisma.ir21Connectivity.findMany({
+            where: { mnoId: { in: mnoIds } },
+            select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
+          })
+        : Promise.resolve([]),
+      source !== "ir21"
+        ? this.prisma.providerReachlist.findMany({
+            where: { mnoId: { in: mnoIds } },
+            select: { mnoId: true, service: { select: { serviceName: true } }, provider: { select: { providerName: true } } },
+          })
+        : Promise.resolve([]),
     ]);
 
     const byMno = new Map<number, ProvidersByService>();

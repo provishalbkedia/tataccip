@@ -24,7 +24,7 @@ export class MnoController {
     @Query("mnc") mnc?: string,
     @Query("region") region?: string,
     @Query("onlyWithProviders") onlyWithProviders?: string,
-    @Query("datasetScope") datasetScope?: "ir21" | "reachlist" | "all",
+    @Query("datasetScope") datasetScope?: "ir21" | "reachlist_claimed" | "reachlist_only" | "all",
   ) {
     return this.mnoService.search({
       q,

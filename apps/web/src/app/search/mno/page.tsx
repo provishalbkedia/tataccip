@@ -172,12 +172,29 @@ const SERVICE_FILTER_PREDICATE: Record<ServiceFilter, (r: MnoSummaryWithExclusiv
   IPX: (r) => r.ipxProviders.length > 0,
 };
 
-type DatasetScope = "ir21" | "reachlist" | "all";
-const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist", "all"];
+// Each scope combines "which MNOs are included" with "which source's
+// provider data is shown for them" (see apps/api's mno.service.ts search()
+// for the exact rule per scope):
+// - "ir21": has a parsed IR.21 XML on file; providers shown are IR.21-
+//   sourced only.
+// - "reachlist_claimed" ("As per Reach List"): has at least one Reach List
+//   claim, REGARDLESS of whether it also has an IR.21 declaration; providers
+//   shown are Reach-List-sourced only. An MNO can be IR.21-verified AND
+//   separately claimed by a reach list -- this mode specifically answers
+//   "what do the reach lists say", not "which MNOs did IR.21 never see".
+// - "reachlist_only" ("Only in Reach List"): a legacy row known only via a
+//   Reach List upload, no IR.21 XML ever ingested for it at all; providers
+//   shown are Reach-List-sourced only (same source rule as
+//   "reachlist_claimed" -- these two scopes differ in which MNOs are
+//   included, not in which source is shown for them).
+// - "all": every MNO, providers merged from both sources.
+type DatasetScope = "ir21" | "reachlist_claimed" | "reachlist_only" | "all";
+const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist_claimed", "reachlist_only", "all"];
 const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
   ir21: "IR.21 Verified",
-  reachlist: "Reach List Only",
-  all: "All MNOs",
+  reachlist_claimed: "As per Reach List",
+  reachlist_only: "Only in Reach List",
+  all: "All MNOs (IR.21 + Reach List)",
 };
 
 // Shared active/inactive pill styling for the master filter row
@@ -1067,7 +1084,7 @@ function MnoSearchPageInner() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          <Tooltip title="Toggle between GSMA IR.21 authenticated ground-truth MNOs / Customers, unmapped commercial reach list claims, or the unified database.">
+          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML on file, showing only IR.21-declared providers. As per Reach List: has at least one Reach List claim (whether or not it's also IR.21-verified), showing only Reach-List-claimed providers. Only in Reach List: legacy rows known solely via a Reach List upload, no IR.21 XML ever ingested, showing only Reach-List-claimed providers. All MNOs: everything, providers merged from both sources.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
           </Tooltip>
         </Box>

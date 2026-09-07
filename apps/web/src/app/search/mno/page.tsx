@@ -135,6 +135,19 @@ const EXCLUSIVE_MODE_LABELS: Record<ExclusiveMode, string> = {
   any: "Any Service Exclusive",
   shared: "Multi-Provider (Shared)",
 };
+// Matches the EXCLUSIVITY SCOPE pill bar's own button text exactly (e.g.
+// "SCCP Solo", not EXCLUSIVE_MODE_LABELS' "SCCP Exclusive") so the Active
+// Output Scope Banner names the filter the same way the control the user
+// clicked does.
+const EXCLUSIVITY_PILL_LABEL: Record<ExclusiveMode, string> = {
+  all: "All MNOs",
+  full: "Fully Exclusive",
+  sccp: "SCCP Solo",
+  dsx: "DSX Solo",
+  ipx: "IPX Solo",
+  any: "Any Service Exclusive",
+  shared: "Multi-Provider (Shared)",
+};
 const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusivity) => boolean> = {
   all: () => true,
   full: (r) => r.isFullyExclusive,
@@ -554,15 +567,6 @@ function MnoSearchPageInner() {
   );
 
   const rowsWithExclusivity = React.useMemo(() => results.map(withExclusivity), [results]);
-  const exclusivityCounts = React.useMemo(
-    () => ({
-      sccp: rowsWithExclusivity.filter((r) => r.isExclusiveSccp).length,
-      dsx: rowsWithExclusivity.filter((r) => r.isExclusiveDsx).length,
-      ipx: rowsWithExclusivity.filter((r) => r.isExclusiveIpx).length,
-      full: rowsWithExclusivity.filter((r) => r.isFullyExclusive).length,
-    }),
-    [rowsWithExclusivity],
-  );
   // Region/Country/Dataset-scope (already applied server-side, baked into
   // `results`) plus Service and free-text search are legitimate "which
   // slice of the market am I analyzing" scoping -- everything downstream,
@@ -636,6 +640,23 @@ function MnoSearchPageInner() {
   const visibleRows = React.useMemo(
     () => baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
     [baseFilteredRows, exclusiveMode],
+  );
+
+  // Feeds the "N result(s) -- X SCCP exclusive..." summary line directly
+  // above the table. Deliberately derived from visibleRows (every active
+  // filter applied), not the unfiltered rowsWithExclusivity -- otherwise
+  // these per-service counts stay pinned to the whole dataset's totals no
+  // matter which Exclusivity Scope pill, Dataset Scope, or Wholesale
+  // Provider is selected, which reads as "26 fully exclusive" underneath a
+  // table that's visibly showing only 6 rows.
+  const exclusivityCounts = React.useMemo(
+    () => ({
+      sccp: visibleRows.filter((r) => r.isExclusiveSccp).length,
+      dsx: visibleRows.filter((r) => r.isExclusiveDsx).length,
+      ipx: visibleRows.filter((r) => r.isExclusiveIpx).length,
+      full: visibleRows.filter((r) => r.isFullyExclusive).length,
+    }),
+    [visibleRows],
   );
 
   // Live count per exclusivity pill/badge -- each pill's count is computed
@@ -820,6 +841,108 @@ function MnoSearchPageInner() {
     setProviderFilterInput("");
     pushParams({ provider: "" });
   }, [pushParams]);
+
+  const clearDatasetScope = React.useCallback(() => {
+    setDatasetScope("ir21");
+    pushParams({ datasetScope: "ir21" });
+  }, [pushParams]);
+
+  const clearExclusiveMode = React.useCallback(() => {
+    setExclusiveMode("all");
+    pushParams({ exclusiveMode: "all" });
+  }, [pushParams]);
+
+  const clearRegion = React.useCallback(() => {
+    setRegion("");
+    pushParams({ region: "" });
+  }, [pushParams]);
+
+  const clearCountry = React.useCallback(() => {
+    setCountry("");
+    pushParams({ country: "" });
+  }, [pushParams]);
+
+  const clearSearchText = React.useCallback(() => {
+    setQ("");
+    flushFreeTextFilter({ q: "" });
+    pushParams({ q: "" });
+  }, [flushFreeTextFilter, pushParams]);
+
+  // Drives the Active Output Scope Banner directly above the table -- one
+  // entry per narrowing dimension currently applied to `visibleRows`, each
+  // carrying its own dismiss handler. Without this, a user combining e.g.
+  // Dataset Scope + Exclusivity Scope + Wholesale Provider only ever saw a
+  // single isolated "Wholesale Provider" chip once they scrolled past the
+  // pill bars themselves, with no on-table-context explanation for why the
+  // other two constraints were also narrowing what they were looking at.
+  // Deliberately covers only the dimensions named in the banner spec
+  // (Scope, Exclusivity, Declared-service, Provider, Region, Country,
+  // Search) -- TADIG/MCC/MNC stay out since they're free-text fields
+  // already visible in their own inputs just above, not a hidden
+  // constraint someone could lose track of after scrolling.
+  const activeOutputDimensions = React.useMemo(
+    () =>
+      [
+        datasetScope !== "ir21" && {
+          key: "datasetScope",
+          sentence: DATASET_SCOPE_LABELS[datasetScope],
+          chip: `Scope: ${DATASET_SCOPE_LABELS[datasetScope]}`,
+          onClear: clearDatasetScope,
+        },
+        exclusiveMode !== "all" && {
+          key: "exclusiveMode",
+          sentence: EXCLUSIVITY_PILL_LABEL[exclusiveMode],
+          chip: `Exclusivity: ${EXCLUSIVITY_PILL_LABEL[exclusiveMode]}`,
+          onClear: clearExclusiveMode,
+        },
+        !!serviceFilter && {
+          key: "serviceFilter",
+          sentence: SERVICE_FILTER_LABEL[serviceFilter],
+          chip: SERVICE_FILTER_LABEL[serviceFilter],
+          onClear: clearServiceFilter,
+        },
+        !!providerFilter && {
+          key: "providerFilter",
+          sentence: `Wholesale Provider: ${providerFilter}`,
+          chip: `Provider: ${providerFilter}`,
+          onClear: clearProviderFilter,
+        },
+        !!region && {
+          key: "region",
+          sentence: `Region: ${region}`,
+          chip: `Region: ${region}`,
+          onClear: clearRegion,
+        },
+        !!country && {
+          key: "country",
+          sentence: `Country: ${country}`,
+          chip: `Country: ${country}`,
+          onClear: clearCountry,
+        },
+        !!q && {
+          key: "q",
+          sentence: `Search: "${q}"`,
+          chip: `Search: "${q}"`,
+          onClear: clearSearchText,
+        },
+      ].filter((d): d is { key: string; sentence: string; chip: string; onClear: () => void } => !!d),
+    [
+      datasetScope,
+      exclusiveMode,
+      serviceFilter,
+      providerFilter,
+      region,
+      country,
+      q,
+      clearDatasetScope,
+      clearExclusiveMode,
+      clearServiceFilter,
+      clearProviderFilter,
+      clearRegion,
+      clearCountry,
+      clearSearchText,
+    ],
+  );
 
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<MnoSuggestion[]>(`/mno/suggestions?q=${encodeURIComponent(query)}`),
@@ -1316,26 +1439,44 @@ function MnoSearchPageInner() {
           </Box>
         </Box>
 
-        {(serviceFilter || providerFilter) && (
-          <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", gap: 1 }}>
-            {serviceFilter && (
-              <Chip
-                label={`Filter: ${SERVICE_FILTER_LABEL[serviceFilter]} (${visibleRows.length})`}
-                color="primary"
-                onDelete={clearServiceFilter}
-                sx={{ fontWeight: 600 }}
-              />
-            )}
-            {providerFilter && (
-              <Chip
-                label={`Wholesale Provider: ${providerFilter} (${visibleRows.length})`}
-                onDelete={clearProviderFilter}
-                sx={{ fontWeight: 600, bgcolor: "#0A2540", color: "#fff", "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
-              />
-            )}
-            <Button size="small" startIcon={<RestartAltIcon fontSize="small" />} onClick={resetAllFilters} sx={{ color: "#0A2540" }}>
-              Reset All Filters
-            </Button>
+        {activeOutputDimensions.length > 0 && (
+          <Box
+            sx={{
+              mb: 1.5,
+              p: 1.5,
+              borderRadius: 1,
+              border: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+            }}
+          >
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Showing {visibleRows.length} MNO{visibleRows.length === 1 ? "" : "s"} matching:{" "}
+                <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}>
+                  {activeOutputDimensions.map((d) => d.sentence).join(" · ")}
+                </Box>
+              </Typography>
+              <Button
+                size="small"
+                startIcon={<RestartAltIcon fontSize="small" />}
+                onClick={resetAllFilters}
+                sx={{ color: "#0A2540", flexShrink: 0 }}
+              >
+                Clear All Filters ({activeOutputDimensions.length} Active)
+              </Button>
+            </Box>
+            <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {activeOutputDimensions.map((d) => (
+                <Chip
+                  key={d.key}
+                  label={d.chip}
+                  onDelete={d.onClear}
+                  size="small"
+                  sx={{ fontWeight: 600, bgcolor: "#0A2540", color: "#fff", "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
+                />
+              ))}
+            </Box>
           </Box>
         )}
 

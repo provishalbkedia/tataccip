@@ -316,7 +316,7 @@ export default function ExclusivityCharts({
                 )}
               </Box>
 
-              <Grid container spacing={2}>
+              <Grid container spacing={2} sx={{ mb: 3 }}>
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
@@ -336,13 +336,13 @@ export default function ExclusivityCharts({
                        flash short if `rows` starts empty (before the API
                        response lands) and then jumps taller once it
                        arrives. */}
-                    <Box sx={{ position: "relative", minHeight: 240 }}>
+                    <Box sx={{ position: "relative", minHeight: 320 }}>
                     {donutData.length === 0 ? (
                       <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
                         No {AGGREGATION_MODE_LABEL[aggregationMode]} accounts in this scope.
                       </Typography>
                     ) : (
-                      <ResponsiveContainer width="100%" height={240}>
+                      <ResponsiveContainer width="100%" height={320}>
                         <PieChart>
                           <Pie
                             // Animation off: Recharts' Pie entrance/update
@@ -430,8 +430,8 @@ export default function ExclusivityCharts({
                         ? `${activeProviderFilter}'s own accounts: exclusively theirs vs shared with a competitor`
                         : "Single-provider lock-in vs multi-provider redundancy, current scope"}
                     </Typography>
-                    <Box sx={{ position: "relative", minHeight: 240 }}>
-                    <ResponsiveContainer width="100%" height={240}>
+                    <Box sx={{ position: "relative", minHeight: 320 }}>
+                    <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={vulnerabilityData} layout="vertical" margin={{ left: 8, right: 24 }}>
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11 }} />

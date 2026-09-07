@@ -9,10 +9,13 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   FormControlLabel,
   Grid,
   IconButton,
   InputAdornment,
+  ListItemText,
+  Menu,
   MenuItem,
   Paper,
   Switch,
@@ -31,11 +34,15 @@ import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import ClearIcon from "@mui/icons-material/Clear";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LockIcon from "@mui/icons-material/Lock";
+import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
+import ExclusivityCharts from "./ExclusivityCharts";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { COUNTRY_OPTIONS, getCountryName, resolveCountryCode, type CountryOption } from "@/lib/countries";
@@ -51,7 +58,7 @@ const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Re
 // per service, so an MNO can be IPX-exclusive while dual-homed on SCCP.
 // "Fully exclusive" (the original, coarser definition) is the union
 // across all 3 services collapsing to exactly one member.
-type MnoSummaryWithExclusivity = MnoSummary & {
+export type MnoSummaryWithExclusivity = MnoSummary & {
   isExclusiveSccp: boolean;
   soleSccpProvider: string | null;
   isExclusiveDsx: boolean;
@@ -108,8 +115,17 @@ function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
   };
 }
 
-type ExclusiveMode = "all" | "full" | "sccp" | "dsx" | "ipx" | "any";
+// "shared" is deliberately excluded from EXCLUSIVE_MODES (the pill bar's
+// own 6 buttons) -- it's reachable only via the Exclusivity Vulnerability
+// Bar chart's "Multi-Provider" segment, not a top-level filter scope the
+// spec's pill bar itself lists.
+type ExclusiveMode = "all" | "full" | "sccp" | "dsx" | "ipx" | "any" | "shared";
 const EXCLUSIVE_MODES: ExclusiveMode[] = ["all", "full", "sccp", "dsx", "ipx", "any"];
+// EXCLUSIVE_MODES drives the pill bar's own 6 buttons; this also accepts
+// "shared" (reachable only via the Vulnerability chart's "Multi-Provider"
+// bar) so a URL/state restore doesn't silently drop that mode back to
+// "all" just because it isn't one of the pill bar's own options.
+const ALL_EXCLUSIVE_MODE_VALUES: ExclusiveMode[] = [...EXCLUSIVE_MODES, "shared"];
 const EXCLUSIVE_MODE_LABELS: Record<ExclusiveMode, string> = {
   all: "All MNOs (Default)",
   full: "Fully Exclusive",
@@ -117,6 +133,7 @@ const EXCLUSIVE_MODE_LABELS: Record<ExclusiveMode, string> = {
   dsx: "DSX Exclusive",
   ipx: "IPX Exclusive",
   any: "Any Service Exclusive",
+  shared: "Multi-Provider (Shared)",
 };
 const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusivity) => boolean> = {
   all: () => true,
@@ -125,6 +142,7 @@ const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusiv
   dsx: (r) => r.isExclusiveDsx,
   ipx: (r) => r.isExclusiveIpx,
   any: (r) => r.isAnyServiceExclusive,
+  shared: (r) => !r.isFullyExclusive,
 };
 
 // Drill-in from the Dashboard's SCCP/DSX/IPX Relationships cards
@@ -429,14 +447,18 @@ function MnoSearchPageInner() {
     }),
     [rowsWithExclusivity],
   );
-  const visibleRows = React.useMemo(() => {
+  // Every filter except exclusiveMode itself -- the shared base both
+  // visibleRows (below) and exclusivityModeCounts (further down) filter
+  // from, so each exclusivity pill's own count reflects "how many rows
+  // would show if this pill were picked instead", not the currently
+  // active one only.
+  const baseFilteredRows = React.useMemo(() => {
     const qNorm = debouncedFreeText.q.trim().toLowerCase();
     const tadigNorm = debouncedFreeText.tadig.trim().toLowerCase();
     const mccNorm = debouncedFreeText.mcc.trim().toLowerCase();
     const mncNorm = debouncedFreeText.mnc.trim().toLowerCase();
 
     return rowsWithExclusivity
-      .filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode])
       .filter((r) => !serviceFilter || SERVICE_FILTER_PREDICATE[serviceFilter](r))
       .filter((r) => !tadigNorm || r.tadigCode.toLowerCase().includes(tadigNorm))
       .filter((r) => !mccNorm || r.mcc.toLowerCase().includes(mccNorm))
@@ -458,7 +480,30 @@ function MnoSearchPageInner() {
           .toLowerCase();
         return haystack.includes(qNorm);
       });
-  }, [rowsWithExclusivity, exclusiveMode, serviceFilter, debouncedFreeText]);
+  }, [rowsWithExclusivity, serviceFilter, debouncedFreeText]);
+
+  const visibleRows = React.useMemo(
+    () => baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE[exclusiveMode]),
+    [baseFilteredRows, exclusiveMode],
+  );
+
+  // Live count per exclusivity pill/badge -- computed from baseFilteredRows
+  // (unaffected by exclusiveMode itself) so every pill shows what picking
+  // *it* would produce, all simultaneously, the same "counts race ahead of
+  // the single active selection" pattern the Market Intelligence page's
+  // Change filter pills use.
+  const exclusivityModeCounts: Record<ExclusiveMode, number> = React.useMemo(
+    () => ({
+      all: baseFilteredRows.length,
+      full: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.full).length,
+      sccp: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.sccp).length,
+      dsx: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.dsx).length,
+      ipx: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.ipx).length,
+      any: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.any).length,
+      shared: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.shared).length,
+    }),
+    [baseFilteredRows],
+  );
 
   // Distinct-entity subtotals for the column-header chips -- derived
   // entirely client-side from visibleRows (the exact rows the grid is
@@ -506,7 +551,7 @@ function MnoSearchPageInner() {
     const urlService = searchParams.get("service");
     setServiceFilter(urlService && SERVICE_FILTERS.includes(urlService as ServiceFilter) ? (urlService as ServiceFilter) : "");
     const urlExclusiveMode = searchParams.get("exclusiveMode");
-    setExclusiveMode(urlExclusiveMode && EXCLUSIVE_MODES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
+    setExclusiveMode(urlExclusiveMode && ALL_EXCLUSIVE_MODE_VALUES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
     setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
@@ -515,6 +560,7 @@ function MnoSearchPageInner() {
 
   const pushParams = React.useCallback(
     (overrides?: {
+      q?: string;
       country?: string;
       region?: Region | "";
       onlyWithProviders?: boolean;
@@ -522,6 +568,15 @@ function MnoSearchPageInner() {
       datasetScope?: DatasetScope;
       service?: ServiceFilter | "";
     }) => {
+      // A same-tick caller that just called setQ(...) right before this
+      // (e.g. a chart drill-down click) would otherwise have this read the
+      // *stale* `q` from this closure -- React doesn't re-run pushParams's
+      // own memo mid-tick just because setQ was called a moment earlier in
+      // the same handler. Without the override, the URL silently omits the
+      // new search term, and the searchParams-sync effect above then wipes
+      // the in-memory `q` back to "" once the router.push navigation lands
+      // a moment later, undoing the drill-down.
+      const nextQ = overrides?.q ?? q;
       const nextCountry = overrides?.country ?? country;
       const nextRegion = overrides?.region ?? region;
       const nextOnlyWithProviders = overrides?.onlyWithProviders ?? onlyWithProviders;
@@ -529,7 +584,7 @@ function MnoSearchPageInner() {
       const nextDatasetScope = overrides?.datasetScope ?? datasetScope;
       const nextService = overrides?.service ?? serviceFilter;
       const params = new URLSearchParams();
-      if (q) params.set("q", q);
+      if (nextQ) params.set("q", nextQ);
       if (tadig) params.set("tadig", tadig);
       if (nextCountry) params.set("country", nextCountry);
       if (mcc) params.set("mcc", mcc);
@@ -611,6 +666,49 @@ function MnoSearchPageInner() {
       setWarmingUp(false);
     }
   }, [searchParams]);
+
+  // ---- Exclusivity MIS report downloads ----
+  // exclusivityPdfReport/exclusivityExcelReport (and jspdf/jspdf-autotable/
+  // exceljs, which they wrap) are dynamically imported only once a user
+  // actually picks a format, same "don't pay for a report nobody may ever
+  // generate" reasoning as the Market Intelligence page's own MIS report.
+  const [exclusivityReportMenuAnchor, setExclusivityReportMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [generatingExclusivityReport, setGeneratingExclusivityReport] = React.useState<"pdf" | "excel" | null>(null);
+  const EXCLUSIVITY_REPORT_GENERATING_LABEL: Record<"pdf" | "excel", string> = {
+    pdf: "Generating Brief…",
+    excel: "Generating Workbook…",
+  };
+  const buildExclusivityReportInput = () => ({
+    generatedAt: new Date(),
+    scope: {
+      datasetScope: DATASET_SCOPE_LABELS[datasetScope],
+      region: region || "All",
+      exclusivityMode: EXCLUSIVE_MODE_LABELS[exclusiveMode],
+      serviceFilter: serviceFilter ? SERVICE_FILTER_LABEL[serviceFilter] : "All",
+      search: q || null,
+    },
+    rows: visibleRows,
+  });
+  const handleDownloadExclusivityPdf = async () => {
+    setExclusivityReportMenuAnchor(null);
+    setGeneratingExclusivityReport("pdf");
+    try {
+      const { generateExclusivityPdfReport } = await import("@/lib/reports/exclusivityPdfReport");
+      await generateExclusivityPdfReport(buildExclusivityReportInput());
+    } finally {
+      setGeneratingExclusivityReport(null);
+    }
+  };
+  const handleDownloadExclusivityExcel = async () => {
+    setExclusivityReportMenuAnchor(null);
+    setGeneratingExclusivityReport("excel");
+    try {
+      const { generateExclusivityExcelReport } = await import("@/lib/reports/exclusivityExcelReport");
+      await generateExclusivityExcelReport(buildExclusivityReportInput());
+    } finally {
+      setGeneratingExclusivityReport(null);
+    }
+  };
 
   return (
     <RequireAuth>
@@ -886,75 +984,190 @@ function MnoSearchPageInner() {
             ))}
           </ToggleButtonGroup>
 
-          <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.5 }}>
-            <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
-              <FormControlLabel
-                sx={{ ml: 0 }}
-                control={
-                  <Switch
-                    checked={onlyWithProviders}
-                    onChange={(e) => {
-                      const next = e.target.checked;
-                      setOnlyWithProviders(next);
-                      pushParams({ onlyWithProviders: next });
-                    }}
-                  />
-                }
-                label={<Typography variant="body2">Only with listed providers</Typography>}
-              />
-            </Tooltip>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box sx={{ position: "relative" }}>
-                <TextField
-                  select
-                  size="small"
-                  label="Exclusivity"
-                  value={exclusiveMode}
+          <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
+            <FormControlLabel
+              sx={{ ml: 0 }}
+              control={
+                <Switch
+                  checked={onlyWithProviders}
                   onChange={(e) => {
-                    const next = e.target.value as ExclusiveMode;
-                    setExclusiveMode(next);
-                    pushParams({ exclusiveMode: next });
+                    const next = e.target.checked;
+                    setOnlyWithProviders(next);
+                    pushParams({ onlyWithProviders: next });
                   }}
-                  sx={{ minWidth: 200, ...(exclusiveMode !== "all" && { "& .MuiSelect-select": { pr: "56px !important" } }) }}
-                >
-                  {EXCLUSIVE_MODES.map((m) => (
-                    <MenuItem key={m} value={m}>
-                      {EXCLUSIVE_MODE_LABELS[m]}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                {exclusiveMode !== "all" && (
-                  <IconButton
-                    size="small"
-                    title="Clear"
-                    onClick={() => {
-                      setExclusiveMode("all");
-                      pushParams({ exclusiveMode: "all" });
-                    }}
-                    sx={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)" }}
-                  >
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                )}
-              </Box>
-              <Tooltip title="Filters the table by wholesale-provider exclusivity — either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio.">
-                <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
-              </Tooltip>
-            </Box>
-          </Box>
+                />
+              }
+              label={<Typography variant="body2">Only with listed providers</Typography>}
+            />
+          </Tooltip>
         </Box>
 
-        <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Typography variant="body2" color="text.secondary">
-            {visibleRows.length} result(s) — {exclusivityCounts.sccp} SCCP exclusive, {exclusivityCounts.dsx} DSX
-            exclusive, {exclusivityCounts.ipx} IPX exclusive, {exclusivityCounts.full} fully exclusive. Showing MNO /
-            Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click anywhere on
-            a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO / Customer&apos;s name
-            to open its connectivity details.
-          </Typography>
-          <Tooltip title="Select 2 to 5 MNOs / Customers to launch the side-by-side Interconnect Parity Comparison Drawer.">
-            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
-          </Tooltip>
+        {/* Exclusivity Scope -- the platform's most critical competitive
+           intelligence dimension (single-provider lock-in vs multi-provider
+           vulnerability), promoted to its own high-contrast pill bar rather
+           than the small low-visibility <Select> it used to be. Amber/gold
+           accent (rather than the Market Intelligence page's teal) gives
+           this "lock-in" domain its own distinct visual identity. */}
+        <Paper variant="outlined" sx={{ mb: 2, p: 1.5, borderColor: "#F0C674", bgcolor: "#FFFBF2" }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 1 }}>
+            <LockIcon fontSize="small" sx={{ color: "#B45309" }} />
+            <Typography variant="body2" fontWeight={700} sx={{ color: "#7C4A03", letterSpacing: 0.3 }}>
+              EXCLUSIVITY SCOPE
+            </Typography>
+            <Tooltip title="Filters the table by wholesale-provider exclusivity -- either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio. Identifying single-provider lock-in vs multi-provider vulnerability is this page's core competitive-intelligence purpose.">
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+            </Tooltip>
+          </Box>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={exclusiveMode}
+            onChange={(_, value: ExclusiveMode | null) => {
+              if (!value) return;
+              setExclusiveMode(value);
+              pushParams({ exclusiveMode: value });
+            }}
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 1,
+              "& .MuiToggleButton-root": {
+                borderRadius: "999px !important",
+                textTransform: "none",
+                px: 1.75,
+                minHeight: 40,
+                border: "1px solid",
+                borderColor: "#E8D4A8",
+                bgcolor: "#FFFFFF",
+                color: "#0A2540",
+                fontWeight: 500,
+                transition: "box-shadow 0.15s, background-color 0.15s",
+                "&:hover": { bgcolor: "#FFF3DC" },
+                "&.Mui-selected, &.Mui-selected:hover": {
+                  bgcolor: "#0A2540",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  borderColor: "#F59E0B",
+                  boxShadow: "0 2px 4px rgba(180,83,9,0.25)",
+                },
+              },
+            }}
+          >
+            <ToggleButton value="all">All MNOs ({exclusivityModeCounts.all})</ToggleButton>
+            <ToggleButton value="full">★ Fully Exclusive ({exclusivityModeCounts.full})</ToggleButton>
+            <ToggleButton value="sccp">SCCP Solo ({exclusivityModeCounts.sccp})</ToggleButton>
+            <ToggleButton value="dsx">DSX Solo ({exclusivityModeCounts.dsx})</ToggleButton>
+            <ToggleButton value="ipx">IPX Solo ({exclusivityModeCounts.ipx})</ToggleButton>
+            <ToggleButton value="any">Any Service Exclusive ({exclusivityModeCounts.any})</ToggleButton>
+          </ToggleButtonGroup>
+        </Paper>
+
+        {/* Header metric badges -- each clickable, activating that
+           exclusivity mode instantly, same as clicking its pill above. */}
+        <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", gap: 1 }}>
+          <Chip
+            clickable
+            onClick={() => {
+              setExclusiveMode("full");
+              pushParams({ exclusiveMode: "full" });
+            }}
+            label={`Fully Exclusive: ${exclusivityModeCounts.full} / ${exclusivityModeCounts.all} (${exclusivityModeCounts.all > 0 ? ((exclusivityModeCounts.full / exclusivityModeCounts.all) * 100).toFixed(1) : "0.0"}%)`}
+            sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 700 }}
+          />
+          <Chip
+            clickable
+            onClick={() => {
+              setExclusiveMode("sccp");
+              pushParams({ exclusiveMode: "sccp" });
+            }}
+            label={`SCCP Exclusive: ${exclusivityModeCounts.sccp}`}
+            variant="outlined"
+            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
+          />
+          <Chip
+            clickable
+            onClick={() => {
+              setExclusiveMode("dsx");
+              pushParams({ exclusiveMode: "dsx" });
+            }}
+            label={`DSX Exclusive: ${exclusivityModeCounts.dsx}`}
+            variant="outlined"
+            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
+          />
+          <Chip
+            clickable
+            onClick={() => {
+              setExclusiveMode("ipx");
+              pushParams({ exclusiveMode: "ipx" });
+            }}
+            label={`IPX Exclusive: ${exclusivityModeCounts.ipx}`}
+            variant="outlined"
+            sx={{ borderColor: "#F59E0B", color: "#7C4A03", fontWeight: 600 }}
+          />
+        </Box>
+
+        <ExclusivityCharts
+          rows={baseFilteredRows}
+          onProviderClick={(providerName) => {
+            setExclusiveMode("full");
+            setQ(providerName);
+            flushFreeTextFilter({ q: providerName });
+            pushParams({ exclusiveMode: "full", q: providerName });
+          }}
+          onVulnerabilityClick={(mode) => {
+            setExclusiveMode(mode);
+            pushParams({ exclusiveMode: mode });
+          }}
+        />
+
+        <Box sx={{ mb: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              {visibleRows.length} result(s) — {exclusivityCounts.sccp} SCCP exclusive, {exclusivityCounts.dsx} DSX
+              exclusive, {exclusivityCounts.ipx} IPX exclusive, {exclusivityCounts.full} fully exclusive. Showing MNO /
+              Customer connectivity footprint strictly as declared in official GSMA IR.21 documents. Click anywhere on
+              a row (or its checkbox) to select 2–5 for side-by-side comparison, or click an MNO / Customer&apos;s name
+              to open its connectivity details.
+            </Typography>
+            <Tooltip title="Select 2 to 5 MNOs / Customers to launch the side-by-side Interconnect Parity Comparison Drawer.">
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", flexShrink: 0 }} />
+            </Tooltip>
+          </Box>
+
+          <Box sx={{ flexShrink: 0 }}>
+            <Button
+              variant="contained"
+              size="small"
+              disabled={visibleRows.length === 0 || !!generatingExclusivityReport}
+              startIcon={
+                generatingExclusivityReport ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : <WorkspacePremiumIcon />
+              }
+              endIcon={!generatingExclusivityReport && <ArrowDropDownIcon />}
+              onClick={(e) => setExclusivityReportMenuAnchor(e.currentTarget)}
+              sx={{
+                minHeight: 40,
+                background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
+                color: "#FFFFFF",
+                fontWeight: 700,
+                border: "1px solid #F59E0B",
+                "&:hover": { background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)", boxShadow: 4 },
+              }}
+            >
+              {generatingExclusivityReport ? EXCLUSIVITY_REPORT_GENERATING_LABEL[generatingExclusivityReport] : "Download Exclusivity MIS Report"}
+            </Button>
+            <Menu
+              anchorEl={exclusivityReportMenuAnchor}
+              open={!!exclusivityReportMenuAnchor}
+              onClose={() => setExclusivityReportMenuAnchor(null)}
+            >
+              <MenuItem onClick={handleDownloadExclusivityPdf}>
+                <ListItemText primary="📄 Executive PDF Report" secondary="Branded brief with exclusivity charts, carrier footprint matrix & MNO inventory" />
+              </MenuItem>
+              <MenuItem onClick={handleDownloadExclusivityExcel}>
+                <ListItemText primary="📊 Exclusivity Workbook (.xlsx)" secondary="Market share KPIs + full MNO roster with frozen headers & auto-filter" />
+              </MenuItem>
+            </Menu>
+          </Box>
         </Box>
 
         {serviceFilter && (

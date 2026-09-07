@@ -45,6 +45,7 @@ import DataGrid from "@/components/DataGrid";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import InfoTooltip from "@/components/InfoTooltip";
 import PivotSummaryModal from "./PivotSummaryModal";
+import MarketDynamicsCharts from "./MarketDynamicsCharts";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
@@ -865,27 +866,27 @@ export default function Ir21ChangesPage() {
     };
   }, [countsQueryString]);
 
-  // Market Share Pivot Summary modal: scoped to the Master Filter Bar's own
+  // Market dynamics dataset: scoped to the Master Filter Bar's own
   // dimensions only (Timeframe/Custom Range/Region/Service, via
   // overviewQueryString -- the same scope the KPI cards use), deliberately
-  // ignoring the lower Change/Provider/Search refinements, since the pivot
-  // is a comprehensive market-share view triggered from the top of the
-  // page, above those controls. Fetched lazily on open, not on every
-  // keystroke elsewhere on the page.
-  const [pivotRows, setPivotRows] = React.useState<Ir21RoutingChangeRow[]>([]);
-  const [pivotLoading, setPivotLoading] = React.useState(false);
+  // ignoring the lower Change/Provider/Search refinements. Backs both the
+  // always-visible "Executive Market Dynamics" chart strip and the Market
+  // Share Pivot Summary modal (a comprehensive market-share view triggered
+  // from above those controls), so both stay in sync off one fetch instead
+  // of two.
+  const [dynamicsRows, setDynamicsRows] = React.useState<Ir21RoutingChangeRow[]>([]);
+  const [dynamicsLoading, setDynamicsLoading] = React.useState(true);
   React.useEffect(() => {
-    if (!pivotOpen) return;
     let cancelled = false;
-    setPivotLoading(true);
+    setDynamicsLoading(true);
     api
       .get<Ir21RoutingChangeRow[]>(`/analytics/ir21-changes/feed?${overviewQueryString}`)
-      .then((f) => !cancelled && setPivotRows(f))
-      .finally(() => !cancelled && setPivotLoading(false));
+      .then((f) => !cancelled && setDynamicsRows(f))
+      .finally(() => !cancelled && setDynamicsLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [pivotOpen, overviewQueryString]);
+  }, [overviewQueryString]);
 
   // Bucketed exactly the way Ir21RoutingChangesService.fetchFiltered itself
   // interprets each pill's changeType value -- see PillCounts' own doc
@@ -1057,6 +1058,27 @@ export default function Ir21ChangesPage() {
     // REMOVED event. Leaving changeType clear shows every event for every
     // operator the KPI is actually counting, matching its own number.
     setChangeType("");
+  };
+
+  // Executive Market Dynamics chart strip -- each chart click drives the
+  // exact same state its equivalent manual control below already does, so
+  // a chart click and picking the same value by hand behave identically.
+  const handleChartServiceClick = (svc: string) => {
+    setService(svc as ServiceName);
+    setActiveKpi(null);
+    setProviderRole(null);
+  };
+  const handleChartCarrierClick = (providerId: number, providerName: string) => {
+    setActiveKpi(null);
+    setProvider({ id: providerId, providerName, matchedAlias: null });
+    setProviderRole(null);
+    setProviderInput(providerName);
+    setChangeType("");
+  };
+  const handleChartRegionClick = (regionValue: string) => {
+    setRegion(regionValue as Region);
+    setActiveKpi(null);
+    setProviderRole(null);
   };
 
   // Counts exactly the filter/selection dimensions "Clear Filters" flushes
@@ -1642,6 +1664,14 @@ export default function Ir21ChangesPage() {
           />
         </Grid>
 
+        <MarketDynamicsCharts
+          rows={dynamicsRows}
+          loading={dynamicsLoading}
+          onServiceClick={handleChartServiceClick}
+          onCarrierClick={handleChartCarrierClick}
+          onRegionClick={handleChartRegionClick}
+        />
+
         {isMobile ? (
           <>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2 }}>
@@ -1870,8 +1900,8 @@ export default function Ir21ChangesPage() {
         <PivotSummaryModal
           open={pivotOpen}
           onClose={() => setPivotOpen(false)}
-          rows={pivotRows}
-          loading={pivotLoading}
+          rows={dynamicsRows}
+          loading={dynamicsLoading}
           scopeLabel={`${dateScopeLabel} | ${region || "All Regions"} | ${service || "All Services"}`}
         />
       </AppShell>

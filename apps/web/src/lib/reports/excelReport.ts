@@ -1,4 +1,4 @@
-import type { Workbook, Worksheet } from "exceljs";
+import type { DataBarRuleType, Workbook, Worksheet } from "exceljs";
 import {
   CHANGE_TYPE_REPORT_COLOR,
   MisReportInput,
@@ -116,6 +116,7 @@ function buildSummarySheet(wb: Workbook, input: MisReportInput) {
   styleTableHeaderRow(carrierRow);
   row++;
   const carrierMovement = aggregateCarrierMovement(input.rows);
+  const netMovementStartRow = row;
   if (carrierMovement.length === 0) {
     ws.getCell(row, 1).value = "No carrier gain/loss events in the current filter scope.";
     ws.getCell(row, 1).font = { italic: true, color: { argb: argb(REPORT_COLORS.textSecondary) } };
@@ -126,6 +127,36 @@ function buildSummarySheet(wb: Workbook, input: MisReportInput) {
     const netCell = ws.getCell(row, 4);
     netCell.font = { bold: true, color: { argb: argb(c.net >= 0 ? REPORT_COLORS.success : REPORT_COLORS.danger) } };
     row++;
+  }
+  // Conditional-formatting data bar on the Net Movement column -- a reader
+  // scanning the sheet (rather than the PDF's own bar chart) still gets an
+  // at-a-glance magnitude cue directly on the cells. exceljs's writer only
+  // ever emits <cfvo> and a single <color> for a dataBar rule (see
+  // DatabarXform.render), so Excel renders negative values with its own
+  // built-in negative-bar styling (a red fill by default) rather than a
+  // second color this library can configure -- still gets the "loss looks
+  // different from a gain" outcome the report wants, just via Excel's own
+  // default rather than an explicit negativeFillColor (which exceljs has
+  // no writer support for at all).
+  if (carrierMovement.length > 0) {
+    // `color` renders correctly (DatabarXform.render writes it out), but
+    // exceljs's own DataBarRuleType is missing the field from its type
+    // declarations -- cast rather than drop a property the writer actually
+    // consumes.
+    const dataBarRule = {
+      type: "dataBar",
+      priority: 1,
+      minLength: 0,
+      maxLength: 100,
+      gradient: false,
+      border: false,
+      color: { argb: argb(REPORT_COLORS.success) },
+      cfvo: [{ type: "autoMin" }, { type: "autoMax" }],
+    } as unknown as DataBarRuleType;
+    ws.addConditionalFormatting({
+      ref: `D${netMovementStartRow}:D${row - 1}`,
+      rules: [dataBarRule],
+    });
   }
   row++;
 

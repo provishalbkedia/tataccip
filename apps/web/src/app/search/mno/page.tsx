@@ -1174,6 +1174,7 @@ function MnoSearchPageInner() {
 
         <ExclusivityCharts
           rows={chartRows}
+          providerScopedRows={baseFilteredRows}
           aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
           onProviderClick={(providerName) => {

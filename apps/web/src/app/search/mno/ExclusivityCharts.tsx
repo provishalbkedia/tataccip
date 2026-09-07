@@ -18,6 +18,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -26,6 +27,7 @@ import ShowChartIcon from "@mui/icons-material/ShowChart";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import CloseIcon from "@mui/icons-material/Close";
 import StarIcon from "@mui/icons-material/Star";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { aggregateCarrierExclusivity, ExclusivityAggregationMode } from "@/lib/reports/exclusivityReportData";
 import type { MnoSummaryWithExclusivity } from "./page";
@@ -89,6 +91,7 @@ function CustomTooltip({
 
 export default function ExclusivityCharts({
   rows,
+  providerScopedRows,
   aggregationMode,
   activeProviderFilter,
   onProviderClick,
@@ -96,6 +99,13 @@ export default function ExclusivityCharts({
   onVulnerabilityClick,
 }: {
   rows: MnoSummaryWithExclusivity[];
+  // Same underlying data as `rows`, but narrowed to the active Wholesale
+  // Provider filter (page.tsx's baseFilteredRows, not chartRows) -- used
+  // ONLY by the Exclusivity Vulnerability bar below, and only while a
+  // provider filter is active, to answer a different, carrier-specific
+  // question ("of THIS carrier's own accounts, how many are exclusively
+  // ours vs shared with a competitor") than the donut's market-wide one.
+  providerScopedRows: MnoSummaryWithExclusivity[];
   // Mirrors the page's own active Exclusivity Scope pill (mapped via
   // toAggregationMode) -- "full"/"sccp"/"dsx"/"ipx" scope the donut and the
   // Tata Comm KPI strip to exactly that pill's own definition; "any" is the
@@ -143,14 +153,39 @@ export default function ExclusivityCharts({
     };
   }, [carrierShare]);
 
+  // Two distinct questions depending on whether a carrier is selected:
+  // - No provider filter: "of the whole addressable market, how much is
+  //   locked to a single carrier vs has redundancy" -- a market-structure
+  //   metric, computed from `rows` (the same unfiltered-by-provider set the
+  //   donut uses), so it doesn't move just because a carrier gets
+  //   highlighted.
+  // - A provider filter active: "of THIS carrier's own accounts, how many
+  //   are exclusively ours vs shared with a competitor" -- a carrier's own
+  //   vulnerability to displacement, computed from providerScopedRows (the
+  //   provider-narrowed row set). Every row there already involves the
+  //   filtered carrier by construction, so isFullyExclusive on one of them
+  //   can only mean *that* carrier is the sole provider (a row can't be
+  //   fully exclusive to two different carriers at once) -- no separate
+  //   "is this MY exclusive account" check is needed beyond the flag
+  //   already on the row.
+  const isCarrierScoped = !!activeProviderFilter;
+  const vulnerabilitySourceRows = isCarrierScoped ? providerScopedRows : rows;
   const vulnerabilityData = React.useMemo(() => {
-    const fully = rows.filter((r) => r.isFullyExclusive).length;
-    const shared = rows.length - fully;
+    const fully = vulnerabilitySourceRows.filter((r) => r.isFullyExclusive).length;
+    const shared = vulnerabilitySourceRows.length - fully;
     return [
-      { mode: "full" as const, label: "Fully Exclusive (Single Provider)", count: fully },
-      { mode: "shared" as const, label: "Multi-Provider (Shared)", count: shared },
+      {
+        mode: "full" as const,
+        label: isCarrierScoped ? `Exclusive to ${activeProviderFilter}` : "Fully Exclusive (Single Provider)",
+        count: fully,
+      },
+      {
+        mode: "shared" as const,
+        label: isCarrierScoped ? "Shared with Other Carriers" : "Multi-Provider (Shared)",
+        count: shared,
+      },
     ];
-  }, [rows]);
+  }, [vulnerabilitySourceRows, isCarrierScoped, activeProviderFilter]);
 
   const homeCarrierRank = carrierShare.findIndex((c) => c.providerName === HOME_CARRIER);
   const homeCarrierEntry = homeCarrierRank >= 0 ? carrierShare[homeCarrierRank] : null;
@@ -375,11 +410,25 @@ export default function ExclusivityCharts({
 
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      Exclusivity Vulnerability
-                    </Typography>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                        Exclusivity Vulnerability
+                      </Typography>
+                      <Tooltip
+                        title={
+                          isCarrierScoped
+                            ? `Of ${activeProviderFilter}'s own on-net MNOs in this scope, how many have declared ${activeProviderFilter} as their sole provider (locked in, safe from displacement) vs also declare at least one other carrier for some service (a contested account a competitor could win). Always reflects the selected carrier -- this is the one chart that DOES change when you pick a different Wholesale Provider.`
+                            : "Across the whole current scope (not narrowed by any single carrier), how many MNOs have exactly one wholesale provider across all their declared services (fully locked in) vs declare 2+ different providers (redundant, contestable). A market-structure metric -- select a Wholesale Provider above to see this carrier's own exclusive-vs-shared split instead."
+                        }
+                        arrow
+                      >
+                        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
+                      </Tooltip>
+                    </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      Single-provider lock-in vs multi-provider redundancy, current scope
+                      {isCarrierScoped
+                        ? `${activeProviderFilter}'s own accounts: exclusively theirs vs shared with a competitor`
+                        : "Single-provider lock-in vs multi-provider redundancy, current scope"}
                     </Typography>
                     <Box sx={{ position: "relative", minHeight: 240 }}>
                     <ResponsiveContainer width="100%" height={240}>
@@ -389,7 +438,11 @@ export default function ExclusivityCharts({
                         <RechartsTooltip
                           content={
                             <CustomTooltip
-                              formatter={(p) => `${p.label}: ${p.count} MNOs (${rows.length > 0 ? (((p.count as number) / rows.length) * 100).toFixed(1) : "0.0"}%)`}
+                              formatter={(p) =>
+                                `${p.label}: ${p.count} MNOs (${
+                                  vulnerabilitySourceRows.length > 0 ? (((p.count as number) / vulnerabilitySourceRows.length) * 100).toFixed(1) : "0.0"
+                                }%)`
+                              }
                             />
                           }
                         />

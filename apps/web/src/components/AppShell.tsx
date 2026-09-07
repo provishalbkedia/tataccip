@@ -39,6 +39,7 @@ import { api } from "@/lib/api";
 import LoginHistoryChip from "./LoginHistoryChip";
 import OnlineUsersBadge from "./OnlineUsersBadge";
 import DisclaimerModal from "./DisclaimerModal";
+import ExecutiveCopilot from "./assistant/ExecutiveCopilot";
 
 const DRAWER_WIDTH = 240;
 const DRAWER_WIDTH_COLLAPSED = 72;
@@ -345,6 +346,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </Box>
 
       <DisclaimerModal open={disclaimerOpen} onClose={() => setDisclaimerOpen(false)} />
+      <ExecutiveCopilot />
     </Box>
   );
 }

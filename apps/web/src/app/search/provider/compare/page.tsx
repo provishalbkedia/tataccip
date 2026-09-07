@@ -98,8 +98,15 @@ function ProviderComparePageInner() {
     api
       .get<ProviderCompareMatrixResponse>(`/provider/compare-matrix?ids=${ids.join(",")}`)
       .then((res) => {
-        setRows(res.rows);
-        setProviderMeta(res.providers);
+        // Defensive fallback at this API boundary specifically: `res.rows`/
+        // `res.providers` are typed as always-arrays, but that only holds
+        // once the deployed backend actually returns this {providers, rows}
+        // shape -- a backend still running pre-ASN-feature code would
+        // return a bare array instead (no .rows/.providers at all), and
+        // trusting the type blindly would set state to undefined and crash
+        // providerList's own .find() below the moment it renders.
+        setRows(res.rows ?? []);
+        setProviderMeta(res.providers ?? []);
         setLoading(false);
       })
       .catch((e) => {

@@ -244,8 +244,21 @@ const DATASET_SCOPES: DatasetScope[] = ["ir21", "reachlist_claimed", "reachlist_
 const DATASET_SCOPE_LABELS: Record<DatasetScope, string> = {
   ir21: "IR.21 Verified",
   reachlist_claimed: "As per Reach List",
-  reachlist_only: "Only in Reach List",
+  reachlist_only: "Reach List Exclusive only",
   all: "All MNOs (IR.21 + Reach List)",
+};
+
+// Drives the header badge beside the page title (previously a hardcoded
+// "GSMA IR.21 Declared" that stayed put no matter which Dataset Scope pill
+// was active, silently mislabeling the data source once someone switched
+// to e.g. "As per Reach List"). Each scope gets its own wording AND its own
+// accent color so the badge doubles as a quick visual cue for which source
+// is driving the page, not just a static logo-like label.
+const DATASET_SCOPE_BADGE: Record<DatasetScope, { label: string; bgcolor: string; color: string }> = {
+  ir21: { label: "GSMA IR.21 Declared", bgcolor: "#0A2540", color: "#FFFFFF" },
+  reachlist_claimed: { label: "As per Reach List", bgcolor: "#00A98A", color: "#FFFFFF" },
+  reachlist_only: { label: "Reach List Exclusive Only", bgcolor: "#F59E0B", color: "#4A2E00" },
+  all: { label: "Combined (IR.21 + Reach List)", bgcolor: "#455A64", color: "#FFFFFF" },
 };
 
 // Shared active/inactive pill styling for the master filter row
@@ -1014,7 +1027,15 @@ function MnoSearchPageInner() {
           <Typography variant="h5" fontWeight={700}>
             MNO / Cust Search
           </Typography>
-          <Chip size="small" color="primary" label="GSMA IR.21 Declared" />
+          <Chip
+            size="small"
+            label={DATASET_SCOPE_BADGE[datasetScope].label}
+            sx={{
+              bgcolor: DATASET_SCOPE_BADGE[datasetScope].bgcolor,
+              color: DATASET_SCOPE_BADGE[datasetScope].color,
+              fontWeight: 700,
+            }}
+          />
         </Box>
         <Paper sx={{ p: 2, mb: 2 }}>
           <Grid container spacing={2} alignItems="center">
@@ -1253,7 +1274,7 @@ function MnoSearchPageInner() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML on file, showing only IR.21-declared providers. As per Reach List: has at least one Reach List claim (whether or not it's also IR.21-verified), showing only Reach-List-claimed providers. Only in Reach List: legacy rows known solely via a Reach List upload, no IR.21 XML ever ingested, showing only Reach-List-claimed providers. All MNOs: everything, providers merged from both sources.">
+          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML on file, showing only IR.21-declared providers. As per Reach List: has at least one Reach List claim (whether or not it's also IR.21-verified), showing only Reach-List-claimed providers. Reach List Exclusive only: MNO / Customer connectivity claimed solely via wholesale Reach Lists without an official GSMA IR.21 declaration. All MNOs: everything, providers merged from both sources.">
             <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
           </Tooltip>
         </Box>

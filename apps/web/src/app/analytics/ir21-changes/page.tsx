@@ -21,6 +21,7 @@ import {
   Menu,
   MenuItem,
   Paper,
+  Popover,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -36,11 +37,14 @@ import TuneIcon from "@mui/icons-material/Tune";
 import CloseIcon from "@mui/icons-material/Close";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import PivotTableChartIcon from "@mui/icons-material/PivotTableChart";
+import DateRangeIcon from "@mui/icons-material/DateRange";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import InfoTooltip from "@/components/InfoTooltip";
+import PivotSummaryModal from "./PivotSummaryModal";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { getCountryName } from "@/lib/countries";
@@ -242,6 +246,27 @@ function formatAbsoluteDate(iso: string): string {
   const month = d.toLocaleString("en-US", { month: "short" });
   return `${day}-${month}-${d.getFullYear()}`;
 }
+
+/** Same "DD-MMM-YYYY" style as formatAbsoluteDate, for a plain "YYYY-MM-DD"
+ * date-only string (what a native <input type="date"> and the Custom Date
+ * Range picker's own state hold) rather than a full ISO timestamp. */
+function formatDateShort(yyyyMmDd: string): string {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return `${day}-${month}-${date.getUTCFullYear()}`;
+}
+
+interface CustomDateRange {
+  from: string;
+  to: string;
+}
+
+// Sentinel so the Timeframe ToggleButtonGroup can mark a distinct "Custom
+// Range" button selected without colliding with any real Timeframe value --
+// same pattern as DEFAULT_CHURN_PILL below for the Change filter group.
+const CUSTOM_RANGE_PILL = "CUSTOM_RANGE";
 
 function DateCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   const iso = params.value as string;
@@ -682,6 +707,18 @@ export default function Ir21ChangesPage() {
   const [providerRole, setProviderRole] = React.useState<"gainer" | "loser" | null>(null);
   const [activeKpi, setActiveKpi] = React.useState<"churn" | "gainer" | "loser" | "switching" | null>(null);
 
+  // Custom Date Range (Master Filter Bar) -- when set, this replaces the
+  // Timeframe preset entirely for every query below rather than combining
+  // with it; see dateRangeQueryParams. `pendingRange` is the popover's own
+  // in-progress draft (the two <input type="date"> fields), only committed
+  // to `customRange` on "Apply" so partially-typed dates never trigger a
+  // fetch.
+  const [customRange, setCustomRange] = React.useState<CustomDateRange | null>(null);
+  const [rangeAnchor, setRangeAnchor] = React.useState<HTMLElement | null>(null);
+  const [pendingRange, setPendingRange] = React.useState<CustomDateRange>({ from: "", to: "" });
+
+  const [pivotOpen, setPivotOpen] = React.useState(false);
+
   const [summary, setSummary] = React.useState<Ir21RoutingChangeSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Ir21RoutingChangeRow[]>([]);
@@ -707,17 +744,33 @@ export default function Ir21ChangesPage() {
   // card's dropdown would shrink its own options list down to just the
   // operator you picked, making every other operator unreachable without
   // first clearing the search box.
+  // An active Custom Date Range replaces the Timeframe preset outright in
+  // every query below -- the two are mutually exclusive in the UI (picking
+  // one clears the other; see the Master Filter Bar's ToggleButtonGroup
+  // onChange and the Custom Range popover's Apply handler).
+  const applyDateRangeParams = React.useCallback(
+    (params: URLSearchParams) => {
+      if (customRange) {
+        params.set("fromDate", customRange.from);
+        params.set("toDate", customRange.to);
+      } else if (timeframe !== "all") {
+        params.set("timeframe", timeframe);
+      }
+    },
+    [customRange, timeframe],
+  );
+
   const overviewQueryString = React.useMemo(() => {
     const params = new URLSearchParams();
-    if (timeframe !== "all") params.set("timeframe", timeframe);
+    applyDateRangeParams(params);
     if (region) params.set("region", region);
     if (service) params.set("service", service);
     return params.toString();
-  }, [timeframe, region, service]);
+  }, [applyDateRangeParams, region, service]);
 
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
-    if (timeframe !== "all") params.set("timeframe", timeframe);
+    applyDateRangeParams(params);
     if (region) params.set("region", region);
     if (service) params.set("service", service);
     if (changeType) params.set("changeType", changeType);
@@ -725,7 +778,7 @@ export default function Ir21ChangesPage() {
     if (provider && providerRole) params.set("providerRole", providerRole);
     if (search) params.set("search", search);
     return params.toString();
-  }, [timeframe, region, service, changeType, provider, providerRole, search]);
+  }, [applyDateRangeParams, region, service, changeType, provider, providerRole, search]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -760,7 +813,7 @@ export default function Ir21ChangesPage() {
   // one changeType is active.
   const countsQueryString = React.useMemo(() => {
     const params = new URLSearchParams();
-    if (timeframe !== "all") params.set("timeframe", timeframe);
+    applyDateRangeParams(params);
     if (region) params.set("region", region);
     if (service) params.set("service", service);
     params.set("changeType", "ALL");
@@ -768,7 +821,7 @@ export default function Ir21ChangesPage() {
     if (provider && providerRole) params.set("providerRole", providerRole);
     if (search) params.set("search", search);
     return params.toString();
-  }, [timeframe, region, service, provider, providerRole, search]);
+  }, [applyDateRangeParams, region, service, provider, providerRole, search]);
 
   const [allTypeRows, setAllTypeRows] = React.useState<Ir21RoutingChangeRow[]>([]);
   React.useEffect(() => {
@@ -781,6 +834,28 @@ export default function Ir21ChangesPage() {
       cancelled = true;
     };
   }, [countsQueryString]);
+
+  // Market Share Pivot Summary modal: scoped to the Master Filter Bar's own
+  // dimensions only (Timeframe/Custom Range/Region/Service, via
+  // overviewQueryString -- the same scope the KPI cards use), deliberately
+  // ignoring the lower Change/Provider/Search refinements, since the pivot
+  // is a comprehensive market-share view triggered from the top of the
+  // page, above those controls. Fetched lazily on open, not on every
+  // keystroke elsewhere on the page.
+  const [pivotRows, setPivotRows] = React.useState<Ir21RoutingChangeRow[]>([]);
+  const [pivotLoading, setPivotLoading] = React.useState(false);
+  React.useEffect(() => {
+    if (!pivotOpen) return;
+    let cancelled = false;
+    setPivotLoading(true);
+    api
+      .get<Ir21RoutingChangeRow[]>(`/analytics/ir21-changes/feed?${overviewQueryString}`)
+      .then((f) => !cancelled && setPivotRows(f))
+      .finally(() => !cancelled && setPivotLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [pivotOpen, overviewQueryString]);
 
   // Bucketed exactly the way Ir21RoutingChangesService.fetchFiltered itself
   // interprets each pill's changeType value -- see PillCounts' own doc
@@ -958,7 +1033,7 @@ export default function Ir21ChangesPage() {
   // below -- drives both the button's own enabled state and its "(N
   // active)" label, so the two never drift out of sync with each other.
   const activeFilterCount =
-    (timeframe !== "3m" ? 1 : 0) +
+    (customRange || timeframe !== "3m" ? 1 : 0) +
     (region ? 1 : 0) +
     (service ? 1 : 0) +
     (changeType ? 1 : 0) +
@@ -975,6 +1050,7 @@ export default function Ir21ChangesPage() {
   // API fetch), so resetting this state is already the complete flush.
   const resetAllFilters = () => {
     setTimeframe("3m");
+    setCustomRange(null);
     setRegion("");
     setService("");
     setChangeType("");
@@ -998,10 +1074,12 @@ export default function Ir21ChangesPage() {
   // scope) for the executive KPI blocks, and `rows` (the fully filtered
   // dataset behind the table -- every matching row, not just the current
   // grid page) for the ledger and every chart/aggregate derived from it.
+  const dateScopeLabel = customRange ? `${formatDateShort(customRange.from)} → ${formatDateShort(customRange.to)}` : TIMEFRAME_LABELS[timeframe];
+
   const buildReportInput = (): MisReportInput => ({
     generatedAt: new Date(),
     scope: {
-      timeframe: TIMEFRAME_LABELS[timeframe],
+      timeframe: dateScopeLabel,
       region: region || "All",
       service: service || "All",
       changeCategory: changeFilterLabel(changeType),
@@ -1048,12 +1126,14 @@ export default function Ir21ChangesPage() {
     csv: "Generating CSV…",
   };
 
-  // Shared between the inline desktop Paper and the mobile bottom-sheet
-  // Drawer -- identical controls either way, just a different container.
-  // The trailing count/"Clear Filters" pair is desktop-only: the mobile
-  // Drawer has its own dedicated footer (Clear All / Show N Results)
-  // instead, so showing both would be redundant inside the sheet.
-  const filterBody = (
+  // Master Filter Bar (Timeframe/Custom Range/Region/Service + the Pivot
+  // Summary and Clear-All actions) -- always rendered inline at the very
+  // top of the page on every device, unlike the Change/Provider/Search
+  // "refine" controls below it. These 3 pill rows are each independently
+  // horizontally-scrollable on mobile (scrollablePillGroupSx), so showing
+  // them unconditionally doesn't reintroduce the vertical stacking problem
+  // the old single combined Drawer was built to avoid.
+  const masterFilterBody = (
     <>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
@@ -1069,10 +1149,16 @@ export default function Ir21ChangesPage() {
             exclusive
             size="small"
             color="primary"
-            value={timeframe}
-            onChange={(_, v: Timeframe | null) => {
+            value={customRange ? CUSTOM_RANGE_PILL : timeframe}
+            onChange={(event, v: string | null) => {
               if (!v) return;
-              setTimeframe(v);
+              if (v === CUSTOM_RANGE_PILL) {
+                setPendingRange(customRange ?? { from: "", to: "" });
+                setRangeAnchor(event.currentTarget as HTMLElement);
+                return;
+              }
+              setTimeframe(v as Timeframe);
+              setCustomRange(null);
               setActiveKpi(null);
               setProviderRole(null);
             }}
@@ -1087,7 +1173,67 @@ export default function Ir21ChangesPage() {
                 {TIMEFRAME_LABELS[t]}
               </ToggleButton>
             ))}
+            <ToggleButton value={CUSTOM_RANGE_PILL}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <DateRangeIcon fontSize="small" />
+                {customRange ? `${formatDateShort(customRange.from)} → ${formatDateShort(customRange.to)}` : "Custom Range"}
+              </Box>
+            </ToggleButton>
           </ToggleButtonGroup>
+          <Popover
+            open={!!rangeAnchor}
+            anchorEl={rangeAnchor}
+            onClose={() => setRangeAnchor(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+          >
+            <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5, minWidth: 260 }}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Custom Date Range
+              </Typography>
+              <TextField
+                type="date"
+                label="From Date"
+                size="small"
+                InputLabelProps={{ shrink: true }}
+                value={pendingRange.from}
+                onChange={(e) => setPendingRange((p) => ({ ...p, from: e.target.value }))}
+              />
+              <TextField
+                type="date"
+                label="To Date"
+                size="small"
+                InputLabelProps={{ shrink: true }}
+                value={pendingRange.to}
+                onChange={(e) => setPendingRange((p) => ({ ...p, to: e.target.value }))}
+              />
+              <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+                {customRange && (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setCustomRange(null);
+                      setRangeAnchor(null);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={!pendingRange.from || !pendingRange.to || pendingRange.from > pendingRange.to}
+                  onClick={() => {
+                    setCustomRange(pendingRange);
+                    setRangeAnchor(null);
+                    setActiveKpi(null);
+                    setProviderRole(null);
+                  }}
+                >
+                  Apply
+                </Button>
+              </Box>
+            </Box>
+          </Popover>
         </Box>
 
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
@@ -1149,6 +1295,41 @@ export default function Ir21ChangesPage() {
         </Box>
       </Box>
 
+      <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<PivotTableChartIcon fontSize="small" />}
+          onClick={() => setPivotOpen(true)}
+          sx={{ borderColor: "#CFD8DC", color: "#0A2540", "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" } }}
+        >
+          Market Share Pivot Summary
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<FilterAltOffIcon fontSize="small" />}
+          onClick={resetAllFilters}
+          disabled={activeFilterCount === 0}
+          sx={{
+            borderColor: "#CFD8DC",
+            color: "#0A2540",
+            "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
+          }}
+        >
+          {activeFilterCount > 0 ? `Clear All Filters (${activeFilterCount} active)` : "Clear All Filters"}
+        </Button>
+      </Box>
+    </>
+  );
+
+  // "Refine Results" controls -- Change classification pills, provider and
+  // free-text search, shared between the inline desktop Paper and the
+  // mobile bottom-sheet Drawer. Timeframe/Region/Service now live in
+  // masterFilterBody above (always inline), so this is scoped to strictly
+  // the finer commercial/technical drill-down dimensions.
+  const refineFilterBody = (
+    <>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -1230,7 +1411,7 @@ export default function Ir21ChangesPage() {
         </InfoTooltip>
       </Box>
 
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2 }}>
         <Autocomplete
           size="small"
           options={providerOptions}
@@ -1259,29 +1440,11 @@ export default function Ir21ChangesPage() {
           sx={{ minWidth: 240, flex: isMobile ? "1 1 100%" : undefined }}
         />
         {!isMobile && (
-          <>
-            <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
-              {loading
-                ? "Loading…"
-                : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
-            </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<FilterAltOffIcon />}
-              onClick={resetAllFilters}
-              disabled={activeFilterCount === 0}
-              sx={{
-                ml: "auto",
-                alignSelf: "center",
-                borderColor: "#CFD8DC",
-                color: "#0A2540",
-                "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
-              }}
-            >
-              {activeFilterCount > 0 ? `Clear Filters (${activeFilterCount} active)` : "Clear Filters"}
-            </Button>
-          </>
+          <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center", ml: "auto" }}>
+            {loading
+              ? "Loading…"
+              : `${rows.length} change(s) across ${uniqueOperatorCount} unique MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
+          </Typography>
         )}
       </Box>
     </>
@@ -1298,6 +1461,12 @@ export default function Ir21ChangesPage() {
           successive IR.21 re-uploads — provider additions, removals, and replacements, for commercial and
           carrier-relations review.
         </Typography>
+
+        {/* Master Control Bar -- global scoping (Timeframe/Custom Range,
+           Region, Service) plus the Market Share Pivot Summary and Clear
+           All Filters actions, always visible at the very top regardless of
+           device width. Everything below reacts to this bar. */}
+        <Paper sx={{ p: 2, mb: 3 }}>{masterFilterBody}</Paper>
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <KpiCard
@@ -1421,7 +1590,7 @@ export default function Ir21ChangesPage() {
                   onClick={() => setFilterDrawerOpen(true)}
                   sx={{ minHeight: 44, whiteSpace: "nowrap", borderColor: "#CFD8DC", color: "#0A2540" }}
                 >
-                  Filter &amp; Refine
+                  Refine Results
                 </Button>
               </Badge>
               <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1429,11 +1598,10 @@ export default function Ir21ChangesPage() {
               </Typography>
             </Box>
 
-            {/* Bottom-sheet Drawer -- every control from the desktop Paper,
-               unchanged, just reflowed into a scrollable full-width sheet
-               with its own dedicated footer actions, so a phone user never
-               has to scroll past 3+ stacked ToggleButtonGroups to reach the
-               actual data. */}
+            {/* Bottom-sheet Drawer -- Change/Provider/Search only now that
+               Timeframe/Region/Service live in the always-visible Master
+               Control Bar above; reflowed into a scrollable full-width
+               sheet with its own dedicated footer actions. */}
             <Drawer
               anchor="bottom"
               open={filterDrawerOpen}
@@ -1442,13 +1610,13 @@ export default function Ir21ChangesPage() {
             >
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
                 <Typography variant="h6" fontWeight={700}>
-                  Filter &amp; Refine
+                  Refine Results
                 </Typography>
                 <IconButton onClick={() => setFilterDrawerOpen(false)} aria-label="Close filters" sx={{ minWidth: 44, minHeight: 44 }}>
                   <CloseIcon />
                 </IconButton>
               </Box>
-              <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>{filterBody}</Box>
+              <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>{refineFilterBody}</Box>
               <Box sx={{ display: "flex", gap: 1, p: 2, borderTop: "1px solid", borderColor: "divider" }}>
                 <Button
                   fullWidth
@@ -1467,7 +1635,7 @@ export default function Ir21ChangesPage() {
             </Drawer>
           </>
         ) : (
-          <Paper sx={{ p: 2, mb: 2 }}>{filterBody}</Paper>
+          <Paper sx={{ p: 2, mb: 2 }}>{refineFilterBody}</Paper>
         )}
 
         {/* Active-filter context strip -- names every dimension currently
@@ -1483,8 +1651,16 @@ export default function Ir21ChangesPage() {
             <Typography variant="body2" color="text.secondary">
               Filtered by:
             </Typography>
-            {timeframe !== "3m" && (
-              <Chip size="small" label={`Timeframe: ${TIMEFRAME_LABELS[timeframe]}`} onDelete={() => setTimeframe("3m")} />
+            {customRange ? (
+              <Chip
+                size="small"
+                label={`Range: ${formatDateShort(customRange.from)} → ${formatDateShort(customRange.to)}`}
+                onDelete={() => setCustomRange(null)}
+              />
+            ) : (
+              timeframe !== "3m" && (
+                <Chip size="small" label={`Timeframe: ${TIMEFRAME_LABELS[timeframe]}`} onDelete={() => setTimeframe("3m")} />
+              )
             )}
             {region && <Chip size="small" label={`Region: ${region}`} onDelete={() => setRegion("")} />}
             {service && <Chip size="small" label={`Service: ${service}`} onDelete={() => setService("")} />}
@@ -1628,6 +1804,14 @@ export default function Ir21ChangesPage() {
           height={600}
         />
         )}
+
+        <PivotSummaryModal
+          open={pivotOpen}
+          onClose={() => setPivotOpen(false)}
+          rows={pivotRows}
+          loading={pivotLoading}
+          scopeLabel={`${dateScopeLabel} | ${region || "All Regions"} | ${service || "All Services"}`}
+        />
       </AppShell>
     </RequireAuth>
   );

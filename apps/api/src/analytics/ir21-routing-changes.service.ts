@@ -14,6 +14,13 @@ const TIMEFRAME_DAYS: Record<string, number | null> = {
 
 export interface Ir21RoutingChangeQuery {
   timeframe?: string;
+  // Explicit calendar-date scope from the Market Intelligence page's Master
+  // Filter Bar "Custom Date Range" picker -- "YYYY-MM-DD", inclusive on both
+  // ends. When either is present they replace `timeframe` entirely rather
+  // than combining with it (see fetchFiltered), since the UI itself only
+  // ever sends one or the other, never both.
+  fromDate?: string;
+  toDate?: string;
   service?: string;
   changeType?: string;
   providerId?: string;
@@ -36,8 +43,19 @@ export class Ir21RoutingChangesService {
   constructor(private prisma: PrismaService) {}
 
   private async fetchFiltered(query: Ir21RoutingChangeQuery) {
-    const days = TIMEFRAME_DAYS[query.timeframe ?? "all"] ?? null;
-    const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
+    // An explicit fromDate/toDate range wins outright over the timeframe
+    // preset -- the frontend only ever sends one or the other. Each bound is
+    // optional independently (e.g. "from 01-Jan-2026 onward" with no end).
+    let dateFilter: { gte?: Date; lte?: Date } | undefined;
+    if (query.fromDate || query.toDate) {
+      dateFilter = {};
+      if (query.fromDate) dateFilter.gte = new Date(`${query.fromDate}T00:00:00.000Z`);
+      if (query.toDate) dateFilter.lte = new Date(`${query.toDate}T23:59:59.999Z`);
+    } else {
+      const days = TIMEFRAME_DAYS[query.timeframe ?? "all"] ?? null;
+      const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
+      if (since) dateFilter = { gte: since };
+    }
     const providerId = query.providerId ? parseInt(query.providerId, 10) : undefined;
 
     // A plain provider filter (no role) matches either side of a change --
@@ -76,7 +94,7 @@ export class Ir21RoutingChangesService {
 
     const rows = await this.prisma.ir21RoutingChange.findMany({
       where: {
-        ...(since ? { effectiveDate: { gte: since } } : {}),
+        ...(dateFilter ? { effectiveDate: dateFilter } : {}),
         ...(query.service && query.service !== "ALL" ? { serviceName: query.service as ServiceName } : {}),
         ...changeTypeWhere,
         ...providerFilter,

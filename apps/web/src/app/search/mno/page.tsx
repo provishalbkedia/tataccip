@@ -145,6 +145,44 @@ const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusiv
   shared: (r) => !r.isFullyExclusive,
 };
 
+// Whether `provider` qualifies a row under the given exclusivity mode --
+// scoped to the SAME service dimension the mode itself measures, not a
+// flat "does this name appear anywhere on the row" check. Without this, a
+// row where Tata Comm serves only DSX/IPX (with e.g. Orange holding SCCP)
+// would still pass an "SCCP Solo" + "Tata Comm" filter, since Tata Comm
+// technically appears somewhere on the row -- correct for a general
+// carrier search, but wrong once a single-service exclusivity pill is
+// active: every visible row should then have `provider` as *that
+// service's* sole/exclusive provider, matching what the donut itself
+// counted for that slice.
+function providerMatchesRow(r: MnoSummaryWithExclusivity, mode: ExclusiveMode, provider: string): boolean {
+  switch (mode) {
+    case "full":
+      return r.isFullyExclusive && r.soleMasterProvider === provider;
+    case "sccp":
+      return r.isExclusiveSccp && r.soleSccpProvider === provider;
+    case "dsx":
+      return r.isExclusiveDsx && r.soleDsxProvider === provider;
+    case "ipx":
+      return r.isExclusiveIpx && r.soleIpxProvider === provider;
+    case "any":
+      // Mirrors aggregateCarrierExclusivity's own "any" mode: a row
+      // qualifies if `provider` is the sole/exclusive provider for at
+      // least one of its services (which service can differ per row).
+      return (
+        (r.isExclusiveSccp && r.soleSccpProvider === provider) ||
+        (r.isExclusiveDsx && r.soleDsxProvider === provider) ||
+        (r.isExclusiveIpx && r.soleIpxProvider === provider)
+      );
+    default:
+      // "all" (no exclusivity pill active) and "shared" aren't tied to a
+      // single service dimension, so keep the broad "carrier touches this
+      // row somewhere, exclusive or not" reading -- the general-purpose
+      // Wholesale Provider search.
+      return [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(provider);
+  }
+}
+
 // "full"/"sccp"/"dsx"/"ipx" map 1:1 onto aggregateCarrierExclusivity's own
 // dimensions; "all" (no exclusivity pill selected) and "shared" don't
 // correspond to a single dimension, so both fall back to "any" -- the
@@ -574,16 +612,18 @@ function MnoSearchPageInner() {
       });
   }, [rowsWithExclusivity, serviceFilter, debouncedFreeText]);
 
-  // Every filter except exclusiveMode itself -- the shared base both
-  // visibleRows (below) and exclusivityModeCounts (further down) filter
-  // from, so each exclusivity pill's own count reflects "how many rows
-  // would show if this pill were picked instead", not the currently
-  // active one only. Includes providerFilter, unlike scopedRows/chartRows
-  // -- the table and pill counts SHOULD narrow to just that carrier's own
-  // rows once one is selected, that's what a filter is for.
+  // Every filter except exclusiveMode's own EXCLUSIVE_MODE_PREDICATE --
+  // feeds visibleRows (below) and providerScopedRows (the Vulnerability
+  // chart). Includes providerFilter, unlike scopedRows/chartRows -- the
+  // table SHOULD narrow to just that carrier's own rows once one is
+  // selected. The provider match is scoped to exclusiveMode's own service
+  // dimension via providerMatchesRow (see its own comment) -- e.g. under
+  // "SCCP Solo", a row only passes if the filtered carrier is specifically
+  // that row's SCCP-exclusive provider, not merely present on its DSX/IPX
+  // columns.
   const baseFilteredRows = React.useMemo(
-    () => scopedRows.filter((r) => !providerFilter || [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(providerFilter)),
-    [scopedRows, providerFilter],
+    () => scopedRows.filter((r) => !providerFilter || providerMatchesRow(r, exclusiveMode, providerFilter)),
+    [scopedRows, providerFilter, exclusiveMode],
   );
 
   // Feeds the Exclusivity & Market Share chart strip specifically -- see
@@ -598,23 +638,29 @@ function MnoSearchPageInner() {
     [baseFilteredRows, exclusiveMode],
   );
 
-  // Live count per exclusivity pill/badge -- computed from baseFilteredRows
-  // (unaffected by exclusiveMode itself) so every pill shows what picking
-  // *it* would produce, all simultaneously, the same "counts race ahead of
-  // the single active selection" pattern the Market Intelligence page's
-  // Change filter pills use.
-  const exclusivityModeCounts: Record<ExclusiveMode, number> = React.useMemo(
-    () => ({
-      all: baseFilteredRows.length,
-      full: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.full).length,
-      sccp: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.sccp).length,
-      dsx: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.dsx).length,
-      ipx: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.ipx).length,
-      any: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.any).length,
-      shared: baseFilteredRows.filter(EXCLUSIVE_MODE_PREDICATE.shared).length,
-    }),
-    [baseFilteredRows],
-  );
+  // Live count per exclusivity pill/badge -- each pill's count is computed
+  // independently straight from scopedRows (NOT from baseFilteredRows,
+  // which is pinned to the currently active mode's own provider-matching
+  // dimension) so every pill shows what picking *it* would produce, all
+  // simultaneously, the same "counts race ahead of the single active
+  // selection" pattern the Market Intelligence page's Change filter pills
+  // use. Each count applies providerFilter scoped to THAT pill's own mode
+  // via providerMatchesRow, e.g. the "DSX Solo" count with a Tata Comm
+  // filter active reflects Tata Comm's DSX-exclusive accounts regardless
+  // of which pill is currently selected.
+  const exclusivityModeCounts: Record<ExclusiveMode, number> = React.useMemo(() => {
+    const countFor = (mode: ExclusiveMode) =>
+      scopedRows.filter((r) => EXCLUSIVE_MODE_PREDICATE[mode](r) && (!providerFilter || providerMatchesRow(r, mode, providerFilter))).length;
+    return {
+      all: countFor("all"),
+      full: countFor("full"),
+      sccp: countFor("sccp"),
+      dsx: countFor("dsx"),
+      ipx: countFor("ipx"),
+      any: countFor("any"),
+      shared: countFor("shared"),
+    };
+  }, [scopedRows, providerFilter]);
 
   // Distinct-entity subtotals for the column-header chips -- derived
   // entirely client-side from visibleRows (the exact rows the grid is

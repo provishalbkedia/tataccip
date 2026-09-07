@@ -1,20 +1,66 @@
 "use client";
 
 import * as React from "react";
-import { Box, Chip, Collapse, Grid, IconButton, Paper, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  IconButton,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import CloseIcon from "@mui/icons-material/Close";
+import StarIcon from "@mui/icons-material/Star";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { aggregateCarrierExclusivity } from "@/lib/reports/exclusivityReportData";
 import type { MnoSummaryWithExclusivity } from "./page";
 
-// A rotating palette for whichever wholesale carriers turn out to hold
-// exclusive accounts in the current dataset -- carrier identity here isn't
-// fixed the way SCCP/DSX/IPX is on the Market Intelligence page, so colors
-// are assigned by rank rather than by name.
-const DONUT_PALETTE = ["#0A2540", "#00D4B2", "#0B6FBF", "#EF6C00", "#6A1B9A", "#2E7D32", "#8E24AA", "#00796B"];
+// This platform is Tata Communications' own CCIP -- leadership specifically
+// wants Tata Comm's own competitive standing surfaced explicitly (see the
+// KPI strip below) regardless of where it currently ranks, not just left to
+// however big or small its donut slice happens to be.
+const HOME_CARRIER = "Tata Comm";
+
+// A fixed palette assigned deterministically per carrier NAME (via a hash),
+// not by rank position -- ranking a carrier's slice by count means its
+// palette index (and therefore its color) used to shift every time the
+// filtered scope changed rank order, which read as the clicked slice's
+// color "hijacking" to whatever sat at palette index 0. A name always maps
+// to the same color now, regardless of scope or rank.
+const DONUT_PALETTE = [
+  "#0B6FBF", "#00A98A", "#EF6C00", "#6A1B9A", "#C2185B",
+  "#2E7D32", "#8E24AA", "#00796B", "#D84315", "#455A64",
+  "#5D4037", "#1565C0", "#AD1457", "#33691E", "#4527A0", "#00838F",
+];
 const OTHERS_COLOR = "#CFD8DC";
+
+// FNV-1a -- a well-distributed 32-bit hash, so two carrier names landing on
+// the same palette slot (an open-ended name set into a fixed palette can
+// never be fully collision-free) is rare in practice rather than routine,
+// the way a naive multiply-and-add hash into a small palette tended to be.
+function colorForCarrier(name: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) {
+    hash ^= name.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return DONUT_PALETTE[Math.abs(hash) % DONUT_PALETTE.length];
+}
 
 function CustomTooltip({
   active,
@@ -35,11 +81,15 @@ function CustomTooltip({
 
 export default function ExclusivityCharts({
   rows,
+  activeProviderFilter,
   onProviderClick,
+  onResetProviderFilter,
   onVulnerabilityClick,
 }: {
   rows: MnoSummaryWithExclusivity[];
+  activeProviderFilter: string;
   onProviderClick: (providerName: string) => void;
+  onResetProviderFilter: () => void;
   onVulnerabilityClick: (mode: "full" | "shared") => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
@@ -57,12 +107,12 @@ export default function ExclusivityCharts({
   const { donutData, othersBreakdown } = React.useMemo(() => {
     // Top 7 named slices + an "Others" bucket for the long tail -- a donut
     // with 20+ slivers is unreadable and defeats the "at a glance" purpose.
-    // "Others" itself stays inspectable via the chip list rendered below
-    // the chart (see showOthers), not just a vague leftover percentage.
+    // "Others" itself stays fully inspectable via its own breakdown dialog
+    // (see showOthers) rather than a vague leftover percentage.
     if (carrierShare.length <= 8) {
       return {
         donutData: carrierShare.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
-        othersBreakdown: [] as { providerName: string; count: number }[],
+        othersBreakdown: [] as { providerName: string; count: number; pct: number }[],
       };
     }
     const top = carrierShare.slice(0, 7);
@@ -74,7 +124,7 @@ export default function ExclusivityCharts({
         ...top.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
         { providerName: "Others", count: othersTotal, pct: (othersTotal / grandTotal) * 100 },
       ],
-      othersBreakdown: rest.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments })),
+      othersBreakdown: rest.map((c) => ({ providerName: c.providerName, count: c.totalExclusiveAssignments, pct: c.pctOfExclusiveAssignments })),
     };
   }, [carrierShare]);
 
@@ -87,22 +137,44 @@ export default function ExclusivityCharts({
     ];
   }, [rows]);
 
+  const homeCarrierRank = carrierShare.findIndex((c) => c.providerName === HOME_CARRIER);
+  const homeCarrierEntry = homeCarrierRank >= 0 ? carrierShare[homeCarrierRank] : null;
+
   return (
     <Paper sx={{ mb: 3 }}>
       <Box
         sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, cursor: "pointer" }}
         onClick={() => setExpanded((v) => !v)}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <ShowChartIcon sx={{ color: "#0A2540" }} />
           <Typography variant="subtitle1" fontWeight={700}>
             Exclusivity &amp; Market Share
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Click a slice or bar to drill down
-          </Typography>
+          {activeProviderFilter ? (
+            <Chip
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onResetProviderFilter();
+              }}
+              onDelete={(e) => {
+                e.stopPropagation();
+                onResetProviderFilter();
+              }}
+              deleteIcon={<CloseIcon fontSize="small" sx={{ color: "#fff !important" }} />}
+              label={`Reset Drill-down: ${activeProviderFilter}`}
+              sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600 }}
+            />
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              Click a slice or bar to drill down
+            </Typography>
+          )}
         </Box>
-        <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
+        <IconButton size="small" onClick={(e) => e.stopPropagation()} onClickCapture={() => setExpanded((v) => !v)}>
+          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+        </IconButton>
       </Box>
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ px: 2, pb: 2 }}>
@@ -111,21 +183,99 @@ export default function ExclusivityCharts({
               No MNOs / Customers in the current search scope.
             </Typography>
           ) : (
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                    Carrier Exclusivity Share
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                    Which wholesale carriers hold the most exclusive service assignments (SCCP/DSX/IPX-solo)
-                  </Typography>
-                  {donutData.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
-                      No exclusive service assignments in this scope.
+            <>
+              {/* High-visibility active drill-down ribbon -- a second,
+                 larger escape hatch than the compact header chip above, so
+                 a user who filtered from a slice never has to hunt for how
+                 to back out of it. */}
+              {activeProviderFilter && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 1,
+                    mb: 2,
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: "#EEF3FB",
+                    border: "1px solid #0B6FBF",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Filtering by Carrier:
                     </Typography>
-                  ) : (
-                    <>
+                    <Chip size="small" label={activeProviderFilter} sx={{ fontWeight: 700, bgcolor: "#0A2540", color: "#fff" }} />
+                  </Box>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<RestartAltIcon fontSize="small" />}
+                    onClick={onResetProviderFilter}
+                    sx={{ borderColor: "#0B6FBF", color: "#0B6FBF" }}
+                  >
+                    Reset Chart Filter
+                  </Button>
+                </Box>
+              )}
+
+              {/* Tata Comm executive standing -- pulled out as its own
+                 explicit metric so leadership can track it directly rather
+                 than hunting for a possibly tiny, crowded-label slice. */}
+              <Box
+                onClick={() => homeCarrierEntry && onProviderClick(HOME_CARRIER)}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 1.5,
+                  mb: 2,
+                  p: 1.5,
+                  borderRadius: 1,
+                  bgcolor: "#E6FBF6",
+                  border: "1px solid #00D4B2",
+                  cursor: homeCarrierEntry ? "pointer" : "default",
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <StarIcon sx={{ color: "#00A98A", fontSize: 18 }} />
+                  <Typography variant="body2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                    Tata Comm Exclusivity Standing
+                  </Typography>
+                </Box>
+                {homeCarrierEntry ? (
+                  <>
+                    <Chip size="small" label={`${homeCarrierEntry.exclusiveMnoCount} Exclusive MNOs`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
+                    <Chip
+                      size="small"
+                      label={`${homeCarrierEntry.pctOfExclusiveAssignments.toFixed(1)}% of Exclusive Footprint`}
+                      sx={{ fontWeight: 700, bgcolor: "#fff" }}
+                    />
+                    <Chip size="small" label={`Rank #${homeCarrierRank + 1} of ${carrierShare.length}`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
+                  </>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No exclusive service assignments in the current scope.
+                  </Typography>
+                )}
+              </Box>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                      Carrier Exclusivity Share
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                      Which wholesale carriers hold the most exclusive service assignments (SCCP/DSX/IPX-solo)
+                    </Typography>
+                    {donutData.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
+                        No exclusive service assignments in this scope.
+                      </Typography>
+                    ) : (
                       <ResponsiveContainer width="100%" height={240}>
                         <PieChart>
                           <Pie
@@ -150,7 +300,7 @@ export default function ExclusivityCharts({
                             cursor="pointer"
                             onClick={(_, index) => {
                               const entry = donutData[index];
-                              if (entry.providerName === "Others") setShowOthers((v) => !v);
+                              if (entry.providerName === "Others") setShowOthers(true);
                               else onProviderClick(entry.providerName);
                             }}
                             label={({ name, percent }: { name?: string; percent?: number }) =>
@@ -158,9 +308,21 @@ export default function ExclusivityCharts({
                             }
                             labelLine={false}
                           >
-                            {donutData.map((d, i) => (
-                              <Cell key={d.providerName} fill={d.providerName === "Others" ? OTHERS_COLOR : DONUT_PALETTE[i % DONUT_PALETTE.length]} />
-                            ))}
+                            {donutData.map((d) => {
+                              const isActive = d.providerName === activeProviderFilter;
+                              return (
+                                <Cell
+                                  key={d.providerName}
+                                  // Fill strictly reflects the carrier's own
+                                  // stable identity color at all times --
+                                  // selection is communicated purely via the
+                                  // stroke, never by swapping the fill.
+                                  fill={d.providerName === "Others" ? OTHERS_COLOR : colorForCarrier(d.providerName)}
+                                  stroke={isActive ? "#0A2540" : "#FFFFFF"}
+                                  strokeWidth={isActive ? 3 : 1}
+                                />
+                              );
+                            })}
                           </Pie>
                           <RechartsTooltip
                             content={
@@ -175,64 +337,93 @@ export default function ExclusivityCharts({
                           />
                         </PieChart>
                       </ResponsiveContainer>
-                      {othersBreakdown.length > 0 && showOthers && (
-                        <Box sx={{ mt: 1, p: 1, bgcolor: "#F4F6F8", borderRadius: 1 }}>
-                          <Typography variant="caption" fontWeight={700} sx={{ color: "#0A2540", display: "block", mb: 0.5 }}>
-                            Inside &quot;Others&quot; ({othersBreakdown.length} carriers):
-                          </Typography>
-                          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                            {othersBreakdown.map((c) => (
-                              <Chip
-                                key={c.providerName}
-                                size="small"
-                                clickable
-                                onClick={() => onProviderClick(c.providerName)}
-                                label={`${c.providerName} (${c.count})`}
-                                sx={{ bgcolor: "#fff", border: "1px solid #CFD8DC" }}
-                              />
-                            ))}
-                          </Box>
-                        </Box>
-                      )}
-                    </>
-                  )}
-                </Paper>
-              </Grid>
+                    )}
+                  </Paper>
+                </Grid>
 
-              <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                    Exclusivity Vulnerability
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                    Single-provider lock-in vs multi-provider redundancy, current scope
-                  </Typography>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={vulnerabilityData} layout="vertical" margin={{ left: 8, right: 24 }}>
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11 }} />
-                      <RechartsTooltip
-                        content={<CustomTooltip formatter={(p) => `${p.label}: ${p.count} MNOs (${rows.length > 0 ? (((p.count as number) / rows.length) * 100).toFixed(1) : "0.0"}%)`} />}
-                      />
-                      <Bar
-                        isAnimationActive={false}
-                        dataKey="count"
-                        cursor="pointer"
-                        onClick={(_, index) => onVulnerabilityClick(vulnerabilityData[index].mode)}
-                        radius={3}
-                      >
-                        {vulnerabilityData.map((d) => (
-                          <Cell key={d.mode} fill={d.mode === "full" ? "#F59E0B" : "#0B6FBF"} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Paper>
+                <Grid item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                      Exclusivity Vulnerability
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                      Single-provider lock-in vs multi-provider redundancy, current scope
+                    </Typography>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={vulnerabilityData} layout="vertical" margin={{ left: 8, right: 24 }}>
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11 }} />
+                        <RechartsTooltip
+                          content={
+                            <CustomTooltip
+                              formatter={(p) => `${p.label}: ${p.count} MNOs (${rows.length > 0 ? (((p.count as number) / rows.length) * 100).toFixed(1) : "0.0"}%)`}
+                            />
+                          }
+                        />
+                        <Bar
+                          isAnimationActive={false}
+                          dataKey="count"
+                          cursor="pointer"
+                          onClick={(_, index) => onVulnerabilityClick(vulnerabilityData[index].mode)}
+                          radius={3}
+                        >
+                          {vulnerabilityData.map((d) => (
+                            <Cell key={d.mode} fill={d.mode === "full" ? "#F59E0B" : "#0B6FBF"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Paper>
+                </Grid>
               </Grid>
-            </Grid>
+            </>
           )}
         </Box>
       </Collapse>
+
+      <Dialog open={showOthers} onClose={() => setShowOthers(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          Other Exclusive Wholesale Carriers
+          <IconButton size="small" onClick={() => setShowOthers(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ "& th": { bgcolor: "#F4F6F8", fontWeight: 700, fontSize: 12, color: "#5A6B7B" } }}>
+                <TableCell>Carrier</TableCell>
+                <TableCell align="right">Exclusive MNOs</TableCell>
+                <TableCell align="right">% Share</TableCell>
+                <TableCell align="right" />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {othersBreakdown.map((c) => (
+                <TableRow key={c.providerName} hover>
+                  <TableCell>{c.providerName}</TableCell>
+                  <TableCell align="right">{c.count}</TableCell>
+                  <TableCell align="right">{c.pct.toFixed(1)}%</TableCell>
+                  <TableCell align="right">
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        onProviderClick(c.providerName);
+                        setShowOthers(false);
+                      }}
+                    >
+                      Filter &rarr;
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowOthers(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

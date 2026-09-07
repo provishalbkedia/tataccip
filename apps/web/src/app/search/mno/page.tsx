@@ -1175,16 +1175,25 @@ function MnoSearchPageInner() {
 
         <ExclusivityCharts
           rows={baseFilteredRows}
+          activeProviderFilter={providerFilter}
           onProviderClick={(providerName) => {
             // "any" (Any Service Exclusive), not "full" -- the donut ranks
             // carriers by exclusive service *assignments* (SCCP/DSX/IPX
             // solo, independently), so its own drill-down needs the
             // matching broader mode, not the narrower full-portfolio one.
+            // Routed through the dedicated providerFilter (exact match
+            // against the sccp/dsx/ipx provider arrays), not the free-text
+            // `q` search -- a chart-driven drill-down is a precise "this
+            // exact carrier" selection, not a loose substring search, and
+            // using providerFilter also gives it the same active-filter
+            // chip/reset affordances the manual Wholesale Provider
+            // dropdown already has.
             setExclusiveMode("any");
-            setQ(providerName);
-            flushFreeTextFilter({ q: providerName });
-            pushParams({ exclusiveMode: "any", q: providerName });
+            setProviderFilter(providerName);
+            setProviderFilterInput(providerName);
+            pushParams({ exclusiveMode: "any", provider: providerName });
           }}
+          onResetProviderFilter={clearProviderFilter}
           onVulnerabilityClick={(mode) => {
             setExclusiveMode(mode);
             pushParams({ exclusiveMode: mode });
@@ -1258,6 +1267,9 @@ function MnoSearchPageInner() {
                 sx={{ fontWeight: 600, bgcolor: "#0A2540", color: "#fff", "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
               />
             )}
+            <Button size="small" startIcon={<RestartAltIcon fontSize="small" />} onClick={resetAllFilters} sx={{ color: "#0A2540" }}>
+              Reset All Filters
+            </Button>
           </Box>
         )}
 

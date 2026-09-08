@@ -1,4 +1,10 @@
-import { PublicClientApplication, Configuration } from "@azure/msal-browser";
+import { BrowserAuthError, PublicClientApplication, Configuration } from "@azure/msal-browser";
+
+// The sessionStorage key MSAL sets for the duration of a popup/redirect
+// flow (see @azure/msal-browser's BrowserCacheManager) and only clears once
+// that flow resolves cleanly. Hardcoded here rather than imported since
+// msal-browser doesn't export it as public API.
+const MSAL_INTERACTION_STATUS_KEY = "msal.interaction.status";
 
 export const MICROSOFT_LOGIN_CONFIGURED = !!process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;
 
@@ -52,9 +58,36 @@ export async function signInWithMicrosoft(): Promise<string> {
     throw new Error("Microsoft sign-in is not configured (NEXT_PUBLIC_MICROSOFT_CLIENT_ID is unset)");
   }
   await ensureMsalInitialized();
-  const result = await getMsalInstance().loginPopup({
-    scopes: ["openid", "profile", "email"],
-    prompt: "select_account",
-  });
-  return result.idToken;
+  try {
+    const result = await getMsalInstance().loginPopup({
+      scopes: ["openid", "profile", "email"],
+      prompt: "select_account",
+    });
+    return result.idToken;
+  } catch (err) {
+    // MSAL throws this instantly, before even opening a popup, whenever its
+    // sessionStorage "interaction in progress" flag is already set -- which
+    // happens legitimately while a popup is genuinely open, but can also be
+    // left stuck by a prior attempt that never resolved cleanly (blocked
+    // popup, closed by the user, a corporate proxy interfering with the
+    // popup's postMessage back to this window). This function only runs in
+    // response to the user just clicking the sign-in button on this page,
+    // so no interaction can genuinely still be in flight here -- clear the
+    // stale flag and retry exactly once rather than leaving the user stuck
+    // in a state only a manual sessionStorage clear or private window can
+    // escape.
+    if (err instanceof BrowserAuthError && err.errorCode === "interaction_in_progress") {
+      try {
+        window.sessionStorage.removeItem(MSAL_INTERACTION_STATUS_KEY);
+      } catch {
+        // Private browsing / storage blocked -- nothing more to clear.
+      }
+      const result = await getMsalInstance().loginPopup({
+        scopes: ["openid", "profile", "email"],
+        prompt: "select_account",
+      });
+      return result.idToken;
+    }
+    throw err;
+  }
 }

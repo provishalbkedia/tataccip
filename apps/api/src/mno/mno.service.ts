@@ -153,17 +153,21 @@ export class MnoService {
     // Four distinct scopes, each combining "which MNOs are included" with
     // "which source's provider data gets shown for them" (see
     // resolvedProvidersByMno's own `source` param below):
-    // - "ir21": has at least one declared Ir21Connectivity provider on
-    //   record; providers shown are IR.21-sourced only. NOT the same test
-    //   as "has a parsed XML snapshot" (connectivity !== null) -- a small
-    //   number of MNOs (Provider Search's own coverage stats already
-    //   counted these; MNO Search's scope filter previously didn't) have
-    //   real Ir21Connectivity rows with no MnoMasterConnectivity snapshot
-    //   ever recorded for them (no XML upload, hence no PDF), typically a
-    //   manually-seeded/override declaration rather than one parsed from a
-    //   file. Using declaredIr21MnoIds instead of the snapshot flag is what
-    //   stops those MNOs being silently dropped from "IR.21 Verified"
-    //   entirely.
+    // - "ir21": has a parsed XML snapshot on file (connectivity !== null)
+    //   OR at least one declared Ir21Connectivity provider on record --
+    //   either alone is enough, not both required; providers shown are
+    //   IR.21-sourced only. Plain connectivity !== null used to be the
+    //   whole test, which silently dropped a small number of MNOs with a
+    //   real Ir21Connectivity declaration but no snapshot (typically a
+    //   manually-seeded/override entry, not one parsed from a file --
+    //   Provider Search's own coverage stats already counted these; MNO
+    //   Search's scope filter didn't). declaredIr21MnoIds alone isn't
+    //   enough either: an MNO whose XML genuinely was uploaded but whose
+    //   declared carrier names all failed to resolve through the alias
+    //   engine (queued as UnmappedProviderVariant instead) has a snapshot
+    //   with zero Ir21Connectivity rows, and using only the declared-rows
+    //   test would silently exile every one of those instead -- confirmed
+    //   against production (774 rows fell to 720 when this was tried).
     // - "reachlist_claimed" ("As per Reach List"): has at least one
     //   ProviderReachlist entry, REGARDLESS of whether it also has an IR.21
     //   declaration; providers shown are Reach-List-sourced only. Distinct
@@ -192,11 +196,22 @@ export class MnoService {
         })
       ).map((r) => r.mnoId),
     );
+    // "ir21" inclusion is a UNION of the two signals, not a replacement of
+    // one by the other -- connectivity !== null alone (has a snapshot) was
+    // the bug for the 6 no-snapshot-but-declared MNOs above, but
+    // declaredIr21MnoIds alone would have been a *worse* regression the
+    // other direction: an MNO whose XML genuinely was uploaded but whose
+    // declared carrier names all failed to resolve through the alias
+    // engine (queued as UnmappedProviderVariant instead of an
+    // Ir21Connectivity row) has connectivity !== null with zero
+    // Ir21Connectivity rows, and dropping the OR here silently exiled every
+    // one of those from "IR.21 Verified" entirely -- confirmed against
+    // production (774 rows fell to 720 before this OR was added back).
     let scopedRows = regionFilteredRows;
     if (datasetScope === "reachlist_only") {
       scopedRows = regionFilteredRows.filter((r) => r.connectivity === null && !declaredIr21MnoIds.has(r.id));
     } else if (datasetScope === "ir21") {
-      scopedRows = regionFilteredRows.filter((r) => declaredIr21MnoIds.has(r.id));
+      scopedRows = regionFilteredRows.filter((r) => r.connectivity !== null || declaredIr21MnoIds.has(r.id));
     } else if (datasetScope === "reachlist_claimed") {
       const claimedMnoIds = new Set(
         (

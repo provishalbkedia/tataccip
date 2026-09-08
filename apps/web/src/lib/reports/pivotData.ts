@@ -5,6 +5,7 @@ export type PivotTrend = "Capturing Market" | "Defending" | "Losing Share";
 
 export interface PivotMigrationEntry {
   date: string;
+  mnoId: number;
   mnoName: string;
   tadigCode: string;
   country: string;
@@ -68,6 +69,7 @@ export function buildPivotData(rows: Ir21RoutingChangeRow[]): PivotProviderEntry
       acc.mnoIds.add(r.mnoId);
       acc.migrations.push({
         date: r.effectiveDate,
+        mnoId: r.mnoId,
         mnoName: r.mnoName,
         tadigCode: r.tadigCode,
         country: getCountryName(r.country),
@@ -83,6 +85,7 @@ export function buildPivotData(rows: Ir21RoutingChangeRow[]): PivotProviderEntry
         acc.mnoIds.add(r.mnoId);
         acc.migrations.push({
           date: r.effectiveDate,
+          mnoId: r.mnoId,
           mnoName: r.mnoName,
           tadigCode: r.tadigCode,
           country: getCountryName(r.country),
@@ -98,6 +101,7 @@ export function buildPivotData(rows: Ir21RoutingChangeRow[]): PivotProviderEntry
         acc.mnoIds.add(r.mnoId);
         acc.migrations.push({
           date: r.effectiveDate,
+          mnoId: r.mnoId,
           mnoName: r.mnoName,
           tadigCode: r.tadigCode,
           country: getCountryName(r.country),
@@ -113,6 +117,7 @@ export function buildPivotData(rows: Ir21RoutingChangeRow[]): PivotProviderEntry
       acc.mnoIds.add(r.mnoId);
       acc.migrations.push({
         date: r.effectiveDate,
+        mnoId: r.mnoId,
         mnoName: r.mnoName,
         tadigCode: r.tadigCode,
         country: getCountryName(r.country),

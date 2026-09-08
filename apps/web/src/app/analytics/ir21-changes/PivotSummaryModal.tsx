@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import NextLink from "next/link";
 import {
   Box,
   Button,
@@ -17,17 +18,19 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import DownloadIcon from "@mui/icons-material/Download";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TrendingFlatIcon from "@mui/icons-material/TrendingFlat";
 import type { Ir21RoutingChangeRow } from "@ccip/shared-types";
-import { buildPivotData, PivotProviderEntry, PivotTrend } from "@/lib/reports/pivotData";
+import { buildPivotData, PivotMigrationEntry, PivotProviderEntry, PivotTrend } from "@/lib/reports/pivotData";
 
 const TREND_STYLE: Record<PivotTrend, { color: string; bg: string; icon: React.ReactNode }> = {
   "Capturing Market": { color: "#2E7D32", bg: "rgba(46,125,50,0.1)", icon: <TrendingUpIcon fontSize="small" /> },
@@ -40,6 +43,58 @@ function formatAbsoluteDate(iso: string): string {
   const day = String(d.getDate()).padStart(2, "0");
   const month = d.toLocaleString("en-US", { month: "short" });
   return `${day}-${month}-${d.getFullYear()}`;
+}
+
+/** Every row here already carries a real numeric mnoId (Ir21RoutingChangeRow
+ * requires it, joined server-side off the same MnoMaster record the row's
+ * TADIG came from) -- the TADIG-search fallback only guards a future data
+ * shape that drops it, so a drill-down link is never a dead 404. */
+function mnoProfileHref(m: PivotMigrationEntry): string {
+  return m.mnoId ? `/search/mno/${m.mnoId}` : `/search/mno?q=${encodeURIComponent(m.tadigCode)}`;
+}
+
+/** Opens in a new tab rather than navigating the current one -- an
+ * executive drilling into one migrated operator from this pivot shouldn't
+ * lose the filtered pivot analysis they were just reading. */
+function MnoDrillDownLink({
+  migration,
+  children,
+  showIcon = true,
+}: {
+  migration: PivotMigrationEntry;
+  children: React.ReactNode;
+  showIcon?: boolean;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <Tooltip title={`Open ${migration.mnoName} (${migration.tadigCode}) connectivity profile →`}>
+      <Box
+        component={NextLink}
+        href={mnoProfileHref(migration)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        sx={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+      >
+        <Typography
+          component="span"
+          sx={{
+            fontWeight: 600,
+            fontSize: "inherit",
+            color: "#0A2540",
+            cursor: "pointer",
+            "&:hover": { color: "#00838F", textDecoration: "underline" },
+          }}
+        >
+          {children}
+        </Typography>
+        {showIcon && (
+          <OpenInNewIcon sx={{ fontSize: 13, ml: 0.5, color: "#94A3B8", opacity: hovered ? 1 : 0, transition: "opacity 0.15s ease" }} />
+        )}
+      </Box>
+    </Tooltip>
+  );
 }
 
 function TrendBadge({ trend }: { trend: PivotTrend }) {
@@ -120,8 +175,14 @@ function ProviderPivotRow({ entry }: { entry: PivotProviderEntry }) {
                   {entry.migrations.map((m, i) => (
                     <TableRow key={i} hover>
                       <TableCell sx={{ whiteSpace: "nowrap" }}>{formatAbsoluteDate(m.date)}</TableCell>
-                      <TableCell>{m.mnoName}</TableCell>
-                      <TableCell>{m.tadigCode}</TableCell>
+                      <TableCell>
+                        <MnoDrillDownLink migration={m}>{m.mnoName}</MnoDrillDownLink>
+                      </TableCell>
+                      <TableCell>
+                        <MnoDrillDownLink migration={m} showIcon={false}>
+                          {m.tadigCode}
+                        </MnoDrillDownLink>
+                      </TableCell>
                       <TableCell>{m.country}</TableCell>
                       <TableCell>{m.service}</TableCell>
                       <TableCell>

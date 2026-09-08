@@ -12,14 +12,21 @@ let initPromise: Promise<void> | null = null;
 // of whether Microsoft SSO has been configured).
 function getMsalInstance(): PublicClientApplication {
   if (!instance) {
-    // "organizations" (not "common") — this app is only ever meant for a
-    // corporate/work account (@tatacommunications.com is enforced again
-    // server-side regardless), so personal Microsoft accounts aren't
-    // offered as a sign-in option in the popup at all.
+    // The app registration is single-tenant (Tata Communications only, set
+    // in Azure Portal's "Supported account types"), so the authority points
+    // straight at that tenant rather than the generic "organizations"
+    // endpoint -- that's the pattern Microsoft recommends for single-tenant
+    // apps (skips home-realm-discovery ambiguity for personal/other-org
+    // accounts, and Azure AD itself refuses to issue a token for any tenant
+    // but this one regardless). Falls back to "organizations" if the tenant
+    // ID hasn't been configured yet, so a deployment mid-rollout still
+    // works. @tatacommunications.com is enforced again server-side either
+    // way (defense in depth, not reliance on this alone).
+    const tenantId = process.env.NEXT_PUBLIC_MICROSOFT_TENANT_ID;
     const config: Configuration = {
       auth: {
         clientId: process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID ?? "",
-        authority: "https://login.microsoftonline.com/organizations",
+        authority: `https://login.microsoftonline.com/${tenantId ?? "organizations"}`,
         redirectUri: typeof window !== "undefined" ? window.location.origin : undefined,
       },
       cache: {

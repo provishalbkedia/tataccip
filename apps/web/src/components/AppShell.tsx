@@ -33,8 +33,10 @@ import BusinessIcon from "@mui/icons-material/Business";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import TimelineIcon from "@mui/icons-material/Timeline";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
+import { useCopilot } from "@/context/CopilotContext";
 import { api } from "@/lib/api";
 import LoginHistoryChip from "./LoginHistoryChip";
 import OnlineUsersBadge from "./OnlineUsersBadge";
@@ -56,6 +58,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ReactNode; roles?: R
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { copilotEnabled, toggleCopilot } = useCopilot();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountAnchor, setAccountAnchor] = React.useState<HTMLElement | null>(null);
@@ -148,6 +151,87 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       })}
     </List>
   );
+
+  // Global AI Copilot on/off toggle -- lets power users suppress the
+  // floating assistant (ExecutiveCopilot.tsx) entirely, no auto-open
+  // popovers, no audio, not even present in the DOM. Rendered in both the
+  // permanent and temporary drawers (see renderNavList above for the same
+  // pattern), with a compact icon-only affordance when the rail is
+  // collapsed since there's no room for the pill + label there.
+  const renderCopilotToggle = (railCollapsed: boolean) =>
+    railCollapsed ? (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 1 }}>
+        <Tooltip title={`AI Copilot: ${copilotEnabled ? "ON" : "OFF"} — click to toggle`} placement="right">
+          <IconButton
+            size="small"
+            onClick={toggleCopilot}
+            aria-label={copilotEnabled ? "Turn off AI Copilot" : "Turn on AI Copilot"}
+            sx={{ color: copilotEnabled ? "#00D4B2" : "text.disabled" }}
+          >
+            <AutoAwesomeIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    ) : (
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <AutoAwesomeIcon fontSize="small" sx={{ color: copilotEnabled ? "#00D4B2" : "text.disabled" }} />
+          <Typography variant="body2" fontWeight={600}>
+            AI Copilot
+          </Typography>
+        </Box>
+        <Box
+          component="button"
+          onClick={toggleCopilot}
+          role="switch"
+          aria-checked={copilotEnabled}
+          aria-label={copilotEnabled ? "Turn off AI Copilot" : "Turn on AI Copilot"}
+          sx={{
+            position: "relative",
+            width: 56,
+            height: 26,
+            borderRadius: 999,
+            border: "none",
+            cursor: "pointer",
+            bgcolor: copilotEnabled ? "#00D4B2" : "#CBD5E1",
+            transition: "background-color 0.2s ease",
+            p: 0,
+            flexShrink: 0,
+          }}
+        >
+          <Box
+            sx={{
+              position: "absolute",
+              top: 3,
+              left: copilotEnabled ? 32 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              bgcolor: "#fff",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+              transition: "left 0.2s ease",
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{
+              position: "absolute",
+              top: "50%",
+              transform: "translateY(-50%)",
+              left: copilotEnabled ? 8 : "auto",
+              right: copilotEnabled ? "auto" : 8,
+              color: copilotEnabled ? "#0A2540" : "#475569",
+              fontWeight: 800,
+              fontSize: "0.6rem",
+              letterSpacing: "0.03em",
+              userSelect: "none",
+            }}
+          >
+            {copilotEnabled ? "ON" : "OFF"}
+          </Typography>
+        </Box>
+      </Box>
+    );
 
   // Pinned to the bottom of the sidebar (both permanent and temporary
   // variants) via the paper's flex column layout below — the standard
@@ -280,6 +364,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <Toolbar />
         {renderNavList(collapsed)}
         <Box sx={{ flexGrow: 1 }} />
+        <Divider />
+        {renderCopilotToggle(collapsed)}
         <Box sx={{ display: "flex", justifyContent: collapsed ? "center" : "flex-end", px: 1, py: 1 }}>
           <Tooltip title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
             <IconButton onClick={toggleCollapsed} size="small" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
@@ -308,6 +394,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <Toolbar />
         {renderNavList(false)}
+        <Box sx={{ flexGrow: 1 }} />
+        <Divider />
+        {renderCopilotToggle(false)}
         {drawerFooter}
       </Drawer>
 
@@ -346,7 +435,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </Box>
 
       <DisclaimerModal open={disclaimerOpen} onClose={() => setDisclaimerOpen(false)} />
-      <ExecutiveCopilot />
+      {copilotEnabled && <ExecutiveCopilot />}
     </Box>
   );
 }

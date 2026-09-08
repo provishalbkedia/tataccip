@@ -158,6 +158,22 @@ export default function ExecutiveCopilot() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [stopSpeaking]);
 
+  // AppShell unmounts this entire component when the global AI Copilot
+  // toggle is switched off -- if a briefing happens to be mid-sentence at
+  // that instant, it must stop immediately rather than keep talking about
+  // a widget that's no longer on screen.
+  React.useEffect(() => {
+    return () => {
+      if (speechSupported()) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // Nothing more to do -- the speech API itself is what's misbehaving.
+        }
+      }
+    };
+  }, []);
+
   const routeTopics = React.useMemo(() => topicsForRoute(pathname), [pathname]);
 
   // Gentle, one-time-per-route auto-open -- never plays audio on its own

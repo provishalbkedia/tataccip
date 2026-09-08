@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import ThemeRegistry from "@/components/ThemeRegistry";
 import { AuthProvider } from "@/lib/auth-context";
+import { CopilotProvider } from "@/context/CopilotContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <ThemeRegistry>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <CopilotProvider>{children}</CopilotProvider>
+          </AuthProvider>
         </ThemeRegistry>
       </body>
     </html>

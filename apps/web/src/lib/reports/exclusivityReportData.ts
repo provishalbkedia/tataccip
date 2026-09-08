@@ -112,23 +112,30 @@ export function aggregateCarrierExclusivity(
       }
     }
   } else if (mode === "all") {
-    // Plain presence, not exclusivity -- every declared provider in every
-    // service array counts, whether or not it's that service's sole
-    // provider. Same three-array shape as "any" above (so the per-service
-    // breakdown fields stay meaningful), just without the isExclusive*
-    // gating.
+    // Plain presence, not exclusivity -- every declared provider counts,
+    // whether or not it's that service's sole/canonical provider. Reads
+    // from allSccpProviders/allDsxProviders/allIpxProviders, NOT
+    // sccpProviders/dsxProviders/ipxProviders -- those three stay strictly
+    // the single canonical Ir21Connectivity provider per service (what
+    // every other mode here measures), while the "all" variants also
+    // include raw primary/backup/GRX/LTE candidates that never became any
+    // service's canonical provider (see MnoService.
+    // resolvedAllDeclaredProvidersByMno on the API side). Using the
+    // narrower arrays here was the original bug: it made "All MNOs"
+    // undercount a carrier's true footprint against Provider Search's own
+    // (correctly broader) coverage stats.
     for (const r of rows) {
-      for (const p of r.sccpProviders) {
+      for (const p of r.allSccpProviders) {
         const acc = getAcc(p);
         acc.sccp++;
         acc.mnoIds.add(r.id);
       }
-      for (const p of r.dsxProviders) {
+      for (const p of r.allDsxProviders) {
         const acc = getAcc(p);
         acc.dsx++;
         acc.mnoIds.add(r.id);
       }
-      for (const p of r.ipxProviders) {
+      for (const p of r.allIpxProviders) {
         const acc = getAcc(p);
         acc.ipx++;
         acc.mnoIds.add(r.id);

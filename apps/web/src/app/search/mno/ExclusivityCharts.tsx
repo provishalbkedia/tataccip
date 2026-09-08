@@ -346,6 +346,16 @@ export default function ExclusivityCharts({
                   <Typography variant="body2" fontWeight={700} sx={{ color: "#0A2540" }}>
                     {HOME_CARRIER_BANNER_LABEL[aggregationMode]}
                   </Typography>
+                  <Tooltip
+                    title={
+                      isAllMode
+                        ? "Total Footprint Rank measures overall network reach: every operator network where this carrier is declared as a connectivity partner, whether as the sole provider or alongside others on that service."
+                        : "Exclusivity Rank measures sole-vendor lock-in: operator networks relying exclusively on this carrier, with no secondary carrier declared on that service layer."
+                    }
+                    arrow
+                  >
+                    <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
+                  </Tooltip>
                 </Box>
                 {homeCarrierEntry ? (
                   <>

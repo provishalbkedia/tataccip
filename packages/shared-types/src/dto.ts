@@ -173,6 +173,21 @@ export interface MnoSummary {
   sccpProviders: string[];
   dsxProviders: string[];
   ipxProviders: string[];
+  // Broader companion to sccpProviders/dsxProviders/ipxProviders above --
+  // those three are strictly the single canonical Ir21Connectivity
+  // provider per service (GSMA IR.21's own "one MNO, one published truth"
+  // model), which is what MNO Search's exclusivity pills and donut are
+  // deliberately scoped to. These "all" variants additionally include
+  // every raw primary/backup SCCP carrier and GRX/IPX or LTE/Diameter
+  // candidate the XML declared but that never became any service's single
+  // canonical provider -- the same "multi-homed" resolution Provider
+  // Search's own coverage stats already use (see
+  // ProviderService.buildMultiHomedProviderIndex), so a carrier's presence
+  // reads the same way on both pages' "All MNOs" / unfiltered views. Never
+  // used for exclusivity -- only for the All-MNOs carrier-share view.
+  allSccpProviders: string[];
+  allDsxProviders: string[];
+  allIpxProviders: string[];
   lastEffectiveDate: string | null;
   // True when a PDF was paired (by TADIG match) with this MNO's XML at
   // ingestion time — see UploadService.matchPdfForTadig. Stored in Supabase

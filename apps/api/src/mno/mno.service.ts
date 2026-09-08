@@ -32,6 +32,16 @@ function newProvidersByService(): ProvidersByService {
   return { SCCP: new Set(), DSX: new Set(), IPX: new Set() };
 }
 
+/** Every distinct provider name detail()'s own connectivityMatrix already
+ * resolved for one service -- both the broad IR.21 candidate set
+ * (ir21Providers, which already includes the canonical provider itself,
+ * see resolveAllDeclaredProviders) and any Reach List providers. */
+function allDeclaredNamesFor(matrix: ConnectivityMatrixRow[], service: ServiceName): string[] {
+  const row = matrix.find((m) => m.service === service);
+  if (!row) return [];
+  return Array.from(new Set([...row.ir21Providers.map((p) => p.name), ...row.reachlistProviders]));
+}
+
 /** Ranks how a row matched a free-text search term, lowest number wins —
  * operator identity (name, then TADIG, then name-substring, then country/
  * MCC-MNC) always outranks a match that only came from connected-carrier
@@ -203,6 +213,7 @@ export class MnoService {
     const providerSource =
       datasetScope === "ir21" ? "ir21" : datasetScope === "reachlist_claimed" || datasetScope === "reachlist_only" ? "reachlist" : "both";
     const providersByMno = await this.resolvedProvidersByMno(mnoIds, providerSource);
+    const allProvidersByMno = await this.resolvedAllDeclaredProvidersByMno(orderedRows, providersByMno, providerSource !== "reachlist");
 
     // An MNO with no resolved provider on any service (no Ir21Connectivity,
     // no ProviderReachlist row) has nothing comparable to show in Operator
@@ -213,6 +224,7 @@ export class MnoService {
     // this only changes what search results include.
     const mapped = orderedRows.map((r) => {
       const p = providersByMno.get(r.id);
+      const allP = allProvidersByMno.get(r.id);
       return {
         id: r.id,
         operatorName: r.operatorName,
@@ -230,6 +242,9 @@ export class MnoService {
         sccpProviders: p ? Array.from(p.SCCP) : [],
         dsxProviders: p ? Array.from(p.DSX) : [],
         ipxProviders: p ? Array.from(p.IPX) : [],
+        allSccpProviders: allP ? Array.from(allP.SCCP) : [],
+        allDsxProviders: allP ? Array.from(allP.DSX) : [],
+        allIpxProviders: allP ? Array.from(allP.IPX) : [],
         lastEffectiveDate: r.connectivity?.lastEffectiveDate?.toISOString() ?? null,
         hasPdfDocument: r.connectivity?.hasPdfDocument ?? false,
       };
@@ -306,6 +321,71 @@ export class MnoService {
     return byMno;
   }
 
+  /** Broader companion to resolvedProvidersByMno above, computed only for
+   * MNO Search's "All MNOs" carrier-share view (ExclusivityCharts.tsx) --
+   * never for exclusivity, which stays scoped to the single canonical
+   * Ir21Connectivity provider per service (GSMA IR.21's own "one MNO, one
+   * published truth" model) that resolvedProvidersByMno already returns.
+   *
+   * Starts from that canonical result and adds every raw primary/backup
+   * SCCP carrier and GRX/IPX or LTE/Diameter candidate MnoMasterConnectivity
+   * declared but that never became any service's single canonical provider
+   * -- resolved through the same alias cache ingestion uses (rawCandidatesFor
+   * + ProviderResolverService), the same "multi-homed" data
+   * ProviderService.buildMultiHomedProviderIndex already surfaces for
+   * Provider Search's own coverage stats. That's what keeps a carrier's
+   * presence reading the same way on both pages' "All MNOs" views, without
+   * changing what "exclusive" means anywhere else on the platform.
+   *
+   * IR.21-sourced only -- there's no raw-candidate concept for Reach List,
+   * so `includeIr21=false` (a pure Reach List scope) just returns a copy of
+   * the canonical result. */
+  private async resolvedAllDeclaredProvidersByMno(
+    rows: {
+      id: number;
+      connectivity: { primarySccpCarrier: string | null; backupSccpCarriers: string[]; grxIpxProviders: string[]; lteIpxProviders: string[] } | null;
+    }[],
+    canonicalByMno: Map<number, ProvidersByService>,
+    includeIr21: boolean,
+  ): Promise<Map<number, ProvidersByService>> {
+    const broadByMno = new Map<number, ProvidersByService>();
+    for (const [mnoId, p] of canonicalByMno) {
+      broadByMno.set(mnoId, { SCCP: new Set(p.SCCP), DSX: new Set(p.DSX), IPX: new Set(p.IPX) });
+    }
+    if (!includeIr21) return broadByMno;
+
+    const matches: { mnoId: number; service: ServiceName; providerId: number }[] = [];
+    const resolvedProviderIds = new Set<number>();
+    for (const r of rows) {
+      for (const service of SERVICE_ORDER) {
+        for (const raw of this.rawCandidatesFor(service, r.connectivity)) {
+          const normalized = this.providerResolver.normalize(raw);
+          if (!normalized) continue;
+          const providerId = this.providerResolver.matchAlias(normalized);
+          if (!providerId) continue;
+          resolvedProviderIds.add(providerId);
+          matches.push({ mnoId: r.id, service, providerId });
+        }
+      }
+    }
+    if (matches.length === 0) return broadByMno;
+
+    const providers = await this.prisma.providerMaster.findMany({ where: { id: { in: Array.from(resolvedProviderIds) } } });
+    const nameById = new Map(providers.map((p) => [p.id, p.providerName]));
+
+    for (const { mnoId, service, providerId } of matches) {
+      const name = nameById.get(providerId);
+      if (!name) continue;
+      let p = broadByMno.get(mnoId);
+      if (!p) {
+        p = newProvidersByService();
+        broadByMno.set(mnoId, p);
+      }
+      p[service].add(name);
+    }
+    return broadByMno;
+  }
+
   async detail(id: number): Promise<MnoDetail> {
     const mno = await this.prisma.mnoMaster.findUnique({
       where: { id },
@@ -353,6 +433,15 @@ export class MnoService {
       sccpProviders: Array.from(providers.SCCP),
       dsxProviders: Array.from(providers.DSX),
       ipxProviders: Array.from(providers.IPX),
+      // Derived from `matrix` (already computed above) rather than a
+      // second resolution pass -- each row's ir21Providers is exactly the
+      // broad "every raw primary/backup/GRX/LTE candidate, resolved"
+      // result resolvedAllDeclaredProvidersByMno computes in bulk for
+      // search(), just already done here per-service for the Comparison
+      // Grid.
+      allSccpProviders: allDeclaredNamesFor(matrix, "SCCP"),
+      allDsxProviders: allDeclaredNamesFor(matrix, "DSX"),
+      allIpxProviders: allDeclaredNamesFor(matrix, "IPX"),
       lastEffectiveDate: mno.connectivity?.lastEffectiveDate?.toISOString() ?? null,
       hasPdfDocument: mno.connectivity?.hasPdfDocument ?? false,
       connectivityMatrix: matrix,

@@ -89,6 +89,14 @@ function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
   const sccpProviders = sanitizeProviders(r.sccpProviders);
   const dsxProviders = sanitizeProviders(r.dsxProviders);
   const ipxProviders = sanitizeProviders(r.ipxProviders);
+  // allSccpProviders/etc. never feed exclusivity below (only sccpProviders/
+  // dsxProviders/ipxProviders, the canonical Ir21Connectivity-scoped
+  // arrays, do) -- sanitized the same way purely so the "All MNOs" donut's
+  // presence counting can't be thrown off by the same stray-blank-entry
+  // risk the canonical arrays are guarded against above.
+  const allSccpProviders = sanitizeProviders(r.allSccpProviders);
+  const allDsxProviders = sanitizeProviders(r.allDsxProviders);
+  const allIpxProviders = sanitizeProviders(r.allIpxProviders);
 
   const isExclusiveSccp = sccpProviders.length === 1;
   const isExclusiveDsx = dsxProviders.length === 1;
@@ -104,6 +112,9 @@ function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
     sccpProviders,
     dsxProviders,
     ipxProviders,
+    allSccpProviders,
+    allDsxProviders,
+    allIpxProviders,
     isExclusiveSccp,
     soleSccpProvider: soleOf(sccpProviders),
     isExclusiveDsx,

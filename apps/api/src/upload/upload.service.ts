@@ -69,12 +69,21 @@ export class UploadService {
    * currentMnoCount is a live count, not the `active` row's stored
    * snapshot — a "Replace Active Dataset" upload split across several
    * requests only flags its first request as isCurrentActive, so that
-   * row's own mnoCount can undercount the eventual total. */
+   * row's own mnoCount can undercount the eventual total.
+   *
+   * Matches MnoService.search's "ir21" dataset scope exactly: a snapshot
+   * (MnoMasterConnectivity row) OR a declared Ir21Connectivity provider,
+   * either alone sufficient -- a plain mnoMasterConnectivity.count() alone
+   * (the previous version of this line) misses the same small number of
+   * declared-but-unsnapshotted MNOs that scope's own count used to miss,
+   * for the same underlying reason. */
   async getActiveBaseline(): Promise<ActiveBaselineInfo> {
-    const [active, currentMnoCount] = await Promise.all([
+    const [active, snapshotMnoIds, declaredMnoIds] = await Promise.all([
       this.prisma.uploadHistory.findFirst({ where: { isCurrentActive: true }, orderBy: { uploadTime: "desc" } }),
-      this.prisma.mnoMasterConnectivity.count(),
+      this.prisma.mnoMasterConnectivity.findMany({ select: { mnoId: true } }),
+      this.prisma.ir21Connectivity.findMany({ select: { mnoId: true }, distinct: ["mnoId"] }),
     ]);
+    const currentMnoCount = new Set([...snapshotMnoIds.map((r) => r.mnoId), ...declaredMnoIds.map((r) => r.mnoId)]).size;
     return { active: active ? this.toHistoryRow(active) : null, currentMnoCount };
   }
 

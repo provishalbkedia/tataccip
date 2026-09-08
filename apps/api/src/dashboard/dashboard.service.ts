@@ -16,7 +16,7 @@ export class DashboardService {
   async metrics(): Promise<DashboardMetrics> {
     const [
       rawMnoCount,
-      authoritativeMnoCount,
+      snapshotMnoIds,
       ir21Rows,
       connectivityRows,
       reachProviderIds,
@@ -24,7 +24,7 @@ export class DashboardService {
       pendingMnoNormalizationCount,
     ] = await Promise.all([
       this.prisma.mnoMaster.count(),
-      this.prisma.mnoMaster.count({ where: { connectivity: { isNot: null } } }),
+      this.prisma.mnoMaster.findMany({ where: { connectivity: { isNot: null } }, select: { id: true } }),
       this.prisma.ir21Connectivity.findMany({ select: { mnoId: true, providerId: true, service: { select: { serviceName: true } } } }),
       this.prisma.mnoMasterConnectivity.findMany({
         select: { mnoId: true, primarySccpCarrier: true, backupSccpCarriers: true, grxIpxProviders: true, lteIpxProviders: true },
@@ -33,6 +33,19 @@ export class DashboardService {
       this.prisma.ir21Connectivity.findMany({ select: { providerId: true }, distinct: ["providerId"] }),
       this.prisma.mnoNormalizationAudit.count({ where: { matchStatus: "PENDING_REVIEW" } }),
     ]);
+
+    // "IR.21 Verified" (MnoService.search's own "ir21" dataset scope, which
+    // this must stay in lockstep with) means: has a parsed XML snapshot on
+    // file (connectivity !== null) OR has at least one declared
+    // Ir21Connectivity provider on record -- either alone is enough. A
+    // plain connectivity !== null count alone (the previous version of
+    // this line) misses a small number of MNOs with a real declaration but
+    // no snapshot (typically a manually-seeded/override entry), the same
+    // gap MnoService.search's own "ir21" scope had until it was fixed to
+    // OR the two signals together -- see that fix's commit for the full
+    // story, including a regression caught along the way from trying
+    // declaredIr21MnoIds alone instead of OR.
+    const authoritativeMnoCount = new Set([...snapshotMnoIds.map((r) => r.id), ...ir21Rows.map((r) => r.mnoId)]).size;
 
     // ProviderMaster.count() alone counts every row ever created, including
     // ones an early/unrefined ingestion pass created from stray XML text

@@ -13,8 +13,10 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ActiveBaselineBanner from "@/components/ActiveBaselineBanner";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
+import { useAuth } from "@/lib/auth-context";
+import { Role } from "@ccip/shared-types";
 
-const SECTIONS = [
+const SECTIONS: { href: string; title: string; description: string; icon: React.ReactNode; roles?: Role[] }[] = [
   {
     href: "/admin/upload",
     title: "IR.21 & Reach List Uploads",
@@ -44,6 +46,10 @@ const SECTIONS = [
     title: "User Access & Roles",
     description: "Promote or reassign signed-in users to VIEWER, ANALYST, or ADMIN, and suspend access when needed.",
     icon: <ManageAccountsIcon fontSize="large" color="primary" />,
+    // Restricted server-side too (RequireAuth roles={[Role.ADMIN]} on the
+    // page itself, GET /users tightened to @Roles(Role.ADMIN)) -- hidden
+    // here as well so a non-admin never sees a link that only dead-ends.
+    roles: [Role.ADMIN],
   },
   {
     href: "/admin/architecture",
@@ -54,6 +60,9 @@ const SECTIONS = [
 ];
 
 export default function AdminMenuPage() {
+  const { user } = useAuth();
+  const visibleSections = SECTIONS.filter((s) => !s.roles || (user && s.roles.includes(user.role)));
+
   return (
     <RequireAuth>
       <AppShell>
@@ -63,7 +72,7 @@ export default function AdminMenuPage() {
         <ReadOnlyBanner />
         <ActiveBaselineBanner />
         <Grid container spacing={2}>
-          {SECTIONS.map((s) => (
+          {visibleSections.map((s) => (
             <Grid item xs={12} sm={6} key={s.href}>
               <Card sx={{ height: "100%" }}>
                 <CardActionArea component={Link} href={s.href} sx={{ height: "100%" }}>

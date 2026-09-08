@@ -19,7 +19,7 @@ export class UserController {
   constructor(private userService: UserService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.ANALYST, Role.VIEWER)
+  @Roles(Role.ADMIN)
   list(@Query("q") q?: string, @Query("role") role?: string) {
     const parsedRole = role && VALID_ROLES.includes(role) ? (role as Role) : undefined;
     return this.userService.list(q, parsedRole);

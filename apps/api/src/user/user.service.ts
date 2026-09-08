@@ -19,16 +19,16 @@ export class UserService {
     });
     if (users.length === 0) return [];
 
-    // One query for every user's most recent LoginHistory row, rather than
-    // per-user round-trips — distinct+orderBy gives exactly the latest row
-    // per userId in a single query.
-    const latestLogins = await this.prisma.loginHistory.findMany({
+    // One query for every user's login count and most recent LoginHistory
+    // row, rather than per-user round-trips — _count/_max grouped by userId
+    // gives both in a single query.
+    const loginStats = await this.prisma.loginHistory.groupBy({
+      by: ["userId"],
       where: { userId: { in: users.map((u) => u.id) } },
-      orderBy: { loginAt: "desc" },
-      distinct: ["userId"],
-      select: { userId: true, loginAt: true },
+      _count: { _all: true },
+      _max: { loginAt: true },
     });
-    const lastLoginByUserId = new Map(latestLogins.map((l) => [l.userId, l.loginAt]));
+    const statsByUserId = new Map(loginStats.map((s) => [s.userId, s]));
 
     return users.map((u) => ({
       id: u.id,
@@ -38,7 +38,10 @@ export class UserService {
       isActive: u.isActive,
       authProvider: u.authProvider,
       createdAt: u.createdAt.toISOString(),
-      lastLoginAt: lastLoginByUserId.get(u.id)?.toISOString() ?? null,
+      lastLoginAt: statsByUserId.get(u.id)?._max.loginAt?.toISOString() ?? null,
+      loginCount: statsByUserId.get(u.id)?._count._all ?? 0,
+      totalTimeSpentSeconds: u.totalTimeSpentSeconds,
+      lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
     }));
   }
 
@@ -76,7 +79,12 @@ export class UserService {
     return this.toRow(updated);
   }
 
-  private toRow(u: {
+  // Both callers above are immediately followed by the frontend re-fetching
+  // the whole list (see /admin/users' load() after every mutation), so this
+  // return value is never actually rendered — still queried for real rather
+  // than stubbed, since a wrong loginCount/lastLoginAt in an API response is
+  // a bug waiting to bite the next caller that doesn't happen to refetch.
+  private async toRow(u: {
     id: number;
     email: string;
     name: string | null;
@@ -84,7 +92,13 @@ export class UserService {
     isActive: boolean;
     authProvider: string;
     createdAt: Date;
-  }): UserRow {
+    totalTimeSpentSeconds: number;
+    lastActiveAt: Date | null;
+  }): Promise<UserRow> {
+    const [loginCount, lastLogin] = await Promise.all([
+      this.prisma.loginHistory.count({ where: { userId: u.id } }),
+      this.prisma.loginHistory.findFirst({ where: { userId: u.id }, orderBy: { loginAt: "desc" }, select: { loginAt: true } }),
+    ]);
     return {
       id: u.id,
       email: u.email,
@@ -93,7 +107,10 @@ export class UserService {
       isActive: u.isActive,
       authProvider: u.authProvider as UserRow["authProvider"],
       createdAt: u.createdAt.toISOString(),
-      lastLoginAt: null,
+      lastLoginAt: lastLogin?.loginAt.toISOString() ?? null,
+      loginCount,
+      totalTimeSpentSeconds: u.totalTimeSpentSeconds,
+      lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
     };
   }
 }

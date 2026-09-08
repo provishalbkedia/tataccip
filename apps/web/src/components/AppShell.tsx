@@ -38,7 +38,6 @@ import { Role } from "@ccip/shared-types";
 import { useAuth } from "@/lib/auth-context";
 import { useCopilot } from "@/context/CopilotContext";
 import { api } from "@/lib/api";
-import LoginHistoryChip from "./LoginHistoryChip";
 import OnlineUsersBadge from "./OnlineUsersBadge";
 import DisclaimerModal from "./DisclaimerModal";
 import ExecutiveCopilot from "./assistant/ExecutiveCopilot";
@@ -286,7 +285,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 2 }}>
                 <Chip label={`${user.email} · ${user.role}`} size="small" sx={{ color: "white", borderColor: "white" }} variant="outlined" />
                 <OnlineUsersBadge />
-                <LoginHistoryChip />
                 <IconButton color="inherit" onClick={logout} title="Logout" sx={{ minWidth: 44, minHeight: 44 }}>
                   <LogoutIcon fontSize="small" />
                 </IconButton>
@@ -310,15 +308,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </Typography>
                 </MenuItem>
                 <Divider />
-                {/* No onClick here (unlike Logout below) — these chips open
-                   their own nested Popover on click, and closing this Menu
-                   at the same time would unmount their anchor element out
-                   from under it. */}
+                {/* No onClick here (unlike Logout below) — this chip opens
+                   its own nested Popover on click, and closing this Menu at
+                   the same time would unmount its anchor element out from
+                   under it. */}
                 <MenuItem sx={{ minHeight: 44 }}>
                   <OnlineUsersBadge dark={false} />
-                </MenuItem>
-                <MenuItem sx={{ minHeight: 44 }}>
-                  <LoginHistoryChip dark={false} />
                 </MenuItem>
                 <Divider />
                 <MenuItem onClick={logout} sx={{ minHeight: 44 }}>

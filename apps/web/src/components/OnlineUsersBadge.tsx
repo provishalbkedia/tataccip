@@ -8,11 +8,11 @@ import { ActiveUsersInfo } from "@ccip/shared-types";
 
 const POLL_MS = 30_000;
 
-/** "N Online | M Total Logins" — "online" is a heuristic (lastActiveAt
- * within 5 minutes, updated on every authenticated request), not a real
- * presence/session system; JWT auth has no server-side session to query
- * directly. Distinct from LoginHistoryChip, which shows the *current
- * user's own* login count, not the platform-wide total. */
+/** "N Online" — a heuristic (lastActiveAt within 5 minutes, updated on
+ * every authenticated request), not a real presence/session system; JWT
+ * auth has no server-side session to query directly. The API response
+ * still carries totalLoginsCount (unused here) — see /admin/users for the
+ * per-user breakdown that replaced the old platform-wide login counter. */
 export default function OnlineUsersBadge({ dark = true }: { dark?: boolean }) {
   const [info, setInfo] = React.useState<ActiveUsersInfo | null>(null);
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
@@ -30,7 +30,7 @@ export default function OnlineUsersBadge({ dark = true }: { dark?: boolean }) {
     <>
       <Chip
         icon={<CircleIcon sx={{ color: "#4caf50 !important", fontSize: "10px !important" }} />}
-        label={`${info.onlineUsersCount} Online | ${info.totalLoginsCount} Total Logins`}
+        label={`${info.onlineUsersCount} Online`}
         size="small"
         onClick={(e) => setAnchorEl(e.currentTarget)}
         sx={dark ? { color: "white", borderColor: "white", cursor: "pointer" } : { cursor: "pointer" }}

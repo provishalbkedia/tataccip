@@ -65,6 +65,13 @@ model User {
   // and scale to zero, so in-memory presence tracking wouldn't be
   // consistent across instances the way a shared DB column is.
   lastActiveAt DateTime?
+  // Cumulative seconds of activity, accrued by that same JwtStrategy update
+  // whenever the gap since the previous lastActiveAt is short enough to
+  // count as one continuous session (see ONLINE_WINDOW_MS in
+  // auth.service.ts) — a multi-hour gap between visits isn't counted as
+  // "active" the whole time in between. loginCount and lastLoginAt aren't
+  // stored here since they're already derivable from LoginHistory below.
+  totalTimeSpentSeconds Int @default(0)
 
   loginHistory LoginHistory[]
 }

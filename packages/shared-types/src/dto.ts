@@ -36,6 +36,15 @@ export interface UserRow {
   // actually logged in (e.g. provisioned but not yet signed in, shouldn't
   // normally happen since provisioning only happens on first sign-in).
   lastLoginAt: string | null;
+  // Total successful sign-ins ever recorded (count of LoginHistory rows).
+  loginCount: number;
+  // Cumulative accrued active time — see User.totalTimeSpentSeconds.
+  totalTimeSpentSeconds: number;
+  // Same lastActiveAt JwtStrategy stamps on every authenticated request —
+  // "online" is this being within the last 5 minutes (ONLINE_WINDOW_MS),
+  // same heuristic ActiveUsersInfo uses, computed client-side here rather
+  // than as a boolean so the row stays accurate between poll refreshes.
+  lastActiveAt: string | null;
 }
 
 export interface UpdateUserRoleRequest {

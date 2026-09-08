@@ -8,7 +8,12 @@ import { ActiveUsersInfo, LoginHistorySummary, LoginResponse } from "@ccip/share
 import { parseBrowserOs } from "./user-agent.util";
 
 const RECENT_LOGIN_LIMIT = 20;
-const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+// Exported since JwtStrategy also reuses this exact window to decide
+// whether the gap since a user's previous request is short enough to
+// accrue as continuous active time toward User.totalTimeSpentSeconds — a
+// user's engagement total only ever grows while they'd also show as
+// online, by construction.
+export const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 // Microsoft's multi-tenant OpenID discovery keyset — same keys serve every
 // Azure AD tenant, so this one remote set covers any @tatacommunications.com

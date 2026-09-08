@@ -25,6 +25,7 @@ import {
   Typography,
 } from "@mui/material";
 import BlockIcon from "@mui/icons-material/Block";
+import CircleIcon from "@mui/icons-material/Circle";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
@@ -33,6 +34,47 @@ import { api, ApiError } from "@/lib/api";
 import { AuthProvider, Role, UserRow } from "@ccip/shared-types";
 
 const ROLE_OPTIONS: Role[] = [Role.ADMIN, Role.ANALYST, Role.VIEWER];
+
+// Same window the backend uses to decide "online" (ONLINE_WINDOW_MS in
+// auth.service.ts) — a user's lastActiveAt within this long shows as live.
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+
+function formatTimeSpent(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours === 0 && minutes === 0) return "< 1m";
+  return `${hours}h ${minutes}m`;
+}
+
+/** A short "how long ago" string for a user who isn't currently online —
+ * coarse on purpose (this is a presence indicator, not an activity log). */
+function formatLastSeen(lastActiveAt: string): string {
+  const diffMs = Date.now() - new Date(lastActiveAt).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function PresenceIndicator({ lastActiveAt }: { lastActiveAt: string | null }) {
+  const isOnline = !!lastActiveAt && Date.now() - new Date(lastActiveAt).getTime() < ONLINE_WINDOW_MS;
+  if (isOnline) {
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "#2E7D32" }}>
+        <CircleIcon sx={{ fontSize: 10 }} />
+        <Typography variant="body2" fontWeight={600}>
+          Online
+        </Typography>
+      </Box>
+    );
+  }
+  return (
+    <Typography variant="body2" color="text.secondary">
+      {lastActiveAt ? `Offline · ${formatLastSeen(lastActiveAt)}` : "Offline"}
+    </Typography>
+  );
+}
 
 function SummaryBadge({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -53,7 +95,6 @@ function SummaryBadge({ label, value, color }: { label: string; value: number; c
 
 export default function UserManagementPage() {
   const { user: currentUser } = useAuth();
-  const isAdmin = currentUser?.role === Role.ADMIN;
   const [users, setUsers] = React.useState<UserRow[]>([]);
   const [q, setQ] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -114,7 +155,7 @@ export default function UserManagementPage() {
   );
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={[Role.ADMIN]}>
       <AppShell>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           User Access &amp; Roles
@@ -157,8 +198,10 @@ export default function UserManagementPage() {
                 <TableCell>Sign-In Type</TableCell>
                 <TableCell>Current Role</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Joined Date</TableCell>
-                <TableCell>Last Active</TableCell>
+                <TableCell align="right">Logins</TableCell>
+                <TableCell>Last Login</TableCell>
+                <TableCell>Time Spent</TableCell>
+                <TableCell>Presence</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -185,20 +228,12 @@ export default function UserManagementPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Tooltip
-                        title={
-                          !isAdmin
-                            ? "Administrator privileges required to change roles."
-                            : isSelf
-                              ? "You cannot change your own role"
-                              : ""
-                        }
-                      >
+                      <Tooltip title={isSelf ? "You cannot change your own role" : ""}>
                         <span>
                           <Select
                             size="small"
                             value={u.role}
-                            disabled={busyId === u.id || isSelf || !isAdmin}
+                            disabled={busyId === u.id || isSelf}
                             onChange={(e) => handleRoleChange(u, e.target.value as Role)}
                             sx={{ minWidth: 130 }}
                           >
@@ -214,25 +249,29 @@ export default function UserManagementPage() {
                     <TableCell>
                       <Chip size="small" label={u.isActive ? "Active" : "Inactive"} color={u.isActive ? "success" : "default"} />
                     </TableCell>
-                    <TableCell>{new Date(u.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      {u.loginCount}
+                    </TableCell>
                     <TableCell>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <em>Never</em>}</TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{formatTimeSpent(u.totalTimeSpentSeconds)}</TableCell>
+                    <TableCell>
+                      <PresenceIndicator lastActiveAt={u.lastActiveAt} />
+                    </TableCell>
                     <TableCell>
                       <Tooltip
                         title={
-                          !isAdmin
-                            ? "Administrator privileges required to change account status."
-                            : isSelf
-                              ? "You cannot deactivate your own account"
-                              : u.isActive
-                                ? "Deactivate"
-                                : "Reactivate"
+                          isSelf
+                            ? "You cannot deactivate your own account"
+                            : u.isActive
+                              ? "Deactivate"
+                              : "Reactivate"
                         }
                       >
                         <span>
                           <Switch
                             size="small"
                             checked={u.isActive}
-                            disabled={busyId === u.id || isSelf || !isAdmin}
+                            disabled={busyId === u.id || isSelf}
                             onChange={() => handleStatusToggle(u)}
                             icon={<BlockIcon fontSize="small" sx={{ p: "1px" }} />}
                           />
@@ -244,7 +283,7 @@ export default function UserManagementPage() {
               })}
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={9}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                       No users found.
                     </Typography>

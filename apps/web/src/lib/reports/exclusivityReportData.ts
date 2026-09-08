@@ -39,13 +39,20 @@ export interface CarrierExclusivityEntry {
 
 // "full"/"sccp"/"dsx"/"ipx" scope the aggregation to exactly the matching
 // pill's own definition (one MNO, one count, keyed by that dimension's own
-// sole-provider field); "any" is the broader cross-service view. Kept
-// separate from the page's own ExclusiveMode ("all"/"shared" included)
-// since those two don't correspond to a single aggregation dimension --
-// callers map them to "any" (see toAggregationMode in page.tsx).
-export type ExclusivityAggregationMode = "full" | "sccp" | "dsx" | "ipx" | "any";
+// sole-provider field); "any" is the broader cross-service exclusivity
+// view; "all" (the "All MNOs" pill -- no exclusivity filter at all) is the
+// odd one out below, since it counts plain carrier *presence*, not
+// exclusivity. Kept separate from the page's own ExclusiveMode ("shared"
+// included) since that one doesn't correspond to a single aggregation
+// dimension -- callers map it to "any" (see toAggregationMode in page.tsx).
+export type ExclusivityAggregationMode = "all" | "full" | "sccp" | "dsx" | "ipx" | "any";
 
-/** Per-carrier share of exclusivity, scoped to `mode`:
+/** Per-carrier share, scoped to `mode`:
+ * - "all": NOT an exclusivity measure at all -- counts every carrier that
+ *   appears *anywhere* in a row's SCCP/DSX/IPX provider arrays, exclusive
+ *   or shared, so this answers "who has the most overall market presence"
+ *   for the unfiltered "All MNOs" pill, where an exclusivity-only view
+ *   would silently exclude most of the market.
  * - "full": one count per MNO that's exclusive across its *entire*
  *   declared portfolio (isFullyExclusive), keyed by soleMasterProvider --
  *   matches the "Fully Exclusive" pill exactly.
@@ -63,9 +70,9 @@ export type ExclusivityAggregationMode = "full" | "sccp" | "dsx" | "ipx" | "any"
  *
  * Every mode's `exclusiveMnoCount` is always a distinct-MNO count (never
  * double-counts one MNO across services); `totalExclusiveAssignments`
- * equals that same count for the single-dimension modes, and only exceeds
- * it under "any" (where one MNO can contribute an assignment on more than
- * one service to the same carrier). */
+ * equals that same count for the single-dimension modes (including "all"),
+ * and only exceeds it under "any" (where one MNO can contribute an
+ * assignment on more than one service to the same carrier). */
 export function aggregateCarrierExclusivity(
   rows: MnoSummaryWithExclusivity[],
   mode: ExclusivityAggregationMode = "any",
@@ -100,6 +107,29 @@ export function aggregateCarrierExclusivity(
       }
       if (r.isExclusiveIpx && r.soleIpxProvider) {
         const acc = getAcc(r.soleIpxProvider);
+        acc.ipx++;
+        acc.mnoIds.add(r.id);
+      }
+    }
+  } else if (mode === "all") {
+    // Plain presence, not exclusivity -- every declared provider in every
+    // service array counts, whether or not it's that service's sole
+    // provider. Same three-array shape as "any" above (so the per-service
+    // breakdown fields stay meaningful), just without the isExclusive*
+    // gating.
+    for (const r of rows) {
+      for (const p of r.sccpProviders) {
+        const acc = getAcc(p);
+        acc.sccp++;
+        acc.mnoIds.add(r.id);
+      }
+      for (const p of r.dsxProviders) {
+        const acc = getAcc(p);
+        acc.dsx++;
+        acc.mnoIds.add(r.id);
+      }
+      for (const p of r.ipxProviders) {
+        const acc = getAcc(p);
         acc.ipx++;
         acc.mnoIds.add(r.id);
       }

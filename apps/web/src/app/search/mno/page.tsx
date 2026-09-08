@@ -43,6 +43,7 @@ import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import ExclusivityCharts from "./ExclusivityCharts";
+import type { ExclusivityAggregationMode } from "@/lib/reports/exclusivityReportData";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
 import { COUNTRY_OPTIONS, getCountryName, resolveCountryCode, type CountryOption } from "@/lib/countries";
@@ -196,13 +197,18 @@ function providerMatchesRow(r: MnoSummaryWithExclusivity, mode: ExclusiveMode, p
   }
 }
 
-// "full"/"sccp"/"dsx"/"ipx" map 1:1 onto aggregateCarrierExclusivity's own
-// dimensions; "all" (no exclusivity pill selected) and "shared" don't
-// correspond to a single dimension, so both fall back to "any" -- the
-// broad cross-service view, matching what the Exclusivity & Market Share
-// chart strip already showed before per-mode scoping existed.
-function toAggregationMode(mode: ExclusiveMode): "full" | "sccp" | "dsx" | "ipx" | "any" {
-  if (mode === "full" || mode === "sccp" || mode === "dsx" || mode === "ipx") return mode;
+// "full"/"sccp"/"dsx"/"ipx"/"all" map 1:1 onto aggregateCarrierExclusivity's
+// own dimensions; "shared" doesn't correspond to a single dimension, so it
+// falls back to "any" -- the broad cross-service exclusivity view, matching
+// what the Exclusivity & Market Share chart strip already showed before
+// per-mode scoping existed. "all" ("All MNOs", no exclusivity pill
+// selected) gets its own real dimension rather than also falling back to
+// "any" -- collapsing them together was the bug: the donut kept showing
+// carrier *exclusivity* share (and labeling itself "Carrier Exclusivity
+// Share") even with zero exclusivity filter applied, when what "All MNOs"
+// actually calls for is overall carrier *presence* share instead.
+function toAggregationMode(mode: ExclusiveMode): ExclusivityAggregationMode {
+  if (mode === "full" || mode === "sccp" || mode === "dsx" || mode === "ipx" || mode === "all") return mode;
   return "any";
 }
 

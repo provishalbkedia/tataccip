@@ -33,11 +33,49 @@ import { aggregateCarrierExclusivity, ExclusivityAggregationMode } from "@/lib/r
 import type { MnoSummaryWithExclusivity } from "./page";
 
 const AGGREGATION_MODE_LABEL: Record<ExclusivityAggregationMode, string> = {
+  all: "market",
   full: "Fully Exclusive",
   sccp: "SCCP-solo",
   dsx: "DSX-solo",
   ipx: "IPX-solo",
   any: "any exclusive (SCCP/DSX/IPX-solo)",
+};
+
+// "all" (the "All MNOs" pill) isn't an exclusivity view at all -- it's the
+// unfiltered market baseline -- so its card title/subtitle/tooltip/KPI
+// wording all read as plain carrier *presence*, not exclusivity, instead of
+// reusing AGGREGATION_MODE_LABEL's exclusivity-flavored phrasing above.
+const CHART_TITLE: Record<ExclusivityAggregationMode, string> = {
+  all: "Carrier Share — All MNOs",
+  full: "Carrier Exclusivity Share — Fully Exclusive",
+  sccp: "Carrier Exclusivity Share — SCCP Solo",
+  dsx: "Carrier Exclusivity Share — DSX Solo",
+  ipx: "Carrier Exclusivity Share — IPX Solo",
+  any: "Carrier Exclusivity Share — Any Service Exclusive",
+};
+const CHART_SUBTITLE: Record<ExclusivityAggregationMode, string> = {
+  all: "Overall market share and presence across all declared operator networks",
+  full: "Which wholesale carriers hold the most fully exclusive accounts",
+  sccp: "Which wholesale carriers hold the most SCCP solo accounts",
+  dsx: "Which wholesale carriers hold the most DSX solo accounts",
+  ipx: "Which wholesale carriers hold the most IPX solo accounts",
+  any: "Which wholesale carriers hold the most any exclusive (SCCP/DSX/IPX-solo) accounts",
+};
+const DONUT_EMPTY_TEXT: Record<ExclusivityAggregationMode, string> = {
+  all: "No carriers found in this scope.",
+  full: "No Fully Exclusive accounts in this scope.",
+  sccp: "No SCCP-solo accounts in this scope.",
+  dsx: "No DSX-solo accounts in this scope.",
+  ipx: "No IPX-solo accounts in this scope.",
+  any: "No any exclusive (SCCP/DSX/IPX-solo) accounts in this scope.",
+};
+const HOME_CARRIER_BANNER_LABEL: Record<ExclusivityAggregationMode, string> = {
+  all: "Tata Comm Footprint Standing",
+  full: "Tata Comm Exclusivity Standing",
+  sccp: "Tata Comm Exclusivity Standing",
+  dsx: "Tata Comm Exclusivity Standing",
+  ipx: "Tata Comm Exclusivity Standing",
+  any: "Tata Comm Exclusivity Standing",
 };
 
 // This platform is Tata Communications' own CCIP -- leadership specifically
@@ -190,6 +228,20 @@ export default function ExclusivityCharts({
   const homeCarrierRank = carrierShare.findIndex((c) => c.providerName === HOME_CARRIER);
   const homeCarrierEntry = homeCarrierRank >= 0 ? carrierShare[homeCarrierRank] : null;
 
+  const isAllMode = aggregationMode === "all";
+  // "% of Total MNO Market" (the "all" mode KPI) means share of the actual
+  // MNO population in the current scope -- rows.length, i.e. the same
+  // number the "All MNOs (774)" pill itself shows -- not
+  // pctOfExclusiveAssignments, whose denominator is the *sum* of every
+  // carrier's own MNO count and so double-counts any MNO with more than
+  // one declared provider (the normal case once exclusivity isn't being
+  // filtered for). Only relevant in "all" mode: every other mode's
+  // qualifying MNOs partition cleanly across carriers (an MNO can't be
+  // sole-exclusive to two carriers on the same dimension at once), so
+  // pctOfExclusiveAssignments already equals "% of qualifying MNOs" there.
+  const homeMarketCoveragePct =
+    isAllMode && homeCarrierEntry && rows.length > 0 ? (homeCarrierEntry.exclusiveMnoCount / rows.length) * 100 : 0;
+
   return (
     <Paper sx={{ mb: 3 }}>
       <Box
@@ -292,26 +344,32 @@ export default function ExclusivityCharts({
                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                   <StarIcon sx={{ color: "#00A98A", fontSize: 18 }} />
                   <Typography variant="body2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                    Tata Comm Exclusivity Standing
+                    {HOME_CARRIER_BANNER_LABEL[aggregationMode]}
                   </Typography>
                 </Box>
                 {homeCarrierEntry ? (
                   <>
                     <Chip
                       size="small"
-                      label={`${homeCarrierEntry.exclusiveMnoCount} ${AGGREGATION_MODE_LABEL[aggregationMode]} MNOs`}
+                      label={isAllMode ? `${homeCarrierEntry.exclusiveMnoCount} MNOs Covered` : `${homeCarrierEntry.exclusiveMnoCount} ${AGGREGATION_MODE_LABEL[aggregationMode]} MNOs`}
                       sx={{ fontWeight: 700, bgcolor: "#fff" }}
                     />
                     <Chip
                       size="small"
-                      label={`${homeCarrierEntry.pctOfExclusiveAssignments.toFixed(1)}% of ${AGGREGATION_MODE_LABEL[aggregationMode]} Footprint`}
+                      label={
+                        isAllMode
+                          ? `${homeMarketCoveragePct.toFixed(1)}% of Total MNO Market`
+                          : `${homeCarrierEntry.pctOfExclusiveAssignments.toFixed(1)}% of ${AGGREGATION_MODE_LABEL[aggregationMode]} Footprint`
+                      }
                       sx={{ fontWeight: 700, bgcolor: "#fff" }}
                     />
                     <Chip size="small" label={`Rank #${homeCarrierRank + 1} of ${carrierShare.length}`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
                   </>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    No {AGGREGATION_MODE_LABEL[aggregationMode]} accounts for Tata Comm in the current scope.
+                    {isAllMode
+                      ? "Tata Comm has no declared presence in the current scope."
+                      : `No ${AGGREGATION_MODE_LABEL[aggregationMode]} accounts for Tata Comm in the current scope.`}
                   </Typography>
                 )}
               </Box>
@@ -320,10 +378,10 @@ export default function ExclusivityCharts({
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      Carrier Exclusivity Share
+                      {CHART_TITLE[aggregationMode]}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      Which wholesale carriers hold the most {AGGREGATION_MODE_LABEL[aggregationMode]} accounts
+                      {CHART_SUBTITLE[aggregationMode]}
                     </Typography>
                     {/* Fixed minHeight + position:relative so this card never
                        collapses smaller than the chart needs, even for a
@@ -339,7 +397,7 @@ export default function ExclusivityCharts({
                     <Box sx={{ position: "relative", minHeight: 320 }}>
                     {donutData.length === 0 ? (
                       <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
-                        No {AGGREGATION_MODE_LABEL[aggregationMode]} accounts in this scope.
+                        {DONUT_EMPTY_TEXT[aggregationMode]}
                       </Typography>
                     ) : (
                       <ResponsiveContainer width="100%" height={320}>
@@ -393,11 +451,12 @@ export default function ExclusivityCharts({
                           <RechartsTooltip
                             content={
                               <CustomTooltip
-                                formatter={(p) =>
-                                  p.providerName === "Others"
-                                    ? `Others: ${p.count} exclusive assignments (${(p.pct as number).toFixed(1)}%) — click to see the breakdown`
-                                    : `${p.providerName}: ${p.count} exclusive assignments (${(p.pct as number).toFixed(1)}%)`
-                                }
+                                formatter={(p) => {
+                                  const unit = isAllMode ? "MNOs" : "exclusive assignments";
+                                  return p.providerName === "Others"
+                                    ? `Others: ${p.count} ${unit} (${(p.pct as number).toFixed(1)}%) — click to see the breakdown`
+                                    : `${p.providerName}: ${p.count} ${unit} (${(p.pct as number).toFixed(1)}%)`;
+                                }}
                               />
                             }
                           />
@@ -470,7 +529,7 @@ export default function ExclusivityCharts({
 
       <Dialog open={showOthers} onClose={() => setShowOthers(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          Other Exclusive Wholesale Carriers
+          {isAllMode ? "Other Wholesale Carriers" : "Other Exclusive Wholesale Carriers"}
           <IconButton size="small" onClick={() => setShowOthers(false)}>
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -480,7 +539,7 @@ export default function ExclusivityCharts({
             <TableHead>
               <TableRow sx={{ "& th": { bgcolor: "#F4F6F8", fontWeight: 700, fontSize: 12, color: "#5A6B7B" } }}>
                 <TableCell>Carrier</TableCell>
-                <TableCell align="right">Exclusive MNOs</TableCell>
+                <TableCell align="right">{isAllMode ? "MNOs" : "Exclusive MNOs"}</TableCell>
                 <TableCell align="right">% Share</TableCell>
                 <TableCell align="right" />
               </TableRow>

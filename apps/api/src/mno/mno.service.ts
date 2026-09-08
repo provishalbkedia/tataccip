@@ -153,8 +153,17 @@ export class MnoService {
     // Four distinct scopes, each combining "which MNOs are included" with
     // "which source's provider data gets shown for them" (see
     // resolvedProvidersByMno's own `source` param below):
-    // - "ir21": has a parsed IR.21 XML on file (connectivity relation
-    //   present); providers shown are IR.21-sourced only.
+    // - "ir21": has at least one declared Ir21Connectivity provider on
+    //   record; providers shown are IR.21-sourced only. NOT the same test
+    //   as "has a parsed XML snapshot" (connectivity !== null) -- a small
+    //   number of MNOs (Provider Search's own coverage stats already
+    //   counted these; MNO Search's scope filter previously didn't) have
+    //   real Ir21Connectivity rows with no MnoMasterConnectivity snapshot
+    //   ever recorded for them (no XML upload, hence no PDF), typically a
+    //   manually-seeded/override declaration rather than one parsed from a
+    //   file. Using declaredIr21MnoIds instead of the snapshot flag is what
+    //   stops those MNOs being silently dropped from "IR.21 Verified"
+    //   entirely.
     // - "reachlist_claimed" ("As per Reach List"): has at least one
     //   ProviderReachlist entry, REGARDLESS of whether it also has an IR.21
     //   declaration; providers shown are Reach-List-sourced only. Distinct
@@ -164,22 +173,30 @@ export class MnoService {
     //   saw".
     // - "reachlist_only" ("Only in Reach List"): a legacy row auto-created
     //   from a Reach List upload before MNO normalization was enforced, with
-    //   no IR.21 XML ever ingested (connectivity === null) -- see
-    //   MnoNormalizationAudit for how new unresolved Reach List rows are
-    //   handled instead, in a separate admin queue that never becomes a
-    //   MnoMaster row at all. connectivity === null only means no XML
-    //   *snapshot* was recorded for the MNO -- it does NOT guarantee no
-    //   Ir21Connectivity rows exist for it (that table is populated
-    //   per-service and can be seeded/backfilled independently), so this
-    //   mode still explicitly forces Reach-List-sourced providers below
-    //   rather than assuming the merged view happens to match.
+    //   no IR.21 declaration of any kind -- no XML snapshot AND no
+    //   Ir21Connectivity row -- see MnoNormalizationAudit for how new
+    //   unresolved Reach List rows are handled instead, in a separate admin
+    //   queue that never becomes a MnoMaster row at all. Checking
+    //   declaredIr21MnoIds here too (not just connectivity === null) keeps
+    //   this scope disjoint from "ir21" above -- an MNO with a real
+    //   Ir21Connectivity declaration but no snapshot belongs in "ir21", not
+    //   here, even though connectivity is still null for it.
     // - "all": every MNO, providers merged from both sources -- the original
     //   "All MNOs" behavior, unchanged.
+    const declaredIr21MnoIds = new Set(
+      (
+        await this.prisma.ir21Connectivity.findMany({
+          where: { mnoId: { in: regionFilteredRows.map((r) => r.id) } },
+          select: { mnoId: true },
+          distinct: ["mnoId"],
+        })
+      ).map((r) => r.mnoId),
+    );
     let scopedRows = regionFilteredRows;
     if (datasetScope === "reachlist_only") {
-      scopedRows = regionFilteredRows.filter((r) => r.connectivity === null);
+      scopedRows = regionFilteredRows.filter((r) => r.connectivity === null && !declaredIr21MnoIds.has(r.id));
     } else if (datasetScope === "ir21") {
-      scopedRows = regionFilteredRows.filter((r) => r.connectivity !== null);
+      scopedRows = regionFilteredRows.filter((r) => declaredIr21MnoIds.has(r.id));
     } else if (datasetScope === "reachlist_claimed") {
       const claimedMnoIds = new Set(
         (

@@ -289,57 +289,73 @@ async function main() {
     }
   }
 
-  console.log("Seeding MNOs...");
-  const mnoRecords = new Map<string, { id: number }>();
-  for (const m of MNOS) {
-    const rec = await prisma.mnoMaster.upsert({
-      where: { tadigCode: m.tadigCode },
-      update: {},
-      create: { ...m, status: "ACTIVE" },
-    });
-    mnoRecords.set(m.tadigCode, rec);
-  }
+  // The sample/synthetic MNOs, IR21 rows, and reach list rows below exist
+  // purely so a fresh local dev database has *something* to explore and
+  // exercise the discrepancy-detection logic against (the inline comments
+  // on REACHLIST_ROWS deliberately construct MISSING_IN_REACHLIST/
+  // MISSING_IN_IR21/PROVIDER_MISMATCH cases) -- see the "not sourced from
+  // any real GSMA IR.21 filing" comment on MNOS above. This must never run
+  // in production: the Dockerfile's CMD runs `prisma:seed` on every single
+  // boot (upsert-only, deliberately safe to repeat), and prisma:seed is
+  // this same script -- these fictional MNOs (Vodafone Idea, Reliance Jio,
+  // AT&T Mobility, and others) sat undetected in production for a while,
+  // inflating MNO/provider counts platform-wide, until a screenshot
+  // comparison between two pages' KPI numbers surfaced the discrepancy.
+  if (process.env.NODE_ENV !== "production") {
+    console.log("Seeding MNOs...");
+    const mnoRecords = new Map<string, { id: number }>();
+    for (const m of MNOS) {
+      const rec = await prisma.mnoMaster.upsert({
+        where: { tadigCode: m.tadigCode },
+        update: {},
+        create: { ...m, status: "ACTIVE" },
+      });
+      mnoRecords.set(m.tadigCode, rec);
+    }
 
-  console.log("Seeding IR21 connectivity...");
-  const effectiveDate = new Date();
-  for (const row of IR21_ROWS) {
-    await prisma.ir21Connectivity.upsert({
-      where: {
-        mnoId_serviceId: {
-          mnoId: mnoRecords.get(row.tadig)!.id,
-          serviceId: serviceRecords.get(row.service)!.id,
+    console.log("Seeding IR21 connectivity...");
+    const effectiveDate = new Date();
+    for (const row of IR21_ROWS) {
+      await prisma.ir21Connectivity.upsert({
+        where: {
+          mnoId_serviceId: {
+            mnoId: mnoRecords.get(row.tadig)!.id,
+            serviceId: serviceRecords.get(row.service)!.id,
+          },
         },
-      },
-      update: {},
-      create: {
-        mnoId: mnoRecords.get(row.tadig)!.id,
-        providerId: providerRecords.get(row.provider)!.id,
-        serviceId: serviceRecords.get(row.service)!.id,
-        sourceFile: "seed-sample-ir21.xlsx",
-        effectiveDate,
-      },
-    });
-  }
-
-  console.log("Seeding reach list entries...");
-  for (const row of REACHLIST_ROWS) {
-    await prisma.providerReachlist.upsert({
-      where: {
-        mnoId_providerId_serviceId: {
+        update: {},
+        create: {
           mnoId: mnoRecords.get(row.tadig)!.id,
           providerId: providerRecords.get(row.provider)!.id,
           serviceId: serviceRecords.get(row.service)!.id,
+          sourceFile: "seed-sample-ir21.xlsx",
+          effectiveDate,
         },
-      },
-      update: {},
-      create: {
-        mnoId: mnoRecords.get(row.tadig)!.id,
-        providerId: providerRecords.get(row.provider)!.id,
-        serviceId: serviceRecords.get(row.service)!.id,
-        sourceFile: `seed-sample-reachlist-${row.provider.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`,
-        effectiveDate,
-      },
-    });
+      });
+    }
+
+    console.log("Seeding reach list entries...");
+    for (const row of REACHLIST_ROWS) {
+      await prisma.providerReachlist.upsert({
+        where: {
+          mnoId_providerId_serviceId: {
+            mnoId: mnoRecords.get(row.tadig)!.id,
+            providerId: providerRecords.get(row.provider)!.id,
+            serviceId: serviceRecords.get(row.service)!.id,
+          },
+        },
+        update: {},
+        create: {
+          mnoId: mnoRecords.get(row.tadig)!.id,
+          providerId: providerRecords.get(row.provider)!.id,
+          serviceId: serviceRecords.get(row.service)!.id,
+          sourceFile: `seed-sample-reachlist-${row.provider.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`,
+          effectiveDate,
+        },
+      });
+    }
+  } else {
+    console.log("NODE_ENV=production -- skipping sample/synthetic MNO, IR21, and reach list seeding.");
   }
 
   console.log("Seeding users...");

@@ -50,6 +50,12 @@ import Looks4Icon from "@mui/icons-material/Looks4";
 import Looks5Icon from "@mui/icons-material/Looks5";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import HubIcon from "@mui/icons-material/Hub";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import GroupsIcon from "@mui/icons-material/Groups";
+import RouteIcon from "@mui/icons-material/Route";
+import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import VideoModal from "@/components/VideoModal";
@@ -87,6 +93,39 @@ function ProTip({ children }: { children: React.ReactNode }) {
       sx={{ mb: 2, bgcolor: "rgba(0,212,178,0.1)", color: "#0A2540", "& .MuiAlert-icon": { color: "#00A98A" } }}
     >
       <strong>Pro-Tip:</strong> {children}
+    </Alert>
+  );
+}
+
+// Three more callout tiers, purpose-built for the Executive Overview and for
+// tying a feature's mechanics back to the commercial/industry problem it
+// solves — kept visually distinct from Tip/Warn/ProTip above (a different
+// accent color each) so a page mixing several tiers still reads as
+// deliberate, not four shades of the same box.
+function StrategicTakeaway({ children }: { children: React.ReactNode }) {
+  return (
+    <Alert
+      icon={<span style={{ fontSize: 16 }}>⚡</span>}
+      severity="success"
+      sx={{ mb: 2, bgcolor: "rgba(11,111,191,0.08)", color: "#0A2540", "& .MuiAlert-icon": { color: "#0B6FBF" } }}
+    >
+      <strong>Strategic Takeaway:</strong> {children}
+    </Alert>
+  );
+}
+
+function IndustryReality({ children }: { children: React.ReactNode }) {
+  return (
+    <Alert icon={<span style={{ fontSize: 16 }}>⚠️</span>} severity="warning" sx={{ mb: 2 }}>
+      <strong>Industry Reality:</strong> {children}
+    </Alert>
+  );
+}
+
+function OperationalTip({ children }: { children: React.ReactNode }) {
+  return (
+    <Alert icon={<span style={{ fontSize: 16 }}>💡</span>} severity="info" sx={{ mb: 2 }}>
+      <strong>Operational Tip:</strong> {children}
     </Alert>
   );
 }
@@ -319,6 +358,133 @@ const ROLE_INFO: Record<string, { label: string; color: "default" | "info" | "wa
   },
 };
 
+// ---------- Executive Overview (the industry problem, before the mechanics) ----------
+
+function UseCaseCard({
+  icon,
+  title,
+  audience,
+  body,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  audience: string;
+  body: string;
+}) {
+  return (
+    <Card variant="outlined" sx={{ height: "100%" }}>
+      <CardContent>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          {icon}
+          <Typography variant="subtitle2" fontWeight={700}>
+            {title}
+          </Typography>
+        </Box>
+        <Chip label={audience} size="small" sx={{ mb: 1, bgcolor: "#0A2540", color: "#fff", fontWeight: 600 }} />
+        <Typography variant="body2" color="text.secondary">
+          {body}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExecutiveOverviewSection() {
+  return (
+    <Box sx={{ mb: 4 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 1.5 }}>
+        <HubIcon sx={{ fontSize: 32, color: "#0B6FBF" }} />
+        <Typography variant="h5" fontWeight={700}>
+          Executive Overview — The Telecom Challenge CCIP Solves
+        </Typography>
+      </Box>
+
+      <Card sx={{ mb: 3, border: "1px solid", borderColor: "divider" }}>
+        <CardContent>
+          <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+            Why CCIP Exists
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            GSMA IR.21 is the industry&apos;s ground-truth baseline for international roaming — every one of the{" "}
+            ~774 mobile network operators CCIP tracks files its own declaration of who carries its SCCP signaling,
+            DSX/LTE traffic, and GRX/IPX data roaming. But GSMA enforces a document <em>format</em>, not a
+            <em> taxonomy</em>: there is no shared dictionary of carrier names across operators, no automated
+            cross-validation between what an operator declares and what a wholesale carrier separately claims, and
+            no obligation to update on any common schedule. Each of those 774 filings is written at one operator&apos;s
+            own discretion, in its own free text.
+          </Typography>
+          <IndustryReality>
+            The same wholesale carrier turns up under a different spelling in nearly every filing that mentions it
+            — &quot;BICS&quot;, &quot;Belgacom&quot;, &quot;Belgacom International Carrier Services&quot;, or a raw
+            IP-transit name with no obvious carrier attached at all. Tata Communications itself appears under
+            legacy entity names and regional variants just as often. Read by hand, across 774 independent documents,
+            this is not a data-quality inconvenience — it is the reason a manual cross-carrier audit takes analyst-
+            weeks and is stale again the moment it&apos;s finished.
+          </IndustryReality>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ mb: 3, border: "1px solid", borderColor: "divider" }}>
+        <CardContent>
+          <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+            The Data Normalization Pipeline
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            CCIP ingests IR.21 XML/PDF filings and wholesale commercial Reach Lists side by side, and runs every
+            free-text carrier declaration — IR.21 Section 5 (SCCP Signaling), Section 17 (GRX/IPX Roaming Peering &amp;
+            ASNs), and Section 20 (DSX/Diameter Routing Agent) — through the same entity-resolution engine: a
+            canonical alias dictionary matches each raw string first exactly, then by confident substring, to one
+            of the platform&apos;s ~30 recognized Tier-1/Tier-2 wholesale carriers. A string nothing recognizes is
+            never guessed at or silently dropped — it queues in the Unmapped Variants review screen for a human
+            decision, so the canonical carrier list only ever grows deliberately.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            The result is a single source of truth: every operator&apos;s IR.21-declared carriers, cross-referenced
+            against what wholesale Reach Lists independently claim, resolved to the same canonical entity regardless
+            of which of the 774 filings — or which carrier&apos;s own commercial export — it came from.
+          </Typography>
+          <StrategicTakeaway>
+            Normalization is what makes every other number on this platform trustworthy — a market-share donut, an
+            exclusivity count, or a churn figure is only as honest as the entity resolution underneath it. See{" "}
+            <strong>Dataset Scopes</strong> and <strong>Exclusivity Intelligence</strong> under MNO / Cust Search
+            below for exactly how that resolved data turns into carrier-lock-in and market-share metrics.
+          </StrategicTakeaway>
+        </CardContent>
+      </Card>
+
+      <Typography variant="subtitle1" fontWeight={700} gutterBottom>
+        Strategic Use Cases
+      </Typography>
+      <Grid container spacing={2} sx={{ mb: 1 }}>
+        <Grid item xs={12} md={4}>
+          <UseCaseCard
+            icon={<TrendingUpIcon color="primary" />}
+            title="Wholesale Carrier BD & Sales"
+            audience="Business Development"
+            body="Filter MNO / Cust Search to single-provider lock-in (Exclusivity Scope) to target genuinely vulnerable competitor accounts, and Market Intelligence's REPLACED events to find operators that recently displaced a competitor — proof a switch is commercially possible, not just theoretically."
+          />
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <UseCaseCard
+            icon={<RouteIcon color="primary" />}
+            title="Carrier Relations & Routing Teams"
+            audience="Carrier Relations · NOC"
+            body="Use the Multi-Provider Comparison Matrix's exclusivity/gap filter to find operators only some of your alternate carriers reach, and the ASN columns to verify a wholesale partner's claimed peering identity before escalating a routing discrepancy."
+          />
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <UseCaseCard
+            icon={<QueryStatsIcon color="primary" />}
+            title="Executive & CXO Strategy"
+            audience="Leadership"
+            body="Market Share Pivot Summary and the Executive MIS Reporting suite turn every quarter's carrier churn into a board-ready net-wins/losses view and regional market-share shift — without a manual reconciliation across two spreadsheets."
+          />
+        </Grid>
+      </Grid>
+    </Box>
+  );
+}
+
 function GettingStartedSection() {
   const { user } = useAuth();
   const roleInfo = user ? ROLE_INFO[user.role] : undefined;
@@ -376,6 +542,7 @@ function GettingStartedSection() {
 function OverviewTab() {
   return (
     <Box role="tabpanel" className="guide-tabpanel">
+      <ExecutiveOverviewSection />
       <GettingStartedSection />
 
       <Section title="Mission">
@@ -523,6 +690,47 @@ function OverviewTab() {
           ]}
         />
       </Section>
+
+      <Section title="AI Copilot & Admin Controls">
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          <AutoAwesomeIcon color="primary" fontSize="small" />
+          <Typography variant="subtitle2" fontWeight={700}>
+            AI Copilot
+          </Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          The Copilot is a context-aware assistant that ingests this same Platform Guide as its knowledge source —
+          every answer it gives traces back to the documentation on this page, not a generic model response. It
+          lives as a floating pill dock in the bottom corner of every screen, and opens itself automatically when
+          you land on a page it has route-specific guidance for (e.g. arriving at MNO Search for the first time in
+          a session), so a first-time user gets oriented without having to go looking for help.
+        </Typography>
+        <Bullets
+          items={[
+            "Voice briefings are muted by default — the Copilot always answers in text first, and only speaks a response aloud once you opt in for that session.",
+            "Its search box queries every topic across all six Guide tabs at once, so you can jump straight to an answer instead of hunting through tabs manually.",
+            "A capsule toggle in the sidebar turns the Copilot dock fully on or off platform-wide for your own session — off hides the floating dock everywhere until you switch it back on.",
+          ]}
+        />
+        <OperationalTip>
+          If the Copilot's answer on a topic looks out of date, the fix is usually to update this Platform Guide —
+          it is the Copilot's only source of truth, so a correction here becomes the Copilot's correction too.
+        </OperationalTip>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          <GroupsIcon color="primary" fontSize="small" />
+          <Typography variant="subtitle2" fontWeight={700}>
+            User Management, at a glance
+          </Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary">
+          Admins get a full audit trail of platform usage — sign-in counts, session time spent, and live online/
+          offline presence per user — in addition to role management. See{" "}
+          <strong>User Access &amp; Roles</strong> under the Admin tab for the full breakdown.
+        </Typography>
+      </Section>
     </Box>
   );
 }
@@ -536,6 +744,11 @@ function MarketIntelligenceTab() {
           re-uploads, per operator and per service (SCCP / DSX / IPX) — built for commercial and carrier-relations
           review of who is winning and losing wholesale accounts over time.
         </Typography>
+        <StrategicTakeaway>
+          A REPLACED event is direct evidence a switch away from the incumbent carrier is commercially possible for
+          that exact operator — the strongest kind of lead Wholesale Carrier BD can act on, because it isn&apos;t
+          hypothetical.
+        </StrategicTakeaway>
 
         <TechAccordion title="Delta Detection Engine" defaultExpanded>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -843,6 +1056,11 @@ function OperatorTab() {
           The amber &quot;EXCLUSIVITY SCOPE&quot; pill bar (directly below Dataset Scope and Region) narrows the
           table, and every chart beneath it, to one of six lock-in definitions:
         </Typography>
+        <StrategicTakeaway>
+          The ★ Fully Exclusive and Any Service Exclusive pills are the fastest way to build a genuinely
+          vulnerable-account target list for Wholesale Carrier BD — every row is single-provider lock-in by
+          definition, not a guess based on account size or region.
+        </StrategicTakeaway>
         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2 }}>
           <Table size="small">
             <TableHead>
@@ -894,17 +1112,26 @@ function OperatorTab() {
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
           Exclusivity &amp; Market Share chart strip
         </Typography>
+        <Warn>
+          <strong>The donut and KPI banner change meaning with the pill.</strong> On the <strong>All MNOs</strong>{" "}
+          pill (no exclusivity narrowing), they show <strong>Carrier Share</strong> / <strong>Tata Comm Footprint
+          Standing</strong> — total market presence, counting every MNO a carrier serves at all, exclusive or
+          shared. On any of the five exclusivity pills, they switch to <strong>Carrier Exclusivity Share</strong> /
+          <strong> Tata Comm Exclusivity Standing</strong> — only carriers&apos; sole-provider accounts. A carrier
+          can rank very differently on the two — broad footprint and deep exclusivity are different kinds of
+          market strength.
+        </Warn>
         <Bullets
           items={[
             <>
-              <strong>Carrier Exclusivity Share donut</strong> — interactive market-share breakdown of exclusive
-              accounts by carrier, scoped to whichever Exclusivity Scope pill is active. Click any slice to drill
-              the table down to just that carrier&apos;s exclusive accounts; click &quot;Others&quot; to open a
-              modal listing every secondary carrier with its own one-click filter action.
+              <strong>Carrier Share / Carrier Exclusivity Share donut</strong> — interactive market-share
+              breakdown by carrier, scoped to whichever Exclusivity Scope pill is active. Click any slice to drill
+              the table down to just that carrier&apos;s accounts; click &quot;Others&quot; to open a modal listing
+              every secondary carrier with its own one-click filter action.
             </>,
             <>
-              <strong>Tata Comm Exclusivity Standing</strong> — a dedicated teal KPI banner, always visible,
-              showing Tata Comm&apos;s own exclusive-account count, market-share percentage, and rank among all
+              <strong>Tata Comm Footprint / Exclusivity Standing</strong> — a dedicated teal KPI banner, always
+              visible, showing Tata Comm&apos;s own account count, market-share percentage, and rank among all
               carriers in the current scope — surfaced explicitly rather than left to however tall its own donut
               slice happens to be.
             </>,
@@ -1403,14 +1630,32 @@ function AdminTab() {
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Every registered account — local email/password sign-ins and Microsoft SSO sign-ins alike — with role,
-          active/inactive status, join date, and last-active time. Summary tiles show the total headcount and the
-          split across Admin / Analyst / Viewer.
+          active/inactive status, join date, and a full usage audit trail. Summary tiles show the total headcount
+          and the split across Admin / Analyst / Viewer.
         </Typography>
         <Bullets
           items={[
             "Change any user's role via a dropdown — takes effect on their very next request, no re-login required.",
             "Deactivate or reactivate an account with a single switch.",
             "You can't change your own role or deactivate your own account, as a safeguard against accidentally locking yourself out.",
+            <>
+              <strong>Login Count</strong> and <strong>Last Login</strong> — every user&apos;s total sign-in count
+              and their most recent sign-in timestamp, at a glance.
+            </>,
+            <>
+              <strong>Time Spent</strong> — cumulative session duration per user, shown as <code>Xh Ym</code>, so
+              admins can distinguish active daily users from dormant accounts.
+            </>,
+            <>
+              <strong>Live Presence</strong> — an Online/Offline indicator per user, with a last-seen time for
+              anyone currently offline.
+            </>,
+            "Every column — role, sign-in type, status, login count, time spent, last login — is sortable by clicking its header.",
+            <>
+              <strong>Filter pills</strong> for Role, Sign-In Type (Local vs Microsoft SSO), Status
+              (Active/Inactive), and an Online-Only toggle narrow the table instantly; a single{" "}
+              <strong>Reset Filters</strong> action clears all of them at once.
+            </>,
           ]}
         />
         <GoTo label="Open User Access &amp; Roles" route="/admin/users" />
@@ -1461,6 +1706,15 @@ function GovernanceTab() {
             every 30 minutes while a tab stays open, so an active work session doesn&apos;t get interrupted by
             expiry. A 401 response from any API call (an expired or invalidated token) clears the stored session and
             returns you to the sign-in page automatically.
+          </Typography>
+        </TechAccordion>
+
+        <TechAccordion title="Sign-in experience">
+          <Typography variant="body2" color="text.secondary">
+            The sign-in page leads with Microsoft SSO as the primary path for @tatacommunications.com accounts —
+            it&apos;s the default hero call-to-action. Local email/password sign-in stays available behind a
+            collapsible &quot;Local Admin Login&quot; capsule beneath it, intended for emergency or break-glass
+            access rather than everyday use.
           </Typography>
         </TechAccordion>
 

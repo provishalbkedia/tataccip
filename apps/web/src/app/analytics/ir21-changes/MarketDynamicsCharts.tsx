@@ -66,40 +66,63 @@ function ChartPanel({ title, subtitle, children }: ChartPanelProps) {
 export default function MarketDynamicsCharts({
   rows,
   loading,
+  selectedProviderId,
+  selectedProviderName,
   onServiceClick,
   onCarrierClick,
   onRegionClick,
 }: {
   rows: Ir21RoutingChangeRow[];
   loading: boolean;
+  // Set when a carrier row is selected in the Market Capture & Churn Pivot
+  // table above -- the Service donut and Regional bar narrow to just that
+  // provider's own gain/loss rows (matched the same way buildPivotData
+  // attributes a row to a provider: old OR new providerId), while the
+  // Carrier Net Movement chart keeps showing every carrier but visually
+  // highlights the selected one, so its relative standing among peers
+  // stays visible rather than being isolated out of context.
+  selectedProviderId?: number | null;
+  selectedProviderName?: string | null;
   onServiceClick: (service: string) => void;
   onCarrierClick: (providerId: number, providerName: string) => void;
   onRegionClick: (region: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
 
+  const providerScopedRows = React.useMemo(
+    () => (selectedProviderId == null ? rows : rows.filter((r) => r.oldProviderId === selectedProviderId || r.newProviderId === selectedProviderId)),
+    [rows, selectedProviderId],
+  );
+
   const serviceData = React.useMemo(() => {
     const counts = new Map<string, number>();
-    for (const r of rows) counts.set(r.serviceName, (counts.get(r.serviceName) ?? 0) + 1);
-    const total = rows.length || 1;
+    for (const r of providerScopedRows) counts.set(r.serviceName, (counts.get(r.serviceName) ?? 0) + 1);
+    const total = providerScopedRows.length || 1;
     return Array.from(counts.entries())
       .map(([service, count]) => ({ service, count, pct: (count / total) * 100 }))
       .sort((a, b) => b.count - a.count);
-  }, [rows]);
+  }, [providerScopedRows]);
 
   const carrierData = React.useMemo(() => {
     const all = buildPivotData(rows);
     // Cap to the 5 strongest gainers and 5 strongest losers -- an
     // unfiltered ranked list can run into dozens of carriers, which turns
     // a diverging bar chart into an unreadable wall; the same cap the PDF
-    // report's own chart applies for identical reasons.
+    // report's own chart applies for identical reasons. The selected
+    // carrier (if any) is always kept even when it would otherwise fall
+    // outside the top 5+5, so highlighting it never silently vanishes.
     if (all.length <= 10) return all;
     const gainers = [...all].filter((p) => p.net > 0).sort((a, b) => b.net - a.net).slice(0, 5);
     const losers = [...all].filter((p) => p.net < 0).sort((a, b) => a.net - b.net).slice(0, 5);
-    return [...gainers, ...losers].sort((a, b) => b.net - a.net);
-  }, [rows]);
+    const capped = [...gainers, ...losers];
+    if (selectedProviderId != null && !capped.some((p) => p.providerId === selectedProviderId)) {
+      const selectedEntry = all.find((p) => p.providerId === selectedProviderId);
+      if (selectedEntry) capped.push(selectedEntry);
+    }
+    return capped.sort((a, b) => b.net - a.net);
+  }, [rows, selectedProviderId]);
 
-  const regionData = React.useMemo(() => aggregateByRegion(rows), [rows]);
+  const regionData = React.useMemo(() => aggregateByRegion(providerScopedRows), [providerScopedRows]);
 
   return (
     <Paper sx={{ mb: 3 }}>
@@ -112,9 +135,26 @@ export default function MarketDynamicsCharts({
           <Typography variant="subtitle1" fontWeight={700}>
             Executive Market Dynamics
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Click any slice or bar to drill down
-          </Typography>
+          {selectedProviderId != null && selectedProviderName ? (
+            <Box
+              component="span"
+              sx={{
+                px: 1,
+                py: 0.25,
+                borderRadius: "999px",
+                bgcolor: "#E3F2FD",
+                color: "#0A2540",
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              Filtered: {selectedProviderName}
+            </Box>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              Click any slice or bar to drill down
+            </Typography>
+          )}
         </Box>
         <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
       </Box>
@@ -193,9 +233,19 @@ export default function MarketDynamicsCharts({
                       onClick={(_, index) => onCarrierClick(carrierData[index].providerId, carrierData[index].providerName)}
                       radius={3}
                     >
-                      {carrierData.map((d) => (
-                        <Cell key={d.providerId} fill={d.net >= 0 ? "#2E7D32" : "#C62828"} />
-                      ))}
+                      {carrierData.map((d) => {
+                        const isSelected = d.providerId === selectedProviderId;
+                        const dimmed = selectedProviderId != null && !isSelected;
+                        return (
+                          <Cell
+                            key={d.providerId}
+                            fill={d.net >= 0 ? "#2E7D32" : "#C62828"}
+                            fillOpacity={dimmed ? 0.35 : 1}
+                            stroke={isSelected ? "#00D4B2" : undefined}
+                            strokeWidth={isSelected ? 2 : undefined}
+                          />
+                        );
+                      })}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

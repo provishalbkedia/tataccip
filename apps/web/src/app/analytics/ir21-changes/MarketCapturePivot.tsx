@@ -8,10 +8,8 @@ import {
   Chip,
   CircularProgress,
   Collapse,
-  Dialog,
-  DialogContent,
-  DialogTitle,
   IconButton,
+  Paper,
   Table,
   TableBody,
   TableCell,
@@ -21,14 +19,15 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import DownloadIcon from "@mui/icons-material/Download";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import CloseIcon from "@mui/icons-material/Close";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TrendingFlatIcon from "@mui/icons-material/TrendingFlat";
+import BoltIcon from "@mui/icons-material/Bolt";
 import type { Ir21RoutingChangeRow } from "@ccip/shared-types";
 import { buildPivotData, PivotMigrationEntry, PivotProviderEntry, PivotTrend } from "@/lib/reports/pivotData";
 
@@ -73,6 +72,7 @@ function MnoDrillDownLink({
         href={mnoProfileHref(migration)}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         sx={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
@@ -120,17 +120,47 @@ function TrendBadge({ trend }: { trend: PivotTrend }) {
   );
 }
 
-function ProviderPivotRow({ entry }: { entry: PivotProviderEntry }) {
+function ProviderPivotRow({
+  entry,
+  selected,
+  onSelect,
+}: {
+  entry: PivotProviderEntry;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const [expanded, setExpanded] = React.useState(false);
   return (
     <>
-      <TableRow hover sx={{ "& > *": { borderBottom: expanded ? "none" : undefined } }}>
+      <TableRow
+        hover
+        onClick={onSelect}
+        sx={{
+          cursor: "pointer",
+          "& > *": { borderBottom: expanded ? "none" : undefined },
+          ...(selected && {
+            bgcolor: "#E3F2FD",
+            borderLeft: "4px solid #00D4B2",
+            "& td:first-of-type": { pl: "12px !important" },
+          }),
+        }}
+      >
         <TableCell sx={{ width: 40 }}>
-          <IconButton size="small" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? "Collapse" : "Expand"}>
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+            aria-label={expanded ? "Collapse" : "Expand"}
+          >
             {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
         </TableCell>
-        <TableCell sx={{ fontWeight: 700 }}>{entry.providerName}</TableCell>
+        <TableCell sx={{ fontWeight: 700 }}>
+          {entry.providerName}
+          {selected && <Chip label="Selected" size="small" sx={{ ml: 1, height: 18, fontSize: 10, fontWeight: 700, bgcolor: "#00D4B2", color: "#0A2540" }} />}
+        </TableCell>
         <TableCell>
           <Chip
             size="small"
@@ -173,7 +203,7 @@ function ProviderPivotRow({ entry }: { entry: PivotProviderEntry }) {
                 </TableHead>
                 <TableBody>
                   {entry.migrations.map((m, i) => (
-                    <TableRow key={i} hover>
+                    <TableRow key={i} hover onClick={(e) => e.stopPropagation()}>
                       <TableCell sx={{ whiteSpace: "nowrap" }}>{formatAbsoluteDate(m.date)}</TableCell>
                       <TableCell>
                         <MnoDrillDownLink migration={m}>{m.mnoName}</MnoDrillDownLink>
@@ -209,18 +239,26 @@ function ProviderPivotRow({ entry }: { entry: PivotProviderEntry }) {
   );
 }
 
-export default function PivotSummaryModal({
-  open,
-  onClose,
+/** The page's central analytical driver -- embedded directly (not behind a
+ * modal) so a reviewer sees carrier win/loss movement the moment the page
+ * loads, and clicking any provider row cross-filters the Executive Market
+ * Dynamics charts and the granular changes ledger below via the same
+ * `provider` selection those already react to (see Ir21ChangesPage's
+ * onSelectProvider/onClearSelection wiring). */
+export default function MarketCapturePivot({
   rows,
   loading,
   scopeLabel,
+  selectedProviderId,
+  onSelectProvider,
+  onClearSelection,
 }: {
-  open: boolean;
-  onClose: () => void;
   rows: Ir21RoutingChangeRow[];
   loading: boolean;
   scopeLabel: string;
+  selectedProviderId: number | null;
+  onSelectProvider: (providerId: number, providerName: string) => void;
+  onClearSelection: () => void;
 }) {
   const pivotData = React.useMemo(() => buildPivotData(rows), [rows]);
   const [exporting, setExporting] = React.useState(false);
@@ -236,21 +274,30 @@ export default function PivotSummaryModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
-      <DialogTitle
+    <Paper elevation={2} sx={{ mb: 3, border: "1px solid #E2E8F0" }}>
+      <Box
         sx={{
           display: "flex",
           flexDirection: { xs: "column", sm: "row" },
           alignItems: { xs: "stretch", sm: "flex-start" },
           justifyContent: "space-between",
           gap: 1.5,
-          pb: 1,
+          p: 2,
+          borderBottom: "1px solid #E2E8F0",
         }}
       >
         <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.05rem", sm: "1.25rem" } }}>
-            Wholesale Carrier Market Capture &amp; Churn Pivot
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <BoltIcon sx={{ color: "#00D4B2" }} />
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.05rem", sm: "1.25rem" } }}>
+              Wholesale Carrier Market Capture &amp; Churn Pivot
+            </Typography>
+            {selectedProviderId !== null && (
+              <Button size="small" startIcon={<CloseIcon fontSize="small" />} onClick={onClearSelection} sx={{ color: "#0A2540" }}>
+                Clear Selection
+              </Button>
+            )}
+          </Box>
           <Typography variant="body2" color="text.secondary">
             Scope: {scopeLabel}
           </Typography>
@@ -266,54 +313,56 @@ export default function PivotSummaryModal({
           >
             {exporting ? "Exporting…" : "Export Pivot to Excel (.xlsx)"}
           </Button>
-          <IconButton onClick={onClose} aria-label="Close">
-            <CloseIcon />
-          </IconButton>
         </Box>
-      </DialogTitle>
-      <DialogContent dividers sx={{ p: 0 }}>
-        {loading ? (
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", py: 8 }}>
-            <CircularProgress size={28} />
-          </Box>
-        ) : pivotData.length === 0 ? (
-          <Box sx={{ p: 5, textAlign: "center" }}>
-            <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
-              No carrier gain/loss events in this scope
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Widen the Timeframe or Region in the Master Filter Bar to see carrier movement.
-            </Typography>
-          </Box>
-        ) : (
-          <TableContainer sx={{ maxHeight: "60vh" }}>
-            <Table stickyHeader size="small">
-              <TableHead>
-                <TableRow sx={{ "& th": { bgcolor: "#0A2540", color: "#fff", fontWeight: 700 } }}>
-                  <TableCell sx={{ width: 40, bgcolor: "#0A2540 !important" }} />
-                  <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Wholesale Provider</TableCell>
-                  <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Net Movement</TableCell>
-                  <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
-                    Service Gains (+)
-                  </TableCell>
-                  <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
-                    Service Losses (-)
-                  </TableCell>
-                  <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
-                    Impacted MNOs / Custs
-                  </TableCell>
-                  <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Market Share Trend</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pivotData.map((entry) => (
-                  <ProviderPivotRow key={entry.providerId} entry={entry} />
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </DialogContent>
-    </Dialog>
+      </Box>
+      {loading ? (
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", py: 8 }}>
+          <CircularProgress size={28} />
+        </Box>
+      ) : pivotData.length === 0 ? (
+        <Box sx={{ p: 5, textAlign: "center" }}>
+          <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
+            No carrier gain/loss events in this scope
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Widen the Timeframe or Region in the Master Filter Bar to see carrier movement.
+          </Typography>
+        </Box>
+      ) : (
+        <TableContainer sx={{ maxHeight: "55vh" }}>
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow sx={{ "& th": { bgcolor: "#0A2540", color: "#fff", fontWeight: 700 } }}>
+                <TableCell sx={{ width: 40, bgcolor: "#0A2540 !important" }} />
+                <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Wholesale Provider</TableCell>
+                <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Net Movement</TableCell>
+                <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
+                  Service Gains (+)
+                </TableCell>
+                <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
+                  Service Losses (-)
+                </TableCell>
+                <TableCell align="center" sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>
+                  Impacted MNOs / Custs
+                </TableCell>
+                <TableCell sx={{ bgcolor: "#0A2540 !important", color: "#fff !important" }}>Market Share Trend</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {pivotData.map((entry) => (
+                <ProviderPivotRow
+                  key={entry.providerId}
+                  entry={entry}
+                  selected={entry.providerId === selectedProviderId}
+                  onSelect={() =>
+                    entry.providerId === selectedProviderId ? onClearSelection() : onSelectProvider(entry.providerId, entry.providerName)
+                  }
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Paper>
   );
 }

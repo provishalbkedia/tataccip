@@ -9,8 +9,6 @@ import {
   Badge,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   CircularProgress,
   Divider,
@@ -37,14 +35,13 @@ import TuneIcon from "@mui/icons-material/Tune";
 import CloseIcon from "@mui/icons-material/Close";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import PivotTableChartIcon from "@mui/icons-material/PivotTableChart";
 import DateRangeIcon from "@mui/icons-material/DateRange";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import InfoTooltip from "@/components/InfoTooltip";
-import PivotSummaryModal from "./PivotSummaryModal";
+import MarketCapturePivot from "./MarketCapturePivot";
 import MarketDynamicsCharts from "./MarketDynamicsCharts";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
@@ -204,13 +201,6 @@ function changeFilterLabel(value: ChangeFilterValue): string {
   return ALL_CHANGE_PILLS.find((p) => p.value === value)?.label ?? value;
 }
 
-const ACTIVE_KPI_LABEL: Record<"churn" | "gainer" | "loser" | "switching", string> = {
-  churn: "Total Churn Events",
-  gainer: "Top Provider Gainer",
-  loser: "Top Provider Loser",
-  switching: "Active Switching MNOs/Custs",
-};
-
 // On mobile, a pill row that used to wrap into many short vertical lines
 // (Timeframe with 5 options, Region with 6, both Change segments) instead
 // becomes one horizontally-scrollable strip -- a touch-swipe row reads far
@@ -368,276 +358,6 @@ function PdfCell(params: ICellRendererParams<Ir21RoutingChangeRow>) {
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  color,
-  tooltip,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  value: React.ReactNode;
-  color: string;
-  tooltip: string;
-  active: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Grid item xs={12} sm={6} md={3}>
-      <Card
-        variant="outlined"
-        onClick={disabled ? undefined : onClick}
-        sx={{
-          borderTop: 4,
-          borderColor: color,
-          height: "100%",
-          cursor: onClick && !disabled ? "pointer" : "default",
-          outline: active ? "2px solid" : "none",
-          outlineColor: "primary.main",
-          outlineOffset: "-1px",
-          opacity: disabled ? 0.6 : 1,
-          transition: "box-shadow 0.15s",
-          "&:hover": onClick && !disabled ? { boxShadow: 3 } : undefined,
-        }}
-      >
-        <CardContent>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.4 }}>
-              {label}
-            </Typography>
-            <InfoTooltip title={tooltip}>
-              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-            </InfoTooltip>
-            {active && <Chip label="Filtered" size="small" color="primary" sx={{ ml: "auto", height: 20, flexShrink: 0 }} />}
-          </Box>
-          {typeof value === "string" ? (
-            <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5, wordBreak: "break-word", overflowWrap: "break-word" }}>
-              {value}
-            </Typography>
-          ) : (
-            value
-          )}
-        </CardContent>
-      </Card>
-    </Grid>
-  );
-}
-
-/** Provider name + gross/net stats for the Gainer/Loser KPI cards, laid out
- * as a wrapping name line plus a separate stat chip row instead of one long
- * interpolated string -- a name like "Tata Communications" combined with
- * "(+38 gains | Net: +37)" routinely exceeds a quarter-width desktop card
- * (and any width on mobile) as a single noWrap line, which is what forced
- * the old ellipsis truncation. */
-function ChurnKpiValue({
-  providerName,
-  statLabel,
-  statCount,
-  operatorsCount,
-  netDelta,
-  tone,
-}: {
-  providerName: string;
-  statLabel: string;
-  statCount: number;
-  operatorsCount: number;
-  netDelta: number;
-  tone: "success" | "error";
-}) {
-  return (
-    <Box sx={{ mt: 0.5 }}>
-      <Typography variant="subtitle1" fontWeight={700} sx={{ wordBreak: "break-word", overflowWrap: "break-word", lineHeight: 1.3 }}>
-        {providerName}
-      </Typography>
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 0.5 }}>
-        <Chip
-          size="small"
-          color={tone}
-          variant="outlined"
-          label={`${operatorsCount} MNO/Cust${operatorsCount === 1 ? "" : "s"} (${tone === "success" ? "+" : "-"}${statCount} ${statLabel})`}
-          sx={{ fontWeight: 600 }}
-        />
-        <Typography variant="caption" color="text.secondary">
-          Net: {netDelta >= 0 ? "+" : ""}
-          {netDelta}
-        </Typography>
-      </Box>
-    </Box>
-  );
-}
-
-type ChurnEntry = Ir21RoutingChangeSummary["topGainingProviders"][number];
-type SwitchingEntry = Ir21RoutingChangeSummary["topSwitchingOperators"][number];
-
-const kpiAutocompleteSx = (tone: "success" | "error" | "warning") => ({
-  mt: 0.5,
-  bgcolor: "#F4F6F8",
-  "& .MuiOutlinedInput-root": {
-    fontSize: "0.75rem",
-    py: "2px !important",
-    "& fieldset": { borderColor: tone === "success" ? "success.main" : tone === "error" ? "error.main" : "#0A2540" },
-  },
-});
-
-/** Searchable ranked selector embedded in the Gainer/Loser KPI cards,
- * letting a reviewer type a carrier name (or rank number -- MUI's default
- * filter matches anywhere in the rendered option label) to jump straight
- * to any provider's gain/loss events, not just the single top-ranked one
- * ChurnKpiValue headlines above it. Selecting an entry drives the same
- * `provider`/`providerRole` state the plain "Wholesale Provider"
- * Autocomplete below reads and writes, so the two stay in sync without
- * separate wiring: whichever entry is "selected" here is exactly whichever
- * the card's own headline is currently showing. `e.stopPropagation()` on
- * the wrapper keeps opening/typing in the field from also firing the
- * card's own onClick (which would otherwise jump the selection back to the
- * #1 entry every time). */
-function ChurnProviderAutocomplete({
-  entries,
-  metric,
-  role,
-  selectedProviderId,
-  onSelect,
-  onClear,
-  tone,
-  emptyLabel,
-}: {
-  entries: ChurnEntry[];
-  metric: "grossGains" | "grossLosses";
-  role: "gainer" | "loser";
-  selectedProviderId?: number;
-  onSelect: (entry: ChurnEntry) => void;
-  onClear: () => void;
-  tone: "success" | "error";
-  emptyLabel: string;
-}) {
-  const label = (entry: ChurnEntry, rank: number) => {
-    const count = metric === "grossGains" ? entry.grossGains : entry.grossLosses;
-    const noun = role === "gainer" ? "Service Gain" : "Service Loss";
-    const opNoun = `MNO/Cust${entry.uniqueOperatorsCount === 1 ? "" : "s"}`;
-    return `${rank}. ${entry.providerName} — ${entry.uniqueOperatorsCount} ${opNoun} (${role === "gainer" ? "+" : "-"}${count} ${noun} | Net: ${entry.netDelta >= 0 ? "+" : ""}${entry.netDelta})`;
-  };
-  const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
-  const selected = options.find((o) => o.entry.providerId === selectedProviderId) ?? null;
-
-  return (
-    <Box onClick={(e) => e.stopPropagation()}>
-      <KpiAutocompleteHint />
-      <Autocomplete
-        size="small"
-        fullWidth
-        options={options}
-        value={selected}
-        disabled={entries.length === 0}
-        noOptionsText={emptyLabel}
-        clearOnEscape
-        disableClearable={false}
-        getOptionLabel={(o) => o.label}
-        isOptionEqualToValue={(o, v) => o.entry.providerId === v.entry.providerId}
-        onChange={(_, v) => (v ? onSelect(v.entry) : onClear())}
-        renderInput={(params) => <TextField {...params} placeholder={entries.length === 0 ? emptyLabel : "Search provider…"} />}
-        sx={kpiAutocompleteSx(tone)}
-      />
-    </Box>
-  );
-}
-
-/** Shared hint row for every searchable KPI-card control (Gainer, Loser,
- * Active Switching Operators) -- identical tooltip text across all three
- * per the platform's UX spec, so it's centralized here rather than
- * repeated at each call site. */
-function KpiAutocompleteHint() {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 1 }}>
-      <Typography variant="caption" color="text.secondary">
-        Search &amp; filter
-      </Typography>
-      <InfoTooltip title="Type or select any ranked carrier/MNO to isolate their specific churn feed and re-scope the results table below.">
-        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 14 }} />
-      </InfoTooltip>
-    </Box>
-  );
-}
-
-/** Same searchable ranked pattern as ChurnProviderAutocomplete, embedded in
- * the "Active Switching Operators" card -- lets a reviewer type an
- * operator name or TADIG to isolate one operator's full switching history
- * (every ADDED/REMOVED/REPLACED event, not narrowed to REPLACED-only; see
- * selectSwitchingOperator below for why forcing REPLACED there was already
- * fixed as a bug). Unlike the Gainer/Loser cards, this card's own headline
- * is a plain count with no single "current entry" to default to, so this
- * control has no forced default selection -- it shows a match when the
- * shared `search` state equals one entry's operator name *or* its TADIG,
- * since the field it's synced with is explicitly labeled "Search Operator
- * / TADIG" and accepts either. Filling that shared box (selectSwitchingOperator,
- * below) still writes the name, not the TADIG -- a deliberate readability
- * choice, "Croatian Telecom" over "HRVCN" -- accepted with eyes open that
- * 6 operator names in the current dataset are shared by two different
- * MNOs each (e.g. two "Movistar" entities), so for those the table can
- * include a second, unrelated MNO's rows alongside the one actually
- * selected; typing or syncing in a TADIG instead avoids that ambiguity
- * entirely, since TADIG is always unique. */
-function SwitchingOperatorAutocomplete({
-  entries,
-  searchText,
-  onSelect,
-  onClear,
-  onTextChange,
-}: {
-  entries: SwitchingEntry[];
-  searchText: string;
-  onSelect: (entry: SwitchingEntry) => void;
-  onClear: () => void;
-  onTextChange: (text: string) => void;
-}) {
-  const label = (entry: SwitchingEntry, rank: number) => `${rank}. ${entry.operatorName} (${entry.tadigCode}) — ${entry.changeCount} switches`;
-  const options = entries.map((entry, i) => ({ entry, rank: i + 1, label: label(entry, i + 1) }));
-  // Matches on TADIG too, not just operator name -- the shared "Search
-  // Operator / TADIG" box below is explicitly a TADIG search as well, and
-  // this control needs to reflect a value typed or synced there in either
-  // form for the two-way sync to actually hold for both of that field's
-  // documented uses.
-  const selected = options.find((o) => o.entry.operatorName === searchText || o.entry.tadigCode === searchText) ?? null;
-
-  return (
-    <Box onClick={(e) => e.stopPropagation()}>
-      <KpiAutocompleteHint />
-      <Autocomplete
-        size="small"
-        fullWidth
-        options={options}
-        value={selected}
-        // Controlled by the same shared `search` state the plain "Search
-        // Operator / TADIG" box below reads and writes -- this is what
-        // makes partial/in-progress typing there mirror up here live, not
-        // just a completed exact match. `value` above still only resolves
-        // to a real "selected" option on an exact name/TADIG match; the
-        // raw text mirrors regardless, same as the field it's synced with.
-        inputValue={searchText}
-        onInputChange={(_, v, reason) => {
-          // Only forward genuine user keystrokes -- MUI also fires this
-          // with reason "reset" whenever `inputValue` changes for any
-          // other reason (a selection, or this same prop being set from
-          // outside), and blindly forwarding those would fight the
-          // shared state instead of just following it.
-          if (reason === "input") onTextChange(v);
-        }}
-        disabled={entries.length === 0}
-        noOptionsText="No switching MNOs / Customers this period"
-        clearOnEscape
-        disableClearable={false}
-        getOptionLabel={(o) => o.label}
-        isOptionEqualToValue={(o, v) => o.entry.tadigCode === v.entry.tadigCode}
-        onChange={(_, v) => (v ? onSelect(v.entry) : onClear())}
-        renderInput={(params) => <TextField {...params} placeholder="Search MNO / Cust / TADIG…" />}
-        sx={kpiAutocompleteSx("warning")}
-      />
-    </Box>
-  );
-}
-
 /** One "Change" filter pill, with its live subtotal badge baked in. Active
  * styling (solid navy fill, white bold text, teal accent border) is driven
  * entirely by the "&.Mui-selected" CSS branch rather than a JS-computed
@@ -735,8 +455,6 @@ export default function Ir21ChangesPage() {
   const [provider, setProvider] = React.useState<ProviderSuggestion | null>(null);
   const [providerInput, setProviderInput] = React.useState("");
   const [providerOptions, setProviderOptions] = React.useState<ProviderSuggestion[]>([]);
-  const [providerRole, setProviderRole] = React.useState<"gainer" | "loser" | null>(null);
-  const [activeKpi, setActiveKpi] = React.useState<"churn" | "gainer" | "loser" | "switching" | null>(null);
 
   // Custom Date Range (Master Filter Bar) -- when set, this replaces the
   // Timeframe preset entirely for every query below rather than combining
@@ -748,33 +466,22 @@ export default function Ir21ChangesPage() {
   const [rangeAnchor, setRangeAnchor] = React.useState<HTMLElement | null>(null);
   const [pendingRange, setPendingRange] = React.useState<CustomDateRange>({ from: "", to: "" });
 
-  const [pivotOpen, setPivotOpen] = React.useState(false);
-
+  // `summary` no longer drives any on-page KPI cards (the Market Capture &
+  // Churn Pivot table below is the primary analytical driver now) -- kept
+  // solely to feed the downloadable MIS report's executive summary section
+  // (buildReportInput below), which still wants Total Churn Events / Top
+  // Gainer / Top Loser / Active Switching figures even though the live page
+  // presents that same information through the pivot instead.
   const [summary, setSummary] = React.useState<Ir21RoutingChangeSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Ir21RoutingChangeRow[]>([]);
   const [loading, setLoading] = React.useState(true);
 
-  // The 4 KPI cards intentionally use a narrower scope than the table below
-  // (timeframe/region/service/search only -- never changeType, provider, or
-  // providerRole) so they always show the overall picture for whatever
-  // top-level scope is selected. Without this split, clicking any one KPI
-  // (e.g. "Active Switching Operators", which narrows the table to REPLACED
-  // events) would also recompute the *other* three cards against that same
-  // narrow slice -- REPLACED events are rare enough that this routinely
-  // collapsed every card to "no data" even when the overall dataset had
-  // hundreds of real events in the selected window.
-  //
-  // `search` is deliberately excluded here too, even though it's a
-  // top-level filter row control like timeframe/region/service: searching
-  // for one operator (by hand, or via the Active Switching Operators
-  // card's own autocomplete below, which fills this same field) is a
-  // drill-down into a single entity, not a dataset-scope change -- the
-  // exact same reasoning that keeps changeType/provider/providerRole out
-  // of this query. Without this exclusion, picking one operator from that
-  // card's dropdown would shrink its own options list down to just the
-  // operator you picked, making every other operator unreachable without
-  // first clearing the search box.
+  // The summary fetch (feeding the MIS report only, see above) intentionally
+  // uses a narrower scope than the table below (timeframe/region/service
+  // only -- never changeType, provider, or search), matching the same
+  // "overall picture for the selected top-level scope" semantics the pivot
+  // and charts also use via overviewQueryString.
   // An active Custom Date Range replaces the Timeframe preset outright in
   // every query below -- the two are mutually exclusive in the UI (picking
   // one clears the other; see the Master Filter Bar's ToggleButtonGroup
@@ -806,10 +513,9 @@ export default function Ir21ChangesPage() {
     if (service) params.set("service", service);
     if (changeType) params.set("changeType", changeType);
     if (provider) params.set("providerId", String(provider.id));
-    if (provider && providerRole) params.set("providerRole", providerRole);
     if (search) params.set("search", search);
     return params.toString();
-  }, [applyDateRangeParams, region, service, changeType, provider, providerRole, search]);
+  }, [applyDateRangeParams, region, service, changeType, provider, search]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -849,10 +555,9 @@ export default function Ir21ChangesPage() {
     if (service) params.set("service", service);
     params.set("changeType", "ALL");
     if (provider) params.set("providerId", String(provider.id));
-    if (provider && providerRole) params.set("providerRole", providerRole);
     if (search) params.set("search", search);
     return params.toString();
-  }, [applyDateRangeParams, region, service, provider, providerRole, search]);
+  }, [applyDateRangeParams, region, service, provider, search]);
 
   const [allTypeRows, setAllTypeRows] = React.useState<Ir21RoutingChangeRow[]>([]);
   React.useEffect(() => {
@@ -929,9 +634,6 @@ export default function Ir21ChangesPage() {
     return () => clearTimeout(t);
   }, [providerInput]);
 
-  const topGainer = summary?.topGainingProviders[0];
-  const topLoser = summary?.topLosingProviders[0];
-
   // Distinct MNO count behind the currently filtered table rows -- an
   // operator with changes on all three services (SCCP/DSX/IPX) is 3 rows
   // but 1 operator, so this is never just `rows.length`. Derived client-
@@ -955,130 +657,23 @@ export default function Ir21ChangesPage() {
     [rows],
   );
 
-  // The KPI card headline (ChurnKpiValue) and its ranked search control
-  // (ChurnProviderAutocomplete) both show whichever provider is currently
-  // selected -- matched purely by provider.id, independent of
-  // providerRole. This is what makes the sync bidirectional: picking a
-  // provider from the plain "Wholesale Provider" Autocomplete below (which
-  // never sets providerRole, since a generic pick has no gainer/loser
-  // direction) still shows up in whichever card(s) that provider actually
-  // ranks in -- both, if it's genuinely both a gainer and a loser this
-  // period. providerRole is now purely a table-query concern (which
-  // direction of events to show), decoupled from which card highlights
-  // the selection. A selected provider absent from a given list falls
-  // back to that card's own #1 default rather than showing empty.
-  const displayedGainer = (provider && summary?.topGainingProviders.find((e) => e.providerId === provider.id)) || topGainer;
-  const displayedLoser = (provider && summary?.topLosingProviders.find((e) => e.providerId === provider.id)) || topLoser;
-
-  const selectGainer = (entry: ChurnEntry) => {
-    setActiveKpi("gainer");
-    setProvider({ id: entry.providerId, providerName: entry.providerName, matchedAlias: null });
-    setProviderRole("gainer");
-    setProviderInput(entry.providerName);
-    // changeType stays unset -- the backend's providerRole=gainer filter
-    // already scopes to ADDED+REPLACED-as-newProvider server-side, so
-    // there's no need to also drive the (single-select) Change toggle.
-    setChangeType("");
-  };
-  const selectLoser = (entry: ChurnEntry) => {
-    setActiveKpi("loser");
-    setProvider({ id: entry.providerId, providerName: entry.providerName, matchedAlias: null });
-    setProviderRole("loser");
-    setProviderInput(entry.providerName);
-    setChangeType("");
-  };
-  // Clearing either card's own search control only resets that role's
-  // drill-down (falling back to the #1 default via displayedGainer/
-  // displayedLoser above) -- it deliberately leaves timeframe, region,
-  // service, and search untouched, per Task 3's two-way sync requirement.
-  const clearGainerSelection = () => {
-    if (providerRole !== "gainer") return;
-    setActiveKpi(null);
-    setProvider(null);
-    setProviderRole(null);
-    setProviderInput("");
-  };
-  const clearLoserSelection = () => {
-    if (providerRole !== "loser") return;
-    setActiveKpi(null);
-    setProvider(null);
-    setProviderRole(null);
-    setProviderInput("");
-  };
-  const selectSwitchingOperator = (entry: SwitchingEntry) => {
-    setActiveKpi("switching");
-    setProvider(null);
-    setProviderRole(null);
-    setProviderInput("");
-    // Filled with the operator name, not TADIG -- see
-    // SwitchingOperatorAutocomplete's own doc comment for the readability
-    // tradeoff this accepts (a handful of same-named operators can match
-    // more broadly than the one specific TADIG selected).
-    setSearch(entry.operatorName);
-    // Not narrowed to changeType=REPLACED -- see handleSwitchingClick's own
-    // comment below; that exact narrowing was already fixed as a bug
-    // (REPLACED events are rare, so it routinely produced an empty table).
-    // This shows the operator's full switching history instead.
-    setChangeType("");
-  };
-  const clearSwitchingSelection = () => {
-    setSearch("");
-    setActiveKpi(null);
-  };
-
-  const handleChurnClick = () => {
-    setActiveKpi("churn");
-    setProvider(null);
-    setProviderRole(null);
-    setProviderInput("");
-    setSearch("");
-    setChangeType("");
-  };
-  const handleGainerClick = () => {
-    if (!topGainer) return;
-    selectGainer(topGainer);
-  };
-  const handleLoserClick = () => {
-    if (!topLoser) return;
-    selectLoser(topLoser);
-  };
-  const handleSwitchingClick = () => {
-    setActiveKpi("switching");
-    setProvider(null);
-    setProviderRole(null);
-    setProviderInput("");
-    setSearch("");
-    // The backend counts an MNO as an "active switching operator" the
-    // moment it has *any* routing change (ADDED, REMOVED, or REPLACED) in
-    // the period -- see Ir21RoutingChangesService.summary's `operators`
-    // map, which isn't scoped to REPLACED. Narrowing the table to
-    // changeType=REPLACED here (an earlier version of this handler did)
-    // showed almost nothing, since a literal carrier-for-carrier
-    // replacement is rare -- most switching activity is an ADDED or
-    // REMOVED event. Leaving changeType clear shows every event for every
-    // operator the KPI is actually counting, matching its own number.
-    setChangeType("");
-  };
-
-  // Executive Market Dynamics chart strip -- each chart click drives the
-  // exact same state its equivalent manual control below already does, so
-  // a chart click and picking the same value by hand behave identically.
+  // Reused by both chart clicks (MarketDynamicsCharts) and pivot-row clicks
+  // (MarketCapturePivot) -- either one selecting a carrier sets the same
+  // `provider` state the plain "Wholesale Provider" search field above
+  // reads and writes, so all three stay in sync automatically.
   const handleChartServiceClick = (svc: string) => {
     setService(svc as ServiceName);
-    setActiveKpi(null);
-    setProviderRole(null);
   };
   const handleChartCarrierClick = (providerId: number, providerName: string) => {
-    setActiveKpi(null);
     setProvider({ id: providerId, providerName, matchedAlias: null });
-    setProviderRole(null);
     setProviderInput(providerName);
-    setChangeType("");
   };
   const handleChartRegionClick = (regionValue: string) => {
     setRegion(regionValue as Region);
-    setActiveKpi(null);
-    setProviderRole(null);
+  };
+  const clearProviderSelection = () => {
+    setProvider(null);
+    setProviderInput("");
   };
 
   // Counts exactly the filter/selection dimensions "Clear Filters" flushes
@@ -1090,8 +685,7 @@ export default function Ir21ChangesPage() {
     (service ? 1 : 0) +
     (changeType ? 1 : 0) +
     (search ? 1 : 0) +
-    (provider ? 1 : 0) +
-    (activeKpi ? 1 : 0);
+    (provider ? 1 : 0);
 
   // One-shot reset back to the page's baseline view. Provider and its
   // driving Autocomplete input are cleared together -- leaving providerInput
@@ -1109,8 +703,6 @@ export default function Ir21ChangesPage() {
     setSearch("");
     setProvider(null);
     setProviderInput("");
-    setProviderRole(null);
-    setActiveKpi(null);
   };
 
   // ---- MIS report downloads ----
@@ -1178,13 +770,16 @@ export default function Ir21ChangesPage() {
     csv: "Generating CSV…",
   };
 
-  // Master Filter Bar (Timeframe/Custom Range/Region/Service + the Pivot
-  // Summary and Clear-All actions) -- always rendered inline at the very
-  // top of the page on every device, unlike the Change/Provider/Search
-  // "refine" controls below it. These 3 pill rows are each independently
-  // horizontally-scrollable on mobile (scrollablePillGroupSx), so showing
-  // them unconditionally doesn't reintroduce the vertical stacking problem
-  // the old single combined Drawer was built to avoid.
+  // Unified Master Filter Strip -- Row 1 (Timeframe/Custom Range, Region,
+  // Service pills) plus Row 2 (Wholesale Provider search, MNO/TADIG search,
+  // Reset Filters), always rendered inline at the very top of the page on
+  // every device. Only the finer Change-type classification lives outside
+  // this strip (refineFilterBody, just above the ledger table) -- everything
+  // else that scopes the page's data lives here. The Row 1 pill groups are
+  // each independently horizontally-scrollable on mobile
+  // (scrollablePillGroupSx), so showing them unconditionally doesn't
+  // reintroduce the vertical stacking problem the old single combined
+  // Drawer was built to avoid.
   const masterFilterBody = (
     <>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
@@ -1211,8 +806,6 @@ export default function Ir21ChangesPage() {
               }
               setTimeframe(v as Timeframe);
               setCustomRange(null);
-              setActiveKpi(null);
-              setProviderRole(null);
             }}
             sx={{
               display: "flex",
@@ -1277,8 +870,6 @@ export default function Ir21ChangesPage() {
                   onClick={() => {
                     setCustomRange(pendingRange);
                     setRangeAnchor(null);
-                    setActiveKpi(null);
-                    setProviderRole(null);
                   }}
                 >
                   Apply
@@ -1299,8 +890,6 @@ export default function Ir21ChangesPage() {
             onChange={(_, v) => {
               if (!v) return;
               setRegion(v === "ALL" ? "" : v);
-              setActiveKpi(null);
-              setProviderRole(null);
             }}
             sx={{
               display: "flex",
@@ -1328,8 +917,6 @@ export default function Ir21ChangesPage() {
             onChange={(_, v) => {
               if (!v) return;
               setService(v === "ALL" ? "" : v);
-              setActiveKpi(null);
-              setProviderRole(null);
             }}
             sx={{
               display: "flex",
@@ -1347,154 +934,6 @@ export default function Ir21ChangesPage() {
         </Box>
       </Box>
 
-      <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
-        <InfoTooltip title="Click to view carrier win/loss pivot matrix & MNO drill-down">
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<PivotTableChartIcon fontSize="small" sx={{ color: "#00D4B2" }} />}
-            onClick={() => setPivotOpen(true)}
-            sx={{
-              background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
-              color: "#FFFFFF",
-              fontWeight: 700,
-              letterSpacing: "0.02em",
-              border: "1px solid #00D4B2",
-              boxShadow: "0 2px 6px rgba(10,37,64,0.2)",
-              transition: "transform 0.15s ease, box-shadow 0.15s ease",
-              "&:hover": {
-                background: "linear-gradient(135deg, #0A2540 0%, #153D66 100%)",
-                transform: "translateY(-1px)",
-                boxShadow: "0 4px 12px rgba(10,37,64,0.25)",
-              },
-            }}
-          >
-            Market Share Pivot Summary
-            <Box
-              component="span"
-              sx={{
-                ml: 1,
-                px: 0.75,
-                py: 0.2,
-                borderRadius: "999px",
-                bgcolor: "rgba(0,212,178,0.18)",
-                color: "#00D4B2",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "normal",
-                whiteSpace: "nowrap",
-              }}
-            >
-              ⚡ Executive Pivot
-            </Box>
-          </Button>
-        </InfoTooltip>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<FilterAltOffIcon fontSize="small" />}
-          onClick={resetAllFilters}
-          disabled={activeFilterCount === 0}
-          sx={{
-            borderColor: "#CFD8DC",
-            color: "#0A2540",
-            "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
-          }}
-        >
-          {activeFilterCount > 0 ? `Clear All Filters (${activeFilterCount} active)` : "Clear All Filters"}
-        </Button>
-      </Box>
-    </>
-  );
-
-  // "Refine Results" controls -- Change classification pills, provider and
-  // free-text search, shared between the inline desktop Paper and the
-  // mobile bottom-sheet Drawer. Timeframe/Region/Service now live in
-  // masterFilterBody above (always inline), so this is scoped to strictly
-  // the finer commercial/technical drill-down dimensions.
-  const refineFilterBody = (
-    <>
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2 }}>
-        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Change:
-            </Typography>
-            <InfoTooltip title="Left group: genuine wholesale carrier switches -- a provider was actually added, removed, or replaced. This is real market churn, and the commercial/carrier-relations view defaults to it. Right group: real IR.21 declarations too (network config, signaling-plane config, administrative metadata), but never a carrier switch, so they're hidden from the default view unless explicitly selected.">
-              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
-            </InfoTooltip>
-          </Box>
-
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={changeType || DEFAULT_CHURN_PILL}
-            onChange={(_, v) => {
-              if (!v) return;
-              setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
-              setActiveKpi(null);
-              setProviderRole(null);
-            }}
-            sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
-          >
-            {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey, tooltip }) => {
-              const pillValue = value || DEFAULT_CHURN_PILL;
-              return (
-                <ChangeFilterPill
-                  key={pillValue}
-                  pillValue={pillValue}
-                  label={label}
-                  count={pillCounts[countKey]}
-                  isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
-                  tooltip={tooltip}
-                />
-              );
-            })}
-          </ToggleButtonGroup>
-
-          {!isMobile && <Divider orientation="vertical" flexItem sx={{ my: 0.5, borderColor: "#CFD8DC" }} />}
-
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={changeType || DEFAULT_CHURN_PILL}
-            onChange={(_, v) => {
-              if (!v) return;
-              setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
-              setActiveKpi(null);
-              setProviderRole(null);
-            }}
-            sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
-          >
-            {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey, tooltip }) => {
-              const pillValue = value || DEFAULT_CHURN_PILL;
-              return (
-                <ChangeFilterPill
-                  key={pillValue}
-                  pillValue={pillValue}
-                  label={label}
-                  count={pillCounts[countKey]}
-                  isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
-                  tooltip={tooltip}
-                />
-              );
-            })}
-          </ToggleButtonGroup>
-        </Box>
-
-        <InfoTooltip title="Inspect raw IR.21 <ChangeHistory> parsing rules and overrides.">
-          <Button
-            component={Link}
-            href="/admin/mno-normalization?tab=changelog"
-            size="small"
-            startIcon={<RuleIcon fontSize="small" />}
-            sx={{ whiteSpace: "nowrap" }}
-          >
-            View Full Normalization Audit &rarr;
-          </Button>
-        </InfoTooltip>
-      </Box>
-
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2 }}>
         <Autocomplete
           size="small"
@@ -1502,11 +941,7 @@ export default function Ir21ChangesPage() {
           value={provider}
           inputValue={providerInput}
           onInputChange={(_, v) => setProviderInput(v)}
-          onChange={(_, v) => {
-            setProvider(v);
-            setActiveKpi(null);
-            setProviderRole(null);
-          }}
+          onChange={(_, v) => setProvider(v)}
           getOptionLabel={(o) => o.providerName}
           isOptionEqualToValue={(o, v) => o.id === v.id}
           sx={{ minWidth: 260, flex: isMobile ? "1 1 100%" : undefined }}
@@ -1516,13 +951,24 @@ export default function Ir21ChangesPage() {
           size="small"
           label="Search MNO / Cust / TADIG"
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setActiveKpi(null);
-            setProviderRole(null);
-          }}
+          onChange={(e) => setSearch(e.target.value)}
           sx={{ minWidth: 240, flex: isMobile ? "1 1 100%" : undefined }}
         />
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<FilterAltOffIcon fontSize="small" />}
+          onClick={resetAllFilters}
+          disabled={activeFilterCount === 0}
+          sx={{
+            borderColor: "#CFD8DC",
+            color: "#0A2540",
+            whiteSpace: "nowrap",
+            "&:hover": { borderColor: "#0A2540", bgcolor: "rgba(10,37,64,0.04)" },
+          }}
+        >
+          {activeFilterCount > 0 ? `Reset Filters (${activeFilterCount} active)` : "Reset Filters"}
+        </Button>
         {!isMobile && (
           <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center", ml: "auto" }}>
             {loading
@@ -1532,6 +978,90 @@ export default function Ir21ChangesPage() {
         )}
       </Box>
     </>
+  );
+
+  // "Refine Results" -- Change classification pills only now that
+  // Timeframe/Region/Service/Provider/MNO search all live in
+  // masterFilterBody above (always inline); this stays a separate section
+  // rendered just above the granular changes ledger, shared between the
+  // inline desktop Paper and the mobile bottom-sheet Drawer.
+  const refineFilterBody = (
+    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            Change:
+          </Typography>
+          <InfoTooltip title="Left group: genuine wholesale carrier switches -- a provider was actually added, removed, or replaced. This is real market churn, and the commercial/carrier-relations view defaults to it. Right group: real IR.21 declarations too (network config, signaling-plane config, administrative metadata), but never a carrier switch, so they're hidden from the default view unless explicitly selected.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16 }} />
+          </InfoTooltip>
+        </Box>
+
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={changeType || DEFAULT_CHURN_PILL}
+          onChange={(_, v) => {
+            if (!v) return;
+            setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+          }}
+          sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
+        >
+          {COMMERCIAL_CHURN_PILLS.map(({ value, label, countKey, tooltip }) => {
+            const pillValue = value || DEFAULT_CHURN_PILL;
+            return (
+              <ChangeFilterPill
+                key={pillValue}
+                pillValue={pillValue}
+                label={label}
+                count={pillCounts[countKey]}
+                isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                tooltip={tooltip}
+              />
+            );
+          })}
+        </ToggleButtonGroup>
+
+        {!isMobile && <Divider orientation="vertical" flexItem sx={{ my: 0.5, borderColor: "#CFD8DC" }} />}
+
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={changeType || DEFAULT_CHURN_PILL}
+          onChange={(_, v) => {
+            if (!v) return;
+            setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+          }}
+          sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
+        >
+          {TECHNICAL_ADMIN_PILLS.map(({ value, label, countKey, tooltip }) => {
+            const pillValue = value || DEFAULT_CHURN_PILL;
+            return (
+              <ChangeFilterPill
+                key={pillValue}
+                pillValue={pillValue}
+                label={label}
+                count={pillCounts[countKey]}
+                isActive={(changeType || DEFAULT_CHURN_PILL) === pillValue}
+                tooltip={tooltip}
+              />
+            );
+          })}
+        </ToggleButtonGroup>
+      </Box>
+
+      <InfoTooltip title="Inspect raw IR.21 <ChangeHistory> parsing rules and overrides.">
+        <Button
+          component={Link}
+          href="/admin/mno-normalization?tab=changelog"
+          size="small"
+          startIcon={<RuleIcon fontSize="small" />}
+          sx={{ whiteSpace: "nowrap" }}
+        >
+          View Full Normalization Audit &rarr;
+        </Button>
+      </InfoTooltip>
+    </Box>
   );
 
   return (
@@ -1546,127 +1076,29 @@ export default function Ir21ChangesPage() {
           carrier-relations review.
         </Typography>
 
-        {/* Master Control Bar -- global scoping (Timeframe/Custom Range,
-           Region, Service) plus the Market Share Pivot Summary and Clear
-           All Filters actions, always visible at the very top regardless of
-           device width. Everything below reacts to this bar. */}
-        <Paper sx={{ p: 2, mb: 3 }}>{masterFilterBody}</Paper>
+        {/* Unified Master Filter Strip -- global scoping (Timeframe/Custom
+           Range, Region, Service) plus Wholesale Provider search, MNO/TADIG
+           search, and Reset Filters, always visible at the very top
+           regardless of device width. Everything below reacts to this. */}
+        <Paper sx={{ p: 2, mb: 3, bgcolor: "#F8FAFC", border: "1px solid #E2E8F0" }}>{masterFilterBody}</Paper>
 
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <KpiCard
-            label="Total Churn Events"
-            value={summaryLoading ? "…" : summary?.totalChurnEvents ?? 0}
-            color="#0A2540"
-            tooltip="Total count of genuine carrier routing switches (additions, removals, and direct replacements across SCCP, DSX, and IPX) recorded in this period -- excludes IP/Subnet, Diameter/SS7, and Admin/Name updates, and excludes bulk-onboarding rows from an MNO's very first IR.21 upload, none of which is real market churn."
-            active={activeKpi === "churn"}
-            onClick={handleChurnClick}
-          />
-          <KpiCard
-            label="Top Provider Gainer"
-            value={
-              summaryLoading ? (
-                "…"
-              ) : displayedGainer ? (
-                <>
-                  <ChurnKpiValue
-                    providerName={displayedGainer.providerName}
-                    statLabel="Service Gain"
-                    statCount={displayedGainer.grossGains}
-                    operatorsCount={displayedGainer.uniqueOperatorsCount}
-                    netDelta={displayedGainer.netDelta}
-                    tone="success"
-                  />
-                  <ChurnProviderAutocomplete
-                    entries={summary?.topGainingProviders ?? []}
-                    metric="grossGains"
-                    role="gainer"
-                    selectedProviderId={displayedGainer.providerId}
-                    onSelect={selectGainer}
-                    onClear={clearGainerSelection}
-                    tone="success"
-                    emptyLabel="No gains this period"
-                  />
-                </>
-              ) : (
-                "No gains this period"
-              )
-            }
-            color="#2E7D32"
-            tooltip="Wholesale carrier that achieved the highest gross new routing wins and competitor replacements across all MNO filings in this timeframe -- genuine carrier switches only, never a bulk-onboarding row from an MNO's first-ever IR.21 upload."
-            active={activeKpi === "gainer"}
-            disabled={!topGainer}
-            onClick={handleGainerClick}
-          />
-          <KpiCard
-            label="Top Provider Loser"
-            value={
-              summaryLoading ? (
-                "…"
-              ) : displayedLoser ? (
-                <>
-                  <ChurnKpiValue
-                    providerName={displayedLoser.providerName}
-                    statLabel="Service Loss"
-                    statCount={displayedLoser.grossLosses}
-                    operatorsCount={displayedLoser.uniqueOperatorsCount}
-                    netDelta={displayedLoser.netDelta}
-                    tone="error"
-                  />
-                  <ChurnProviderAutocomplete
-                    entries={summary?.topLosingProviders ?? []}
-                    metric="grossLosses"
-                    role="loser"
-                    selectedProviderId={displayedLoser.providerId}
-                    onSelect={selectLoser}
-                    onClear={clearLoserSelection}
-                    tone="error"
-                    emptyLabel="No losses recorded"
-                  />
-                </>
-              ) : (
-                "No losses recorded"
-              )
-            }
-            color="#C62828"
-            tooltip="Wholesale carrier that experienced the highest gross lost routes and removals across all MNO filings in this timeframe."
-            active={activeKpi === "loser"}
-            disabled={!topLoser}
-            onClick={handleLoserClick}
-          />
-          <KpiCard
-            label="Active Switching MNOs / Custs"
-            value={
-              summaryLoading ? (
-                "…"
-              ) : (
-                <>
-                  <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }}>
-                    {summary?.activeSwitchingOperatorCount ?? 0}
-                  </Typography>
-                  <SwitchingOperatorAutocomplete
-                    entries={summary?.topSwitchingOperators ?? []}
-                    searchText={search}
-                    onSelect={selectSwitchingOperator}
-                    onClear={clearSwitchingSelection}
-                    onTextChange={(text) => {
-                      setSearch(text);
-                      setActiveKpi(null);
-                      setProviderRole(null);
-                    }}
-                  />
-                </>
-              )
-            }
-            color="#EF6C00"
-            tooltip="Count of unique MNOs / TADIG entities that modified at least one signaling or data roaming route during this period."
-            active={activeKpi === "switching"}
-            onClick={handleSwitchingClick}
-          />
-        </Grid>
+        {/* The page's primary analytical driver -- embedded directly rather
+           than behind a modal, per-carrier click cross-filters the charts
+           and ledger below via the shared `provider` selection. */}
+        <MarketCapturePivot
+          rows={dynamicsRows}
+          loading={dynamicsLoading}
+          scopeLabel={`${dateScopeLabel} | ${region || "All Regions"} | ${service || "All Services"}`}
+          selectedProviderId={provider?.id ?? null}
+          onSelectProvider={handleChartCarrierClick}
+          onClearSelection={clearProviderSelection}
+        />
 
         <MarketDynamicsCharts
           rows={dynamicsRows}
           loading={dynamicsLoading}
+          selectedProviderId={provider?.id ?? null}
+          selectedProviderName={provider?.providerName ?? null}
           onServiceClick={handleChartServiceClick}
           onCarrierClick={handleChartCarrierClick}
           onRegionClick={handleChartRegionClick}
@@ -1761,26 +1193,11 @@ export default function Ir21ChangesPage() {
               <Chip
                 size="small"
                 color="primary"
-                label={`Provider: ${provider.providerName}${providerRole ? ` (${providerRole})` : ""}`}
-                onDelete={() => {
-                  setProvider(null);
-                  setProviderInput("");
-                  setProviderRole(null);
-                  setActiveKpi(null);
-                }}
+                label={`Provider: ${provider.providerName}`}
+                onDelete={clearProviderSelection}
               />
             )}
-            {search && (
-              <Chip
-                size="small"
-                label={`Search: "${search}"`}
-                onDelete={() => {
-                  setSearch("");
-                  setActiveKpi(null);
-                }}
-              />
-            )}
-            {activeKpi && <Chip size="small" color="secondary" label={`View: ${ACTIVE_KPI_LABEL[activeKpi]}`} onDelete={() => setActiveKpi(null)} />}
+            {search && <Chip size="small" label={`Search: "${search}"`} onDelete={() => setSearch("")} />}
             <Button size="small" onClick={resetAllFilters} startIcon={<FilterAltOffIcon fontSize="small" />} sx={{ ml: 0.5 }}>
               Reset to Default View
             </Button>
@@ -1896,14 +1313,6 @@ export default function Ir21ChangesPage() {
           height={600}
         />
         )}
-
-        <PivotSummaryModal
-          open={pivotOpen}
-          onClose={() => setPivotOpen(false)}
-          rows={dynamicsRows}
-          loading={dynamicsLoading}
-          scopeLabel={`${dateScopeLabel} | ${region || "All Regions"} | ${service || "All Services"}`}
-        />
       </AppShell>
     </RequireAuth>
   );

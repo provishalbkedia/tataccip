@@ -38,12 +38,14 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LockIcon from "@mui/icons-material/Lock";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import SearchOffIcon from "@mui/icons-material/SearchOff";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import ExclusivityCharts from "./ExclusivityCharts";
+import ReachListFallbackDialog from "./ReachListFallbackDialog";
 import type { ExclusivityAggregationMode } from "@/lib/reports/exclusivityReportData";
 import { api } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
@@ -580,6 +582,17 @@ function MnoSearchPageInner() {
   const resultsRef = React.useRef<HTMLDivElement>(null);
   const [resultsPulse, setResultsPulse] = React.useState(false);
 
+  // Cross-dataset recovery -- set once per search when the IR.21 Verified
+  // scope comes back with zero rows for a real free-text query, but a
+  // second, lightweight check confirms Reach List records DO exist under
+  // "All MNOs (IR.21 + Reach List)" for that same term (see the fetch
+  // effect below). Drives both the one-time recovery dialog and the
+  // persistent inline banner that replaces it once dismissed -- both read
+  // off this same state so they can never disagree about whether a
+  // fallback is actually available.
+  const [reachListFallback, setReachListFallback] = React.useState<{ query: string; count: number } | null>(null);
+  const [fallbackDialogOpen, setFallbackDialogOpen] = React.useState(false);
+
   // For scroll triggers that don't involve a navigation (e.g. the chart
   // footnote below) -- results are already rendered on screen, so this can
   // scroll immediately rather than going through the sessionStorage-flag
@@ -816,12 +829,43 @@ function MnoSearchPageInner() {
     const urlExclusiveMode = searchParams.get("exclusiveMode");
     setExclusiveMode(urlExclusiveMode && ALL_EXCLUSIVE_MODE_VALUES.includes(urlExclusiveMode as ExclusiveMode) ? (urlExclusiveMode as ExclusiveMode) : "all");
     const urlDatasetScope = searchParams.get("datasetScope");
-    setDatasetScope(urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21");
+    const effectiveDatasetScope: DatasetScope =
+      urlDatasetScope && DATASET_SCOPES.includes(urlDatasetScope as DatasetScope) ? (urlDatasetScope as DatasetScope) : "ir21";
+    setDatasetScope(effectiveDatasetScope);
     const urlProvider = searchParams.get("provider") ?? "";
     setProviderFilter(urlProvider);
     setProviderFilterInput(urlProvider);
     api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then((data) => {
       setResults(data);
+
+      // Cross-dataset recovery -- an MNO search under the default IR.21
+      // Verified scope can come back genuinely empty even though the
+      // operator is real and on file, just only via a commercial Reach
+      // List declaration (e.g. "IDEA"/"Idea Cellular", long since
+      // rebranded to "Vi" in IR.21's own records) -- IR.21 never saw it
+      // under that name at all. Rather than leaving the user staring at
+      // an empty grid with no explanation, a second, lightweight check
+      // against the same endpoint with datasetScope=all tells them
+      // whether switching scope would actually surface anything, instead
+      // of just guessing.
+      if (data.length === 0 && urlQ && effectiveDatasetScope === "ir21") {
+        const fallbackParams = new URLSearchParams(searchParams);
+        fallbackParams.set("datasetScope", "all");
+        api
+          .get<MnoSummary[]>(`/mno/search?${fallbackParams.toString()}`)
+          .then((fallbackData) => {
+            if (fallbackData.length > 0) {
+              setReachListFallback({ query: urlQ, count: fallbackData.length });
+              setFallbackDialogOpen(true);
+            } else {
+              setReachListFallback(null);
+            }
+          })
+          .catch(() => {});
+      } else {
+        setReachListFallback(null);
+        setFallbackDialogOpen(false);
+      }
       // Only fires for a search actually initiated via runSearch (Enter /
       // the Search button) -- structural filters (Country/Region/Provider
       // dropdowns) push their own params without setting this flag, and a
@@ -893,6 +937,18 @@ function MnoSearchPageInner() {
     flushFreeTextFilter();
     pushParams();
   }, [flushFreeTextFilter, pushParams]);
+
+  // The Reach List fallback dialog/banner's own CTA -- switches Dataset
+  // Scope to the combined view while leaving the current search term
+  // (and every other filter) exactly as-is, then re-runs and scrolls to
+  // the now-populated table the same way any other structural filter
+  // change does.
+  const handleSwitchToAllMnos = React.useCallback(() => {
+    setFallbackDialogOpen(false);
+    sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
+    setDatasetScope("all");
+    pushParams({ datasetScope: "all" });
+  }, [pushParams]);
 
   // Baseline defaults every field/toggle above is initialized to -- used
   // both to detect whether anything is currently non-default (for the
@@ -1738,6 +1794,43 @@ function MnoSearchPageInner() {
           </Box>
         </Box>
 
+        {/* Cross-dataset recovery banner -- persists after the dialog above
+           is dismissed (both read the same reachListFallback state), so
+           the one-click way out of an empty IR.21-scoped grid never
+           disappears once the user closes the popup. Sits above the grid
+           rather than replacing it -- ag-Grid's own "No Rows To Show"
+           overlay still renders underneath, same as it always has. */}
+        {reachListFallback && (
+          <Box
+            sx={{
+              border: "1px dashed #CBD5E1",
+              bgcolor: "#F8FAFC",
+              borderRadius: "12px",
+              p: 4,
+              mb: 3,
+              mx: "auto",
+              maxWidth: 600,
+              textAlign: "center",
+            }}
+          >
+            <SearchOffIcon sx={{ fontSize: 40, color: "#94A3B8", mb: 1 }} />
+            <Typography variant="h6" fontWeight={700} sx={{ color: "#0A2540", mb: 0.5 }}>
+              No IR.21 records found for &quot;{reachListFallback.query}&quot;
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              This operator is not declared in the official IR.21 registry, but {reachListFallback.count} record
+              {reachListFallback.count === 1 ? " is" : "s are"} available via commercial Reach List declarations.
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={handleSwitchToAllMnos}
+              sx={{ bgcolor: "#0A2540", color: "#FFFFFF", fontWeight: 600, "&:hover": { bgcolor: "#0F375E" } }}
+            >
+              Search in All MNOs (IR.21 + Reach List)
+            </Button>
+          </Box>
+        )}
+
         <DataGrid<MnoSummaryWithExclusivity>
           rowData={visibleRows}
           columnDefs={[
@@ -1922,6 +2015,13 @@ function MnoSearchPageInner() {
           </Paper>
         )}
         </Box>
+        <ReachListFallbackDialog
+          open={fallbackDialogOpen}
+          mnoQuery={reachListFallback?.query ?? ""}
+          matchCount={reachListFallback?.count ?? 0}
+          onClose={() => setFallbackDialogOpen(false)}
+          onSwitchToCombinedScope={handleSwitchToAllMnos}
+        />
       </AppShell>
     </RequireAuth>
   );

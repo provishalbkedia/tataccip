@@ -14,6 +14,8 @@ import {
   Menu,
   MenuItem,
   Paper,
+  Tab,
+  Tabs,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -23,10 +25,12 @@ import type { Theme } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import BoltIcon from "@mui/icons-material/Bolt";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import DataGrid from "@/components/DataGrid";
@@ -161,6 +165,23 @@ function ProviderSearchPageInner() {
   );
 
   const runSearch = React.useCallback(() => pushParams(q, source, service), [pushParams, q, source, service]);
+
+  // Which top-level tab is active -- synced to the URL (not separate React
+  // state) so a direct/shared link to ?tab=benchmark lands on the compare
+  // roster, and Back/Forward navigates between the two the same way it
+  // already does for every other filter on this page. Preserves whatever
+  // q/source/service are currently set (unlike pushParams above, which
+  // always rebuilds params from scratch) -- switching tabs is not itself a
+  // search-scope change.
+  const activeTab: "directory" | "benchmark" = searchParams.get("tab") === "benchmark" ? "benchmark" : "directory";
+  const handleTabChange = React.useCallback(
+    (_: React.SyntheticEvent, next: "directory" | "benchmark") => {
+      const params = new URLSearchParams(searchParams);
+      params.set("tab", next);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, pathname, router],
+  );
 
   const fetchSuggestions = React.useCallback(
     (query: string) => api.get<ProviderSuggestion[]>(`/provider/suggestions?q=${encodeURIComponent(query)}`),
@@ -392,9 +413,51 @@ function ProviderSearchPageInner() {
            the desktop dock left the mobile one still overlapping the
            pagination bar's last line. */}
         <Box sx={{ pb: bottomDockVisible ? { xs: 24, sm: 10 } : 0 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
           Provider Search
         </Typography>
+
+        {/* Excel-style top tabs -- splits what used to be one long page
+           mixing a general directory lookup with multi-provider compare
+           selection into two focused workspaces. Selection state
+           (selected/uniqueSelected) lives outside this conditional, so it
+           survives switching tabs, and the Benchmark tab's own label picks
+           up a live count the moment 2+ providers are selected. */}
+        <Box sx={{ borderBottom: "2px solid #E2E8F0", mb: 3 }}>
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            sx={{
+              minHeight: 48,
+              "& .MuiTab-root": {
+                minHeight: 48,
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                color: "#64748B",
+                px: 3,
+              },
+              "& .Mui-selected": { color: "#0A2540 !important" },
+              "& .MuiTabs-indicator": { backgroundColor: "#00D4B2", height: 3 },
+            }}
+          >
+            <Tab
+              value="directory"
+              label="Provider Directory & Footprint Analytics"
+              icon={<TableChartOutlinedIcon fontSize="small" />}
+              iconPosition="start"
+            />
+            <Tab
+              value="benchmark"
+              label={`Side-by-Side Carrier Benchmark${uniqueSelected.length >= 2 ? ` (${uniqueSelected.length})` : ""}`}
+              icon={<CompareArrowsIcon fontSize="small" />}
+              iconPosition="start"
+            />
+          </Tabs>
+        </Box>
+
+        {activeTab === "directory" ? (
+        <>
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={6}>
@@ -490,82 +553,6 @@ function ProviderSearchPageInner() {
 
         <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} onProviderClick={handleProviderChartClick} />
 
-        {/* Side-by-Side Carrier Benchmark -- the multi-provider compare
-           feature was previously discoverable only via a faint instructional
-           sentence inside the results summary box, easy for a first-time
-           user (or an executive skimming the page) to miss entirely. This
-           surfaces it as its own high-visibility action strip directly above
-           the table, with live selection slots so progress toward the 2-5
-           range is visible without scrolling down to the floating dock. */}
-        <Paper
-          variant="outlined"
-          sx={{
-            mb: 1.5,
-            p: 2,
-            borderColor: "#CFD8DC",
-            borderLeft: "4px solid #00D4B2",
-            background: "linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%)",
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, flexWrap: "wrap" }}>
-            <CompareArrowsIcon sx={{ color: "#0A2540", mt: 0.25 }} />
-            <Box sx={{ flex: 1, minWidth: 260 }}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ color: "#0A2540" }}>
-                Side-by-Side Carrier Benchmark (Select 2–5 Providers)
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Select checkboxes or click rows to compare global footprint, shared MNO accounts, and service
-                dominance side-by-side.
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-            {Array.from({ length: 5 }).map((_, i) => {
-              const p = uniqueSelected[i];
-              return p ? (
-                <Chip
-                  key={p.id}
-                  label={p.providerName}
-                  onDelete={() => handleRemoveFromSelection(p.id)}
-                  sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600, "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
-                />
-              ) : (
-                <Chip
-                  key={`slot-${i}`}
-                  variant="outlined"
-                  label={i < 2 ? `Carrier ${i + 1}` : `+ Slot ${i + 1}`}
-                  sx={{ borderStyle: "dashed", borderColor: "#CFD8DC", color: "text.disabled" }}
-                />
-              );
-            })}
-            {uniqueSelected.length >= 2 && (
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)}
-                sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 700, ml: "auto" }}
-              >
-                Compare Selected Providers ({uniqueSelected.length}) &rarr;
-              </Button>
-            )}
-          </Box>
-
-          {quickShortcuts.length > 0 && (
-            <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", gap: 1 }}>
-              {quickShortcuts.map((s) => (
-                <Chip
-                  key={s.label}
-                  icon={<BoltIcon fontSize="small" sx={{ color: "#B45309 !important" }} />}
-                  label={s.label}
-                  onClick={() => router.push(`/search/provider/compare?ids=${s.ids.join(",")}`)}
-                  sx={{ bgcolor: "#FFF3DC", color: "#7C4A03", fontWeight: 600, cursor: "pointer", "&:hover": { bgcolor: "#FFE9B8" } }}
-                />
-              ))}
-            </Box>
-          )}
-        </Paper>
-
         {/* Contextual Table Header Banner -- names the table's exact scope
            in plain language (previously just a bare result count) and, once
            a search has narrowed the view down, an explicit way back out to
@@ -644,8 +631,108 @@ function ProviderSearchPageInner() {
             </Box>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            Click anywhere on a row (or its checkbox) to select 2-5 for side-by-side comparison, or click a
-            provider&apos;s name to open its coverage stats. {SOURCE_HELPER_TEXT[source]}
+            Click a provider&apos;s name to open its coverage stats. {SOURCE_HELPER_TEXT[source]} Switch to the{" "}
+            <MuiLink component="button" variant="caption" onClick={() => handleTabChange({} as React.SyntheticEvent, "benchmark")} sx={{ fontWeight: 600 }}>
+              Side-by-Side Carrier Benchmark
+            </MuiLink>{" "}
+            tab to select 2–5 providers for comparison.
+          </Typography>
+        </Paper>
+        {/* No rowSelection/checkbox column here -- the directory is a clean
+           scannable lookup now; multi-provider selection lives entirely on
+           the Benchmark tab below (which shares this same `results` data
+           and `columnDefs`, just with selection turned on). */}
+        <DataGrid<ProviderSummary> rowData={results} columnDefs={columnDefs} getRowId={(row) => row.id} showTopPagination />
+        </>
+        ) : (
+        <>
+        {/* Side-by-Side Carrier Benchmark -- dedicated entirely to
+           multi-carrier comparative analytics now, rather than a strip
+           squeezed above the general directory table. Selection slots make
+           progress toward the 2-5 range visible without scrolling down to
+           the floating dock, and the CTA is always present (disabled below
+           2) so its exact requirement is never a mystery. */}
+        <Paper
+          variant="outlined"
+          sx={{
+            mb: 1.5,
+            p: 2,
+            borderColor: "#CFD8DC",
+            borderLeft: "4px solid #00D4B2",
+            background: "linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%)",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, flexWrap: "wrap" }}>
+            <CompareArrowsIcon sx={{ color: "#0A2540", mt: 0.25 }} />
+            <Box sx={{ flex: 1, minWidth: 260 }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ color: "#0A2540" }}>
+                Side-by-Side Carrier Benchmark
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                Select between 2 and 5 wholesale providers below to generate side-by-side comparative matrices —
+                global footprint, shared MNO accounts, and service dominance, all at once. ({uniqueProviderCount}{" "}
+                providers in the current scope, {SOURCE_PILL_LABEL[source]})
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            {Array.from({ length: 5 }).map((_, i) => {
+              const p = uniqueSelected[i];
+              return p ? (
+                <Chip
+                  key={p.id}
+                  label={p.providerName}
+                  onDelete={() => handleRemoveFromSelection(p.id)}
+                  sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600, "& .MuiChip-deleteIcon": { color: "rgba(255,255,255,0.7)" } }}
+                />
+              ) : (
+                <Chip
+                  key={`slot-${i}`}
+                  variant="outlined"
+                  label={i < 2 ? `Carrier ${i + 1}` : `+ Slot ${i + 1}`}
+                  sx={{ borderStyle: "dashed", borderColor: "#CFD8DC", color: "text.disabled" }}
+                />
+              );
+            })}
+            <Button
+              variant="contained"
+              size="small"
+              disabled={uniqueSelected.length < 2}
+              startIcon={<RocketLaunchIcon fontSize="small" />}
+              onClick={() => router.push(`/search/provider/compare?ids=${uniqueSelected.map((p) => p.id).join(",")}`)}
+              sx={{
+                bgcolor: "#0A2540",
+                color: "#fff",
+                fontWeight: 700,
+                ml: "auto",
+                "&.Mui-disabled": { bgcolor: "rgba(10,37,64,0.12)", color: "text.disabled" },
+              }}
+            >
+              {uniqueSelected.length < 2
+                ? "Select at least 2 providers to compare"
+                : `Launch Comparative Analysis Matrix (${uniqueSelected.length}) →`}
+            </Button>
+          </Box>
+
+          {quickShortcuts.length > 0 && (
+            <Box sx={{ mt: 1.5, display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {quickShortcuts.map((s) => (
+                <Chip
+                  key={s.label}
+                  icon={<BoltIcon fontSize="small" sx={{ color: "#B45309 !important" }} />}
+                  label={s.label}
+                  onClick={() => router.push(`/search/provider/compare?ids=${s.ids.join(",")}`)}
+                  sx={{ bgcolor: "#FFF3DC", color: "#7C4A03", fontWeight: 600, cursor: "pointer", "&:hover": { bgcolor: "#FFE9B8" } }}
+                />
+              ))}
+            </Box>
+          )}
+        </Paper>
+
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.5, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+          <Typography variant="caption" color="text.secondary">
+            Click anywhere on a row (or its checkbox) to select — up to 5 at once. Selected rows highlight below.
           </Typography>
         </Paper>
         <DataGrid<ProviderSummary>
@@ -658,6 +745,8 @@ function ProviderSearchPageInner() {
           deselectSignal={deselectSignal}
           showTopPagination
         />
+        </>
+        )}
         </Box>
 
         {selfCompareTarget && (

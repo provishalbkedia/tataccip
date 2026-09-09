@@ -92,6 +92,16 @@ const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
 const VALID_SERVICES = ["SCCP", "DSX", "IPX"] as const;
 type ServiceFilter = (typeof VALID_SERVICES)[number];
 
+// sessionStorage key for the "scroll to results on next fetch" flag -- see
+// its own comment where it's read/written inside ProviderSearchPageInner.
+// sessionStorage, not a ref/plain state, since this page's useSearchParams()
+// sits inside a <Suspense> boundary (see the default export below), and a
+// client-side search navigation can remount ProviderSearchPageInner --
+// wiping a ref/state set immediately beforehand before the fetch it's meant
+// to signal ever resolves. Confirmed as the actual failure mode (not just a
+// theoretical one) on MNO Search's own identical scroll-on-search feature.
+const SCROLL_PENDING_KEY = "ccip-provider-search-scroll-pending";
+
 export default function ProviderSearchPage() {
   return (
     <React.Suspense fallback={null}>
@@ -120,6 +130,14 @@ function ProviderSearchPageInner() {
   // whatever's currently on screen once a search has narrowed it down.
   const [baselineCount, setBaselineCount] = React.useState<number | null>(null);
 
+  // Smooth-scrolls to the results banner once a fresh search actually
+  // lands, rather than leaving the user looking at the controls with no
+  // visual confirmation their query did anything -- set right before
+  // runSearch's pushParams() call below, consumed (and cleared) once this
+  // effect has fresh `results` in hand.
+  const resultsRef = React.useRef<HTMLDivElement>(null);
+  const [resultsPulse, setResultsPulse] = React.useState(false);
+
   // The URL query string is the single source of truth for "what did we
   // last search for" — fires on initial load, on an explicit Search/toggle
   // change (via the router.push calls below), and when the browser Back/
@@ -137,7 +155,19 @@ function ProviderSearchPageInner() {
 
     const params = new URLSearchParams(searchParams);
     params.set("source", effectiveSource);
-    api.get<ProviderSummary[]>(`/provider/search?${params.toString()}`).then(setResults);
+    api.get<ProviderSummary[]>(`/provider/search?${params.toString()}`).then((data) => {
+      setResults(data);
+      // Only fires for a search actually initiated via runSearch (Enter /
+      // the Search button) -- a plain page load/Back-Forward restore, or a
+      // Dataset Scope pill change, never sets this flag, so neither yanks
+      // the viewport unexpectedly.
+      if (sessionStorage.getItem(SCROLL_PENDING_KEY) === "1") {
+        sessionStorage.removeItem(SCROLL_PENDING_KEY);
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setResultsPulse(true);
+        setTimeout(() => setResultsPulse(false), 1800);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -164,7 +194,10 @@ function ProviderSearchPageInner() {
     [pathname, router],
   );
 
-  const runSearch = React.useCallback(() => pushParams(q, source, service), [pushParams, q, source, service]);
+  const runSearch = React.useCallback(() => {
+    sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
+    pushParams(q, source, service);
+  }, [pushParams, q, source, service]);
 
   // Which top-level tab is active -- synced to the URL (not separate React
   // state) so a direct/shared link to ?tab=benchmark lands on the compare
@@ -501,6 +534,29 @@ function ProviderSearchPageInner() {
 
         {activeTab === "directory" ? (
         <>
+        {/* Dataset Scope sits above the search bar now, matching MNO
+           Search's own Master Scope Bar -> search strip order -- the
+           coarsest "which slice of the market" control reads first, above
+           the fine-grained free-text field rather than sandwiched beneath
+           it. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Dataset Scope
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            color="primary"
+            value={source}
+            onChange={(_, value) => value && pushParams(q, value, service)}
+            sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
+          >
+            <ToggleButton value={ProviderStatsSource.IR21}>As per IR.21 Data</ToggleButton>
+            <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
+            <ToggleButton value={ProviderStatsSource.BOTH}>Both (Combined)</ToggleButton>
+          </ToggleButtonGroup>
+        </Paper>
+
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={6}>
@@ -514,7 +570,7 @@ function ProviderSearchPageInner() {
               />
             </Grid>
             <Grid item xs={6} sm={3}>
-              <Button fullWidth variant="contained" startIcon={<SearchIcon />} onClick={runSearch}>
+              <Button fullWidth variant="contained" startIcon={<SearchIcon />} onClick={runSearch} sx={{ minHeight: 44, bgcolor: "#0A2540", "&:hover": { bgcolor: "#0A2540" } }}>
                 Search
               </Button>
             </Grid>
@@ -526,23 +582,10 @@ function ProviderSearchPageInner() {
                 onClick={resetAllFilters}
                 disabled={!hasActiveFilters}
                 color={hasActiveFilters ? "warning" : "inherit"}
+                sx={{ minHeight: 44 }}
               >
                 Reset
               </Button>
-            </Grid>
-            <Grid item xs={12}>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                color="primary"
-                value={source}
-                onChange={(_, value) => value && pushParams(q, value, service)}
-                sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
-              >
-                <ToggleButton value={ProviderStatsSource.IR21}>As per IR.21 Data</ToggleButton>
-                <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
-                <ToggleButton value={ProviderStatsSource.BOTH}>Both (Combined)</ToggleButton>
-              </ToggleButtonGroup>
             </Grid>
           </Grid>
         </Paper>
@@ -600,8 +643,31 @@ function ProviderSearchPageInner() {
            in plain language (previously just a bare result count) and, once
            a search has narrowed the view down, an explicit way back out to
            the full Dataset Scope baseline rather than only the Reset
-           button up in the search bar. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 2, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+           button up in the search bar. Also the scroll-to-results anchor:
+           searching (Enter or the Search button) smooth-scrolls here and
+           briefly pulses the border so a search's effect is immediately
+           visible instead of leaving the user looking at unchanged
+           controls above the fold. */}
+        <Paper
+          ref={resultsRef}
+          id="provider-results-anchor"
+          variant="outlined"
+          sx={{
+            mb: 1.5,
+            p: 2,
+            borderColor: resultsPulse ? "#00A98A" : "#BFD4E8",
+            bgcolor: "#F4F8FC",
+            transition: "border-color 0.3s ease-out, box-shadow 0.3s ease-out",
+            ...(resultsPulse && {
+              animation: "pulseHighlight 1.8s ease-out",
+              "@keyframes pulseHighlight": {
+                "0%": { boxShadow: "0 0 0 0 rgba(0,212,178,0.55)" },
+                "60%": { boxShadow: "0 0 0 10px rgba(0,212,178,0)" },
+                "100%": { boxShadow: "0 0 0 0 rgba(0,212,178,0)" },
+              },
+            }),
+          }}
+        >
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5 }}>
             <Box>
               <Typography variant="subtitle1" fontWeight={700} sx={{ color: "#0A2540" }}>

@@ -51,14 +51,26 @@ import { MnoSuggestion, MnoSummary, ProviderSuggestion, Region } from "@ccip/sha
 
 const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
 
-// Derived entirely client-side from data the API already returns —
-// sccpProviders/dsxProviders/ipxProviders are already resolved to
-// canonical ProviderMaster names, deduplicated per service (see
-// MnoService.resolvedProvidersByMno). Service-wise exclusivity is just
-// "exactly 1 unique provider in that service's own array" — independent
-// per service, so an MNO can be IPX-exclusive while dual-homed on SCCP.
-// "Fully exclusive" (the original, coarser definition) is the union
-// across all 3 services collapsing to exactly one member.
+// Derived entirely client-side from data the API already returns.
+// Exclusivity is computed off allSccpProviders/allDsxProviders/
+// allIpxProviders — every raw primary/backup/GRX/LTE carrier candidate
+// IR.21 declares for that service, resolved through the alias engine
+// (MnoService.resolvedAllDeclaredProvidersByMno) — NOT off the narrower
+// sccpProviders/dsxProviders/ipxProviders the API also returns (the
+// single canonical Ir21Connectivity provider per service, unique per
+// (mnoId, serviceId) by schema design). That narrower set can never
+// hold more than 1 entry under the "IR.21 Verified" dataset scope (Reach
+// List is excluded there, and Ir21Connectivity stores exactly one row
+// per service) — using it for exclusivity made every MNO with a
+// declared service read as "solo" regardless of how many backup
+// carriers its IR.21 filing actually named, which is exactly backwards
+// for a feature whose whole point is telling genuine single-provider
+// lock-in apart from real multi-carrier redundancy. Service-wise
+// exclusivity is "exactly 1 unique declared provider in that service's
+// full candidate set" — independent per service, so an MNO can be
+// IPX-exclusive while dual-homed on SCCP. "Fully exclusive" (the
+// original, coarser definition) is the union across all 3 services
+// collapsing to exactly one member.
 export type MnoSummaryWithExclusivity = MnoSummary & {
   isExclusiveSccp: boolean;
   soleSccpProvider: string | null;
@@ -86,17 +98,20 @@ const sanitizeProviders = (providers: (string | null | undefined)[]): string[] =
 const soleOf = (providers: string[]) => (providers.length === 1 ? providers[0] : null);
 
 function withExclusivity(r: MnoSummary): MnoSummaryWithExclusivity {
-  const sccpProviders = sanitizeProviders(r.sccpProviders);
-  const dsxProviders = sanitizeProviders(r.dsxProviders);
-  const ipxProviders = sanitizeProviders(r.ipxProviders);
-  // allSccpProviders/etc. never feed exclusivity below (only sccpProviders/
-  // dsxProviders/ipxProviders, the canonical Ir21Connectivity-scoped
-  // arrays, do) -- sanitized the same way purely so the "All MNOs" donut's
-  // presence counting can't be thrown off by the same stray-blank-entry
-  // risk the canonical arrays are guarded against above.
-  const allSccpProviders = sanitizeProviders(r.allSccpProviders);
-  const allDsxProviders = sanitizeProviders(r.allDsxProviders);
-  const allIpxProviders = sanitizeProviders(r.allIpxProviders);
+  // The full declared-candidate set (see the module comment above) feeds
+  // both the grid's SCCP/DSX/IPX display columns AND exclusivity below --
+  // one sanitized array per service, used for both purposes, so a row's
+  // "SCCP" column always lists every carrier that row's own exclusivity
+  // badge was actually computed from.
+  const sccpProviders = sanitizeProviders(r.allSccpProviders);
+  const dsxProviders = sanitizeProviders(r.allDsxProviders);
+  const ipxProviders = sanitizeProviders(r.allIpxProviders);
+  // allSccpProviders/etc. are kept as their own (identical) fields too,
+  // since ExclusivityCharts' "All MNOs" market-presence view reads them
+  // directly by name.
+  const allSccpProviders = sccpProviders;
+  const allDsxProviders = dsxProviders;
+  const allIpxProviders = ipxProviders;
 
   const isExclusiveSccp = sccpProviders.length === 1;
   const isExclusiveDsx = dsxProviders.length === 1;

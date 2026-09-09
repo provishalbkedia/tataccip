@@ -6,6 +6,7 @@ import type { ColDef } from "ag-grid-community";
 import {
   Box,
   Button,
+  ButtonBase,
   Chip,
   CircularProgress,
   Grid,
@@ -14,8 +15,7 @@ import {
   Menu,
   MenuItem,
   Paper,
-  Tab,
-  Tabs,
+  Tooltip,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -417,43 +417,86 @@ function ProviderSearchPageInner() {
           Provider Search
         </Typography>
 
-        {/* Excel-style top tabs -- splits what used to be one long page
-           mixing a general directory lookup with multi-provider compare
-           selection into two focused workspaces. Selection state
-           (selected/uniqueSelected) lives outside this conditional, so it
-           survives switching tabs, and the Benchmark tab's own label picks
-           up a live count the moment 2+ providers are selected. */}
-        <Box sx={{ borderBottom: "2px solid #E2E8F0", mb: 3 }}>
-          <Tabs
-            value={activeTab}
-            onChange={handleTabChange}
+        {/* Tactile segmented tab dock -- splits what used to be one long
+           page mixing a general directory lookup with multi-provider
+           compare selection into two focused workspaces. A flat MUI <Tabs>
+           underline read as static secondary text (nothing signaled the
+           inactive tab was clickable); this recessed tray + raised active
+           card gives both tabs real physical presence instead. Selection
+           state (selected/uniqueSelected) lives outside this conditional,
+           so it survives switching tabs, and the Benchmark tab's own pill
+           badge picks up a live count the moment 2+ providers are
+           selected. */}
+        <Box
+          sx={{
+            display: "inline-flex",
+            gap: "5px",
+            p: "6px",
+            mb: 3,
+            bgcolor: "#EDF2F7",
+            border: "1px solid #CBD5E1",
+            borderRadius: "12px",
+            boxShadow: "inset 0 2px 4px rgba(0,0,0,0.06)",
+          }}
+        >
+          <ButtonBase
+            onClick={(e) => handleTabChange(e, "directory")}
             sx={{
-              minHeight: 48,
-              "& .MuiTab-root": {
-                minHeight: 48,
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: "0.95rem",
-                color: "#64748B",
-                px: 3,
-              },
-              "& .Mui-selected": { color: "#0A2540 !important" },
-              "& .MuiTabs-indicator": { backgroundColor: "#00D4B2", height: 3 },
+              display: "flex",
+              alignItems: "center",
+              gap: 1.2,
+              px: 2.5,
+              py: 1.2,
+              borderRadius: "8px",
+              fontWeight: activeTab === "directory" ? 700 : 600,
+              fontSize: "0.92rem",
+              color: activeTab === "directory" ? "#0A2540" : "#475569",
+              bgcolor: activeTab === "directory" ? "#FFFFFF" : "transparent",
+              boxShadow: activeTab === "directory" ? "0 4px 12px rgba(10,37,64,0.12), 0 1px 3px rgba(0,0,0,0.08)" : "none",
+              borderBottom: activeTab === "directory" ? "3px solid #00D4B2" : "3px solid transparent",
+              transition: "all 0.2s ease-in-out",
+              "&:hover": activeTab === "directory" ? undefined : { bgcolor: "rgba(255,255,255,0.6)", color: "#0A2540", transform: "translateY(-1px)" },
             }}
           >
-            <Tab
-              value="directory"
-              label="Provider Directory & Footprint Analytics"
-              icon={<TableChartOutlinedIcon fontSize="small" />}
-              iconPosition="start"
-            />
-            <Tab
-              value="benchmark"
-              label={`Side-by-Side Carrier Benchmark${uniqueSelected.length >= 2 ? ` (${uniqueSelected.length})` : ""}`}
-              icon={<CompareArrowsIcon fontSize="small" />}
-              iconPosition="start"
-            />
-          </Tabs>
+            <TableChartOutlinedIcon sx={{ fontSize: 19, color: activeTab === "directory" ? "#00D4B2" : "#64748B" }} />
+            Provider Directory &amp; Footprint Analytics
+          </ButtonBase>
+
+          <Tooltip title={activeTab === "benchmark" ? "" : "Click to open the multi-carrier comparison matrix workspace"}>
+            <ButtonBase
+              onClick={(e) => handleTabChange(e, "benchmark")}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1.2,
+                px: 2.5,
+                py: 1.2,
+                borderRadius: "8px",
+                fontWeight: activeTab === "benchmark" ? 700 : 600,
+                fontSize: "0.92rem",
+                color: activeTab === "benchmark" ? "#0A2540" : "#475569",
+                bgcolor: activeTab === "benchmark" ? "#FFFFFF" : "transparent",
+                boxShadow: activeTab === "benchmark" ? "0 4px 12px rgba(10,37,64,0.12), 0 1px 3px rgba(0,0,0,0.08)" : "none",
+                borderBottom: activeTab === "benchmark" ? "3px solid #00D4B2" : "3px solid transparent",
+                transition: "all 0.2s ease-in-out",
+                "&:hover": activeTab === "benchmark" ? undefined : { bgcolor: "rgba(255,255,255,0.6)", color: "#0A2540", transform: "translateY(-1px)" },
+              }}
+            >
+              <CompareArrowsIcon sx={{ fontSize: 20, color: activeTab === "benchmark" ? "#00D4B2" : "#64748B" }} />
+              Side-by-Side Carrier Benchmark
+              <Chip
+                label={uniqueSelected.length >= 2 ? `${uniqueSelected.length} Selected` : "Compare 2–5"}
+                size="small"
+                sx={{
+                  height: 22,
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  bgcolor: uniqueSelected.length >= 2 ? "#00D4B2" : activeTab === "benchmark" ? "#0A2540" : "#E2E8F0",
+                  color: uniqueSelected.length >= 2 ? "#0A2540" : activeTab === "benchmark" ? "#00D4B2" : "#64748B",
+                }}
+              />
+            </ButtonBase>
+          </Tooltip>
         </Box>
 
         {activeTab === "directory" ? (

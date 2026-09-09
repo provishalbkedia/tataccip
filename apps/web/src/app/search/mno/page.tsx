@@ -1464,6 +1464,16 @@ function MnoSearchPageInner() {
           }}
           onResetProviderFilter={clearProviderFilter}
           onVulnerabilityClick={(mode) => {
+            // Clicking a Vulnerability bar (e.g. "Exclusive to Tata Comm")
+            // both narrows the table to exactly that bar's own MNOs
+            // (exclusiveMode + the already-active providerFilter, combined
+            // via providerMatchesRow) and jumps the viewport straight to
+            // it -- same sessionStorage-flag mechanism runSearch uses,
+            // since pushParams below navigates and this page's
+            // useSearchParams() can remount across that navigation (a
+            // plain ref set here would risk being wiped before the fetch
+            // it's meant to signal resolves).
+            sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
             setExclusiveMode(mode);
             pushParams({ exclusiveMode: mode });
           }}

@@ -263,6 +263,18 @@ export default function ExclusivityCharts({
   const homeMarketCoveragePct =
     isAllMode && homeCarrierEntry && rows.length > 0 ? (homeCarrierEntry.exclusiveMnoCount / rows.length) * 100 : 0;
 
+  // The donut's own title/subtitle previously only ever named the
+  // aggregation mode ("Carrier Exclusivity Share — Fully Exclusive"), never
+  // the carrier a drill-down had actually narrowed to -- the "Filtering by
+  // Carrier" ribbon above said so, but the chart card itself didn't, so a
+  // screenshot of just the card (or a quick glance past the ribbon) lost
+  // that context. Appends the carrier name the same way the Vulnerability
+  // card's own title already does.
+  const donutTitle = activeProviderFilter ? `${CHART_TITLE[aggregationMode]} — ${activeProviderFilter}` : CHART_TITLE[aggregationMode];
+  const donutSubtitle = activeProviderFilter
+    ? `Exclusivity breakdown highlighting ${activeProviderFilter} within the current ${AGGREGATION_MODE_LABEL[aggregationMode]} scope`
+    : CHART_SUBTITLE[aggregationMode];
+
   return (
     <Paper sx={{ mb: 1.5 }}>
       <Box
@@ -409,10 +421,10 @@ export default function ExclusivityCharts({
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      {CHART_TITLE[aggregationMode]}
+                      {donutTitle}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      {CHART_SUBTITLE[aggregationMode]}
+                      {donutSubtitle}
                     </Typography>
                     {/* Fixed minHeight + position:relative so this card never
                        collapses smaller than the chart needs, even for a
@@ -549,12 +561,30 @@ export default function ExclusivityCharts({
                         <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
                       </Tooltip>
                     </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
                       {isCarrierScoped
                         ? `${activeProviderFilter}'s own accounts: exclusively theirs vs shared with a competitor`
                         : "Single-provider lock-in vs multi-provider redundancy, current scope"}
                     </Typography>
-                    <Box sx={{ position: "relative", minHeight: 320 }}>
+                    {/* Every bar click here both narrows the table below to
+                       exactly that bar's own MNOs (via onVulnerabilityClick
+                       -> exclusiveMode, combined with whatever provider
+                       filter is already active) AND smooth-scrolls to it
+                       (page.tsx's own resultsRef, triggered the same way a
+                       search does) -- this line is the only on-chart signal
+                       that a click does something beyond re-filtering the
+                       chart itself. */}
+                    <Typography variant="caption" sx={{ mb: 1, display: "block", color: "#0B6FBF", fontWeight: 600 }}>
+                      💡 Click a bar to view those MNOs in the table below ↓
+                    </Typography>
+                    <Box
+                      sx={{
+                        position: "relative",
+                        minHeight: 320,
+                        "& .recharts-bar-rectangle": { transition: "opacity 0.15s ease-in-out" },
+                        "& .recharts-bar-rectangle:hover": { opacity: 0.85 },
+                      }}
+                    >
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={vulnerabilityData} layout="vertical" margin={{ left: 8, right: 24 }}>
                         <XAxis type="number" hide />
@@ -565,7 +595,7 @@ export default function ExclusivityCharts({
                               formatter={(p) =>
                                 `${p.label}: ${p.count} MNOs (${
                                   vulnerabilitySourceRows.length > 0 ? (((p.count as number) / vulnerabilitySourceRows.length) * 100).toFixed(1) : "0.0"
-                                }%)`
+                                }%) — click to view in the table below`
                               }
                             />
                           }

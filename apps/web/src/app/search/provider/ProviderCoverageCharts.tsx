@@ -117,11 +117,34 @@ export default function ProviderCoverageCharts({
   const homeCarrierEntry = homeCarrierRank >= 0 ? rankedByMnos[homeCarrierRank] : null;
 
   const activeSearchTerm = searchQuery?.trim() || null;
-  const barChartTitle = activeSearchTerm ? `Provider Footprint — ${activeSearchTerm}` : "Top Providers by MNO Coverage";
-  const serviceMixTitle = activeSearchTerm ? `Service Coverage Mix — ${activeSearchTerm}` : "Service Coverage Mix — All Providers";
-  const serviceMixSubtitle = activeSearchTerm
+  // A free-text search is a SUBSTRING match against provider names, so it
+  // can genuinely match more than one distinct real provider (e.g.
+  // searching "Orange" could match both "Orange France" and "Orange
+  // International Carriers" -- two different companies, not a typo or bad
+  // data). Both charts below always aggregate across every row currently in
+  // `dedupedRows`, so when that's more than one provider, titling the chart
+  // "— <search term>" as if it were that one provider's own number would be
+  // actively wrong, not just imprecise -- the isSingleMatch/isMultiMatch
+  // split below only uses the singular "this IS that provider's data"
+  // phrasing when the search really did narrow to exactly one row.
+  const matchCount = dedupedRows.length;
+  const isSingleMatch = !!activeSearchTerm && matchCount === 1;
+  const isMultiMatch = !!activeSearchTerm && matchCount > 1;
+  const barChartTitle = isSingleMatch
+    ? `Provider Footprint — ${activeSearchTerm}`
+    : isMultiMatch
+      ? `Top Providers Matching "${activeSearchTerm}" (${matchCount})`
+      : "Top Providers by MNO Coverage";
+  const serviceMixTitle = isSingleMatch
+    ? `Service Coverage Mix — ${activeSearchTerm}`
+    : isMultiMatch
+      ? `Service Coverage Mix — ${matchCount} Providers Matching "${activeSearchTerm}"`
+      : "Service Coverage Mix — All Providers";
+  const serviceMixSubtitle = isSingleMatch
     ? `SCCP vs DSX vs IPX relationship breakdown for ${activeSearchTerm}`
-    : "SCCP vs DSX vs IPX relationships across all listed providers";
+    : isMultiMatch
+      ? `SCCP vs DSX vs IPX relationships summed across ${matchCount} providers matching "${activeSearchTerm}" — not any single provider's own split`
+      : "SCCP vs DSX vs IPX relationships across all listed providers";
 
   return (
     <Paper sx={{ mb: 3 }}>

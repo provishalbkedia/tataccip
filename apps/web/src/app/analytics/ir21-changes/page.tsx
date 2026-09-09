@@ -661,19 +661,39 @@ export default function Ir21ChangesPage() {
   // (MarketCapturePivot) -- either one selecting a carrier sets the same
   // `provider` state the plain "Wholesale Provider" search field above
   // reads and writes, so all three stay in sync automatically.
+  // Each of these three toggles off (reverting to the unfiltered "All"
+  // state) when the thing clicked is already the active selection --
+  // re-clicking an already-drilled-into 100% donut slice (or bar) is the
+  // most discoverable "undo" a user will actually try, and previously did
+  // nothing at all once a service/region narrowed the underlying data down
+  // to a single value with nothing else left to click instead.
   const handleChartServiceClick = (svc: string) => {
-    setService(svc as ServiceName);
+    setService(service === svc ? "" : (svc as ServiceName));
   };
   const handleChartCarrierClick = (providerId: number, providerName: string) => {
+    if (provider?.id === providerId) {
+      clearProviderSelection();
+      return;
+    }
     setProvider({ id: providerId, providerName, matchedAlias: null });
     setProviderInput(providerName);
   };
   const handleChartRegionClick = (regionValue: string) => {
-    setRegion(regionValue as Region);
+    setRegion(region === regionValue ? "" : (regionValue as Region));
   };
   const clearProviderSelection = () => {
     setProvider(null);
     setProviderInput("");
+  };
+  // Clears every chart-driven drill-down (Service/Region/Provider) in one
+  // action -- the Executive Market Dynamics header's own "Reset
+  // Drill-Down" button. Deliberately narrower than resetAllFilters below:
+  // it leaves Timeframe/Change type/MNO search untouched, since those
+  // aren't things a chart click can set in the first place.
+  const resetChartDrilldowns = () => {
+    setService("");
+    setRegion("");
+    clearProviderSelection();
   };
 
   // Counts exactly the filter/selection dimensions "Clear Filters" flushes
@@ -1088,7 +1108,9 @@ export default function Ir21ChangesPage() {
         <MarketCapturePivot
           rows={dynamicsRows}
           loading={dynamicsLoading}
-          scopeLabel={`${dateScopeLabel} | ${region || "All Regions"} | ${service || "All Services"}`}
+          scopeLabel={`${dateScopeLabel} | ${region || "All Regions"}`}
+          serviceFilter={service}
+          onClearServiceFilter={() => setService("")}
           selectedProviderId={provider?.id ?? null}
           onSelectProvider={handleChartCarrierClick}
           onClearSelection={clearProviderSelection}
@@ -1099,9 +1121,13 @@ export default function Ir21ChangesPage() {
           loading={dynamicsLoading}
           selectedProviderId={provider?.id ?? null}
           selectedProviderName={provider?.providerName ?? null}
+          selectedService={service}
+          selectedRegion={region}
           onServiceClick={handleChartServiceClick}
           onCarrierClick={handleChartCarrierClick}
           onRegionClick={handleChartRegionClick}
+          onClearService={() => setService("")}
+          onResetDrilldowns={resetChartDrilldowns}
         />
 
         {isMobile ? (

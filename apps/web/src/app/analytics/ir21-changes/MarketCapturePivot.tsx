@@ -272,13 +272,21 @@ export default function MarketCapturePivot({
   rows,
   loading,
   scopeLabel,
+  serviceFilter,
+  onClearServiceFilter,
   selectedProviderId,
   onSelectProvider,
   onClearSelection,
 }: {
   rows: Ir21RoutingChangeRow[];
   loading: boolean;
+  // Date range + Region only -- the active Service pill is rendered as its
+  // own interactive/removable piece right after this (see below), rather
+  // than baked into the string, so it can carry a click-to-clear affordance
+  // the plain "Scope: ..." sentence never could.
   scopeLabel: string;
+  serviceFilter: string;
+  onClearServiceFilter: () => void;
   selectedProviderId: number | null;
   onSelectProvider: (providerId: number, providerName: string) => void;
   onClearSelection: () => void;
@@ -290,7 +298,11 @@ export default function MarketCapturePivot({
     setExporting(true);
     try {
       const { generatePivotExcelReport } = await import("@/lib/reports/pivotExcelReport");
-      await generatePivotExcelReport({ generatedAt: new Date(), scopeLabel, pivotData });
+      await generatePivotExcelReport({
+        generatedAt: new Date(),
+        scopeLabel: `${scopeLabel} | ${serviceFilter || "All Services"}`,
+        pivotData,
+      });
     } finally {
       setExporting(false);
     }
@@ -321,9 +333,30 @@ export default function MarketCapturePivot({
               </Button>
             )}
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            Scope: {scopeLabel}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
+            <Typography variant="body2" color="text.secondary">
+              Scope: {scopeLabel} |
+            </Typography>
+            {serviceFilter ? (
+              <Chip
+                label={`${serviceFilter} ✕`}
+                size="small"
+                onClick={onClearServiceFilter}
+                sx={{
+                  height: 20,
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  bgcolor: "#E2E8F0",
+                  cursor: "pointer",
+                  "&:hover": { bgcolor: "#CBD5E1" },
+                }}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                All Services
+              </Typography>
+            )}
+          </Box>
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0, justifyContent: { xs: "space-between", sm: "flex-end" } }}>
           <Button

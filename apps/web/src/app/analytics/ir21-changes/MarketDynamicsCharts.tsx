@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Box, CircularProgress, Collapse, Grid, IconButton, Paper, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Collapse, Grid, IconButton, Paper, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import {
   Bar,
   BarChart,
@@ -45,18 +46,28 @@ function CustomTooltip({ active, payload, formatter }: { active?: boolean; paylo
 interface ChartPanelProps {
   title: string;
   subtitle: string;
+  // Optional per-panel header action -- only the Service donut currently
+  // uses this (its "Clear <Service> ✕" chip), but kept generic on
+  // ChartPanel itself rather than special-cased, in case a future panel
+  // needs the same "own header-right action" slot.
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }
-function ChartPanel({ title, subtitle, children }: ChartPanelProps) {
+function ChartPanel({ title, subtitle, headerRight, children }: ChartPanelProps) {
   return (
     <Grid item xs={12} md={4}>
       <Paper variant="outlined" sx={{ p: 1.5, height: "100%", display: "flex", flexDirection: "column" }}>
-        <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-          {title}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-          {subtitle}
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+              {title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+              {subtitle}
+            </Typography>
+          </Box>
+          {headerRight}
+        </Box>
         <Box sx={{ flex: 1, minHeight: 220 }}>{children}</Box>
       </Paper>
     </Grid>
@@ -68,9 +79,13 @@ export default function MarketDynamicsCharts({
   loading,
   selectedProviderId,
   selectedProviderName,
+  selectedService,
+  selectedRegion,
   onServiceClick,
   onCarrierClick,
   onRegionClick,
+  onClearService,
+  onResetDrilldowns,
 }: {
   rows: Ir21RoutingChangeRow[];
   loading: boolean;
@@ -83,9 +98,26 @@ export default function MarketDynamicsCharts({
   // stays visible rather than being isolated out of context.
   selectedProviderId?: number | null;
   selectedProviderName?: string | null;
+  // The Master Filter Bar's own active Service/Region pill (page.tsx's
+  // `service`/`region` state) -- NOT derived from `rows` or `serviceData`/
+  // `regionData` themselves, because both of those are already the
+  // *result* of filtering by these two dimensions server-side (see
+  // page.tsx's overviewQueryString). Once service is narrowed to "DSX",
+  // the donut has no other slice left to compare against, so "this is a
+  // drill-down" can only be known from an explicit flag, not inferred from
+  // a single 100% slice (which would look identical to "this timeframe
+  // just happens to only have DSX events").
+  selectedService: string;
+  selectedRegion: string;
   onServiceClick: (service: string) => void;
   onCarrierClick: (providerId: number, providerName: string) => void;
   onRegionClick: (region: string) => void;
+  onClearService: () => void;
+  // Clears service + region + provider together -- the header's own
+  // "Reset Drill-Down" button, a single escape hatch covering every
+  // chart-driven narrowing at once (as opposed to onClearService, which
+  // only backs out the Service donut's own selection).
+  onResetDrilldowns: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
 
@@ -124,6 +156,16 @@ export default function MarketDynamicsCharts({
 
   const regionData = React.useMemo(() => aggregateByRegion(providerScopedRows), [providerScopedRows]);
 
+  // Names every chart-driven narrowing currently active, for the header's
+  // "Reset Drill-Down (...)" button label -- deliberately excludes the
+  // page's other, non-chart-driven filters (Timeframe, Change type,
+  // MNO/TADIG search), which have their own separate reset affordances.
+  const activeDrilldownLabels = [
+    selectedService ? `Service: ${selectedService}` : null,
+    selectedProviderName ? `Provider: ${selectedProviderName}` : null,
+    selectedRegion ? `Region: ${selectedRegion}` : null,
+  ].filter((l): l is string => !!l);
+
   return (
     <Paper sx={{ mb: 3 }}>
       <Box
@@ -156,7 +198,32 @@ export default function MarketDynamicsCharts({
             </Typography>
           )}
         </Box>
-        <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          {activeDrilldownLabels.length > 0 && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltIcon fontSize="small" />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onResetDrilldowns();
+              }}
+              sx={{
+                height: 24,
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                textTransform: "none",
+                borderColor: "#CBD5E1",
+                color: "#DC2626",
+                bgcolor: "#FFFFFF",
+                "&:hover": { bgcolor: "#FEF2F2", borderColor: "#F87171" },
+              }}
+            >
+              Reset Drill-Down ({activeDrilldownLabels.join(" · ")})
+            </Button>
+          )}
+          <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
+        </Box>
       </Box>
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ px: 2, pb: 2 }}>
@@ -170,7 +237,29 @@ export default function MarketDynamicsCharts({
             </Typography>
           ) : (
             <Grid container spacing={2}>
-              <ChartPanel title="Routing Changes by Service" subtitle="Click a slice to filter Service">
+              <ChartPanel
+                title="Routing Changes by Service"
+                subtitle={selectedService ? `Filtered by ${selectedService} — click the slice again or clear to reset` : "Click a slice to filter Service"}
+                headerRight={
+                  selectedService && (
+                    <Chip
+                      onDelete={onClearService}
+                      color="primary"
+                      label={`Clear ${selectedService}`}
+                      size="small"
+                      sx={{
+                        height: 24,
+                        fontSize: "0.72rem",
+                        fontWeight: 700,
+                        bgcolor: "#0A2540",
+                        color: "#00D4B2",
+                        flexShrink: 0,
+                        "& .MuiChip-deleteIcon": { color: "#00D4B2", "&:hover": { color: "#FFFFFF" } },
+                      }}
+                    />
+                  )
+                }
+              >
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie

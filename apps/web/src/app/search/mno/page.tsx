@@ -10,6 +10,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Divider,
   FormControlLabel,
   Grid,
   IconButton,
@@ -520,6 +521,10 @@ function joinOrDash(params: { value: unknown }): string {
   return String(v);
 }
 
+// sessionStorage key for the "scroll to results on next fetch" flag -- see
+// its own comment where it's read/written inside MnoSearchPageInner.
+const SCROLL_PENDING_KEY = "ccip-mno-search-scroll-pending";
+
 export default function MnoSearchPage() {
   return (
     <React.Suspense fallback={null}>
@@ -549,6 +554,21 @@ function MnoSearchPageInner() {
   const [selected, setSelected] = React.useState<MnoSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
   const [warmingUp, setWarmingUp] = React.useState(false);
+
+  // Smooth-scrolls to the results summary once a fresh search actually
+  // lands, rather than leaving the user looking at the controls with no
+  // visual confirmation their query did anything -- set right before
+  // runSearch's pushParams() call, consumed (and cleared) once the
+  // searchParams-driven fetch effect below has fresh `results` in hand.
+  // sessionStorage, not a ref -- this page's useSearchParams() call sits
+  // inside a <Suspense> boundary (see the default export below), and a
+  // client-side navigation to a new search can remount MnoSearchPageInner
+  // entirely, wiping any ref/state set immediately beforehand before the
+  // fetch that's meant to consume it ever resolves. sessionStorage survives
+  // that remount; a plain module-level variable would too, but would leak
+  // across browser tabs sharing no such isolation.
+  const resultsRef = React.useRef<HTMLDivElement>(null);
+  const [resultsPulse, setResultsPulse] = React.useState(false);
 
   // Wholesale Provider filter -- narrows to MNOs where this carrier appears
   // in ANY of sccpProviders/dsxProviders/ipxProviders, entirely client-side
@@ -780,7 +800,20 @@ function MnoSearchPageInner() {
     const urlProvider = searchParams.get("provider") ?? "";
     setProviderFilter(urlProvider);
     setProviderFilterInput(urlProvider);
-    api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then(setResults);
+    api.get<MnoSummary[]>(`/mno/search?${searchParams.toString()}`).then((data) => {
+      setResults(data);
+      // Only fires for a search actually initiated via runSearch (Enter /
+      // the Search button) -- structural filters (Country/Region/Provider
+      // dropdowns) push their own params without setting this flag, and a
+      // plain page load/Back-Forward restore never sets it either, so
+      // neither yanks the viewport unexpectedly.
+      if (sessionStorage.getItem(SCROLL_PENDING_KEY) === "1") {
+        sessionStorage.removeItem(SCROLL_PENDING_KEY);
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setResultsPulse(true);
+        setTimeout(() => setResultsPulse(false), 1800);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -836,6 +869,7 @@ function MnoSearchPageInner() {
   // already uses the latest raw q/tadig/mcc/mnc regardless of debounce
   // timing.
   const runSearch = React.useCallback(() => {
+    sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
     flushFreeTextFilter();
     pushParams();
   }, [flushFreeTextFilter, pushParams]);
@@ -1055,7 +1089,8 @@ function MnoSearchPageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 3 }}>
+        <Box sx={{ maxWidth: 1600, mx: "auto" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 2 }}>
           <Typography variant="h5" fontWeight={700}>
             MNO / Cust Search
           </Typography>
@@ -1069,7 +1104,93 @@ function MnoSearchPageInner() {
             }}
           />
         </Box>
-        <Paper sx={{ p: 2, mb: 2 }}>
+
+        {/* Master Scope Bar -- Dataset Scope and Region combined into one
+           compact row above the search strip (previously two separate
+           stacked rows below it), so the page's two coarsest "which slice
+           of the market" controls read together, above the fine-grained
+           search fields rather than sandwiched beneath them. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Scope
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={datasetScope}
+              onChange={(_, value: DatasetScope | null) => {
+                if (!value) return;
+                setDatasetScope(value);
+                pushParams({ datasetScope: value });
+              }}
+              sx={masterPillGroupSx}
+            >
+              {DATASET_SCOPES.map((s) => (
+                <ToggleButton key={s} value={s}>
+                  {DATASET_SCOPE_LABELS[s]}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+            <Tooltip title="IR.21 Verified: has a parsed IR.21 XML on file, showing only IR.21-declared providers. As per Reach List: has at least one Reach List claim (whether or not it's also IR.21-verified), showing only Reach-List-claimed providers. Reach List Exclusive only: MNO / Customer connectivity claimed solely via wholesale Reach Lists without an official GSMA IR.21 declaration. All MNOs: everything, providers merged from both sources.">
+              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+            </Tooltip>
+          </Box>
+
+          <Divider orientation="vertical" flexItem sx={{ display: { xs: "none", md: "block" } }} />
+
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Region
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={region || "ALL"}
+              onChange={(_, value) => {
+                if (!value) return;
+                const nextRegion: Region | "" = value === "ALL" ? "" : value;
+                setRegion(nextRegion);
+                pushParams({ region: nextRegion });
+              }}
+              sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...masterPillGroupSx }}
+            >
+              <ToggleButton value="ALL">All</ToggleButton>
+              {REGION_OPTIONS.map((r) => (
+                <ToggleButton key={r} value={r}>
+                  {r}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
+
+          <Tooltip
+            title={
+              onlyWithProviders
+                ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline"
+                : "Showing every MNO / Customer, including those with no listed provider"
+            }
+          >
+            <FormControlLabel
+              sx={{ ml: { xs: 0, md: "auto" } }}
+              control={
+                <Switch
+                  checked={onlyWithProviders}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setOnlyWithProviders(next);
+                    pushParams({ onlyWithProviders: next });
+                  }}
+                />
+              }
+              label={<Typography variant="body2">Only with listed providers</Typography>}
+            />
+          </Tooltip>
+        </Paper>
+
+        <Paper sx={{ p: 2, mb: 1.5 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}>
               <SuggestionAutocomplete<MnoSuggestion>
@@ -1143,45 +1264,6 @@ function MnoSearchPageInner() {
                   <TextField {...params} label="Country" onKeyDown={(e) => e.key === "Enter" && runSearch()} />
                 )}
               />
-            </Grid>
-            <Grid item xs={6} sm={2}>
-              <Box sx={{ position: "relative" }}>
-                <TextField
-                  select
-                  fullWidth
-                  label="Region"
-                  value={region}
-                  onChange={(e) => {
-                    const next = e.target.value as Region | "";
-                    setRegion(next);
-                    // A structural (server-scoped) filter -- applies
-                    // instantly on selection, matching the Region pill row
-                    // below (both control the same `region` state).
-                    pushParams({ region: next });
-                  }}
-                  sx={region ? { "& .MuiSelect-select": { pr: "56px !important" } } : undefined}
-                >
-                  <MenuItem value="">All Regions</MenuItem>
-                  {REGION_OPTIONS.map((r) => (
-                    <MenuItem key={r} value={r}>
-                      {r}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                {region && (
-                  <IconButton
-                    size="small"
-                    title="Clear"
-                    onClick={() => {
-                      setRegion("");
-                      pushParams({ region: "" });
-                    }}
-                    sx={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)" }}
-                  >
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                )}
-              </Box>
             </Grid>
             <Grid item xs={12} sm={2}>
               <Autocomplete<ProviderSuggestion>
@@ -1284,89 +1366,25 @@ function MnoSearchPageInner() {
           </Grid>
         </Paper>
 
-        <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-            Dataset scope:
-          </Typography>
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            color="primary"
-            value={datasetScope}
-            onChange={(_, value: DatasetScope | null) => {
-              if (!value) return;
-              setDatasetScope(value);
-              pushParams({ datasetScope: value });
-            }}
-            sx={masterPillGroupSx}
-          >
-            {DATASET_SCOPES.map((s) => (
-              <ToggleButton key={s} value={s}>
-                {DATASET_SCOPE_LABELS[s]}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-          <Tooltip title="IR.21 Verified: has a parsed IR.21 XML on file, showing only IR.21-declared providers. As per Reach List: has at least one Reach List claim (whether or not it's also IR.21-verified), showing only Reach-List-claimed providers. Reach List Exclusive only: MNO / Customer connectivity claimed solely via wholesale Reach Lists without an official GSMA IR.21 declaration. All MNOs: everything, providers merged from both sources.">
-            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
-          </Tooltip>
-        </Box>
-
-        <Box sx={{ mb: 3, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            color="primary"
-            value={region || "ALL"}
-            onChange={(_, value) => {
-              if (!value) return;
-              const nextRegion: Region | "" = value === "ALL" ? "" : value;
-              setRegion(nextRegion);
-              pushParams({ region: nextRegion });
-            }}
-            sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...masterPillGroupSx }}
-          >
-            <ToggleButton value="ALL">All</ToggleButton>
-            {REGION_OPTIONS.map((r) => (
-              <ToggleButton key={r} value={r}>
-                {r}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-
-          <Tooltip title={onlyWithProviders ? "Showing only MNOs / Customers with at least one listed provider — toggle to see the full IR.21 baseline" : "Showing every MNO / Customer, including those with no listed provider"}>
-            <FormControlLabel
-              sx={{ ml: 0 }}
-              control={
-                <Switch
-                  checked={onlyWithProviders}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setOnlyWithProviders(next);
-                    pushParams({ onlyWithProviders: next });
-                  }}
-                />
-              }
-              label={<Typography variant="body2">Only with listed providers</Typography>}
-            />
-          </Tooltip>
-        </Box>
-
         {/* Exclusivity Scope -- the platform's most critical competitive
            intelligence dimension (single-provider lock-in vs multi-provider
-           vulnerability), promoted to its own high-contrast pill bar rather
-           than the small low-visibility <Select> it used to be. Amber/gold
-           accent (rather than the Market Intelligence page's teal) gives
-           this "lock-in" domain its own distinct visual identity. */}
-        <Paper variant="outlined" sx={{ mb: 2, p: 1.5, borderColor: "#F0C674", bgcolor: "#FFFBF2" }}>
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 1 }}>
-            <LockIcon fontSize="small" sx={{ color: "#B45309" }} />
-            <Typography variant="body2" fontWeight={700} sx={{ color: "#7C4A03", letterSpacing: 0.3 }}>
-              EXCLUSIVITY SCOPE
-            </Typography>
-            <Tooltip title="Filters the table by wholesale-provider exclusivity -- either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio. Identifying single-provider lock-in vs multi-provider vulnerability is this page's core competitive-intelligence purpose.">
-              <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
-            </Tooltip>
-          </Box>
+           vulnerability). Condensed to one slim horizontal strip (label +
+           pills on a single line, no separate header row/tooltip line
+           above it) rather than the taller two-line card this used to be --
+           amber/gold accent still gives this "lock-in" domain its own
+           distinct visual identity against the neutral Master Scope Bar
+           above it. */}
+        <Paper
+          variant="outlined"
+          sx={{ mb: 1.5, px: 1.5, py: 1, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, borderColor: "#F0C674", bgcolor: "#FFFBF2" }}
+        >
+          <LockIcon fontSize="small" sx={{ color: "#B45309" }} />
+          <Typography variant="caption" fontWeight={700} sx={{ color: "#7C4A03", letterSpacing: 0.3, mr: 0.25 }}>
+            EXCLUSIVITY:
+          </Typography>
+          <Tooltip title="Filters the table by wholesale-provider exclusivity -- either per service (SCCP/DSX/IPX independently) or across the MNO's full declared portfolio. Identifying single-provider lock-in vs multi-provider vulnerability is this page's core competitive-intelligence purpose.">
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", mr: 0.5 }} />
+          </Tooltip>
           <ToggleButtonGroup
             exclusive
             size="small"
@@ -1383,8 +1401,9 @@ function MnoSearchPageInner() {
               "& .MuiToggleButton-root": {
                 borderRadius: "999px !important",
                 textTransform: "none",
-                px: 1.75,
-                minHeight: 40,
+                px: 1.5,
+                py: 0.25,
+                minHeight: 32,
                 border: "1px solid",
                 borderColor: "#E8D4A8",
                 bgcolor: "#FFFFFF",
@@ -1416,6 +1435,14 @@ function MnoSearchPageInner() {
           providerScopedRows={baseFilteredRows}
           aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
+          // A free-text operator search means the user wants that specific
+          // MNO's row, not the market-analytics strip -- collapse the
+          // charts by default so the table lands closer to the fold. Reacts
+          // to the URL's own `q` (the last *executed* search, via
+          // searchParams below), not the live-typed `q` state, so the
+          // charts don't flicker collapsed on every keystroke before Search
+          // is even pressed.
+          collapsedForSearch={!!searchParams.get("q")}
           onProviderClick={(providerName) => {
             // Deliberately leaves exclusiveMode untouched -- the donut now
             // scopes itself to whichever Exclusivity Scope pill is already
@@ -1449,7 +1476,26 @@ function MnoSearchPageInner() {
            are individually-colored chips instead of prose, and the
            "how to use this table" instructions are demoted to a caption
            underneath rather than competing with the numbers for attention. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.5, borderColor: "#BFD4E8", bgcolor: "#F4F8FC" }}>
+        <Paper
+          ref={resultsRef}
+          id="mno-search-results"
+          variant="outlined"
+          sx={{
+            mb: 1.5,
+            p: 1.5,
+            borderColor: resultsPulse ? "#00A98A" : "#BFD4E8",
+            bgcolor: "#F4F8FC",
+            transition: "border-color 0.3s ease-out, box-shadow 0.3s ease-out",
+            ...(resultsPulse && {
+              animation: "pulseHighlight 1.8s ease-out",
+              "@keyframes pulseHighlight": {
+                "0%": { boxShadow: "0 0 0 0 rgba(0,212,178,0.55)" },
+                "60%": { boxShadow: "0 0 0 10px rgba(0,212,178,0)" },
+                "100%": { boxShadow: "0 0 0 0 rgba(0,212,178,0)" },
+              },
+            }),
+          }}
+        >
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
             <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
               <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
@@ -1782,6 +1828,7 @@ function MnoSearchPageInner() {
             </Box>
           </Paper>
         )}
+        </Box>
       </AppShell>
     </RequireAuth>
   );

@@ -135,6 +135,7 @@ export default function ExclusivityCharts({
   onProviderClick,
   onResetProviderFilter,
   onVulnerabilityClick,
+  collapsedForSearch = false,
 }: {
   rows: MnoSummaryWithExclusivity[];
   // Same underlying data as `rows`, but narrowed to the active Wholesale
@@ -156,9 +157,29 @@ export default function ExclusivityCharts({
   onProviderClick: (providerName: string) => void;
   onResetProviderFilter: () => void;
   onVulnerabilityClick: (mode: "full" | "shared") => void;
+  // True once a free-text operator search is active -- seeds the initial
+  // collapsed state (a specific-operator search means the user wants the
+  // table, not the market-analytics strip) and collapses again on a
+  // false->true transition (a brand-new search from the cleared state),
+  // without fighting a manual expand/collapse the user made in between --
+  // see the effect below.
+  collapsedForSearch?: boolean;
 }) {
-  const [expanded, setExpanded] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(!collapsedForSearch);
   const [showOthers, setShowOthers] = React.useState(false);
+
+  // Re-collapses only on the actual transition into "a search is active"
+  // (false -> true) -- not on every render while it stays true (e.g.
+  // switching from "Du UAE" to "Vodafone" without clearing first), so a
+  // user who manually re-expanded the charts mid-session isn't fought.
+  // Symmetrically re-expands on true -> false (search cleared/reset).
+  const prevCollapsedForSearch = React.useRef(collapsedForSearch);
+  React.useEffect(() => {
+    if (prevCollapsedForSearch.current !== collapsedForSearch) {
+      setExpanded(!collapsedForSearch);
+      prevCollapsedForSearch.current = collapsedForSearch;
+    }
+  }, [collapsedForSearch]);
 
   // Ranked within the active Exclusivity Scope (aggregationMode) -- "any"
   // counts exclusive service assignments (SCCP/DSX/IPX-solo, independently
@@ -243,7 +264,7 @@ export default function ExclusivityCharts({
     isAllMode && homeCarrierEntry && rows.length > 0 ? (homeCarrierEntry.exclusiveMnoCount / rows.length) * 100 : 0;
 
   return (
-    <Paper sx={{ mb: 3 }}>
+    <Paper sx={{ mb: 1.5 }}>
       <Box
         sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, cursor: "pointer" }}
         onClick={() => setExpanded((v) => !v)}
@@ -269,8 +290,8 @@ export default function ExclusivityCharts({
               sx={{ bgcolor: "#0A2540", color: "#fff", fontWeight: 600 }}
             />
           ) : (
-            <Typography variant="caption" color="text.secondary">
-              Click a slice or bar to drill down
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: expanded ? 400 : 600 }}>
+              {expanded ? "Click a slice or bar to drill down" : "Show Market Analytics & Charts ▾"}
             </Typography>
           )}
         </Box>

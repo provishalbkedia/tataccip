@@ -580,6 +580,16 @@ function MnoSearchPageInner() {
   const resultsRef = React.useRef<HTMLDivElement>(null);
   const [resultsPulse, setResultsPulse] = React.useState(false);
 
+  // For scroll triggers that don't involve a navigation (e.g. the chart
+  // footnote below) -- results are already rendered on screen, so this can
+  // scroll immediately rather than going through the sessionStorage-flag
+  // dance runSearch/onVulnerabilityClick use to survive a remount.
+  const scrollToResultsNow = React.useCallback(() => {
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setResultsPulse(true);
+    setTimeout(() => setResultsPulse(false), 1800);
+  }, []);
+
   // Wholesale Provider filter -- narrows to MNOs where this carrier appears
   // in ANY of sccpProviders/dsxProviders/ipxProviders, entirely client-side
   // like exclusiveMode/serviceFilter (results is already the full fetched
@@ -1444,6 +1454,13 @@ function MnoSearchPageInner() {
             value={exclusiveMode}
             onChange={(_, value: ExclusiveMode | null) => {
               if (!value) return;
+              // Same sessionStorage-flag mechanism runSearch/onVulnerabilityClick
+              // already use -- picking an Exclusivity Scope pill narrows the
+              // table below just as much as a fresh search does, so it
+              // deserves the same "jump straight to the rows that changed"
+              // scroll rather than leaving the user looking at an unchanged
+              // viewport above the fold.
+              sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
               setExclusiveMode(value);
               pushParams({ exclusiveMode: value });
             }}
@@ -1500,6 +1517,7 @@ function MnoSearchPageInner() {
           searchQuery={searchParams.get("q") ?? ""}
           hasActiveFilters={hasActiveFilters}
           onResetAllFilters={resetAllFilters}
+          onScrollToResults={scrollToResultsNow}
           // A free-text operator search means the user wants that specific
           // MNO's row, not the market-analytics strip -- collapse the
           // charts by default so the table lands closer to the fold. Reacts

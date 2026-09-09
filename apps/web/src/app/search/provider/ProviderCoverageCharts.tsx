@@ -7,8 +7,37 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import StarIcon from "@mui/icons-material/Star";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import ListAltOutlinedIcon from "@mui/icons-material/ListAltOutlined";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { ProviderStatsSource, ProviderSummary } from "@ccip/shared-types";
+
+/** Compact round reset affordance for an individual chart card's own
+ * header -- mirrors ExclusivityCharts.tsx's identical component on MNO
+ * Search, kept as its own local copy for the same reason that file's own
+ * comment gives for not sharing colorForProvider/CHART_PALETTE: an
+ * independent feature area, not worth a shared module for ~15 lines. */
+function ChartResetIconButton({ onReset }: { onReset: () => void }) {
+  return (
+    <Tooltip title="Reset filters to all providers">
+      <IconButton
+        size="small"
+        onClick={onReset}
+        sx={{
+          width: 28,
+          height: 28,
+          flexShrink: 0,
+          border: "1px solid #E2E8F0",
+          bgcolor: "#F1F5F9",
+          color: "#0A2540",
+          "&:hover": { bgcolor: "#FEE2E2", color: "#DC2626", borderColor: "#CBD5E1" },
+        }}
+      >
+        <RestartAltIcon sx={{ fontSize: 17 }} />
+      </IconButton>
+    </Tooltip>
+  );
+}
 
 // This platform is Tata Communications' own CCIP -- same reasoning as the
 // MNO Search page's Exclusivity Standing callout: leadership wants Tata
@@ -65,6 +94,9 @@ export default function ProviderCoverageCharts({
   source,
   searchQuery,
   onProviderClick,
+  hasActiveFilters,
+  onResetAllFilters,
+  onScrollToResults,
 }: {
   // Already deduped (one entry per provider id, even in "Both (Combined)"
   // source mode) and sorted descending by stats.totalMnos -- the page
@@ -82,6 +114,13 @@ export default function ProviderCoverageCharts({
   // reader to infer it from a single bar/row.
   searchQuery?: string;
   onProviderClick: (providerName: string) => void;
+  // Whether ANY filter on the page is currently non-default -- drives the
+  // round reset icon shown on each chart card's own header.
+  hasActiveFilters: boolean;
+  onResetAllFilters: () => void;
+  // Scrolls the already-rendered results table into view immediately --
+  // used by the "click to view details in the table below" footnote.
+  onScrollToResults: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
   const rankedByMnos = rankedProviders;
@@ -210,14 +249,19 @@ export default function ProviderCoverageCharts({
               <Grid container spacing={2} sx={{ mb: 1 }}>
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      {barChartTitle}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      {topProvidersData.length < rankedByMnos.length
-                        ? `Top ${topProvidersData.length} of ${rankedByMnos.length} providers, ranked by total MNOs served`
-                        : "Ranked by total MNOs served"}
-                    </Typography>
+                    <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                          {barChartTitle}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                          {topProvidersData.length < rankedByMnos.length
+                            ? `Top ${topProvidersData.length} of ${rankedByMnos.length} providers, ranked by total MNOs served`
+                            : "Ranked by total MNOs served"}
+                        </Typography>
+                      </Box>
+                      {hasActiveFilters && <ChartResetIconButton onReset={onResetAllFilters} />}
+                    </Box>
                     <Box sx={{ position: "relative", minHeight: 320 }}>
                       <ResponsiveContainer width="100%" height={320}>
                         <BarChart data={topProvidersData} layout="vertical" margin={{ left: 8, right: 24 }}>
@@ -277,22 +321,49 @@ export default function ProviderCoverageCharts({
                         </BarChart>
                       </ResponsiveContainer>
                     </Box>
+                    {topProvidersData.length > 0 && (
+                      <Box
+                        onClick={onScrollToResults}
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.75,
+                          mt: 1.5,
+                          color: "#0284C7",
+                          cursor: "pointer",
+                          fontSize: "0.78rem",
+                          fontWeight: 600,
+                          "&:hover": { color: "#0369A1", textDecoration: "underline" },
+                        }}
+                      >
+                        <ListAltOutlinedIcon fontSize="small" sx={{ fontSize: 16 }} />
+                        <span>
+                          Showing {rankedByMnos.length} provider{rankedByMnos.length === 1 ? "" : "s"} — click to view
+                          details in the table below ↓
+                        </span>
+                      </Box>
+                    )}
                   </Paper>
                 </Grid>
 
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                      <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                        {serviceMixTitle}
-                      </Typography>
-                      <Tooltip title="Total provider-to-MNO relationships declared for each service, summed across every provider in the current search scope -- shows which service has the broadest wholesale coverage overall, not any single provider's own split.">
-                        <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
-                      </Tooltip>
+                    <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                            {serviceMixTitle}
+                          </Typography>
+                          <Tooltip title="Total provider-to-MNO relationships declared for each service, summed across every provider in the current search scope -- shows which service has the broadest wholesale coverage overall, not any single provider's own split.">
+                            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
+                          </Tooltip>
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                          {serviceMixSubtitle}
+                        </Typography>
+                      </Box>
+                      {hasActiveFilters && <ChartResetIconButton onReset={onResetAllFilters} />}
                     </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      {serviceMixSubtitle}
-                    </Typography>
                     <Box sx={{ position: "relative", minHeight: 320 }}>
                       <ResponsiveContainer width="100%" height={320}>
                         <BarChart data={serviceMixData} layout="vertical" margin={{ left: 8, right: 24 }}>

@@ -138,6 +138,16 @@ function ProviderSearchPageInner() {
   const resultsRef = React.useRef<HTMLDivElement>(null);
   const [resultsPulse, setResultsPulse] = React.useState(false);
 
+  // For scroll triggers that don't involve a navigation (the chart
+  // footnote below) -- results are already rendered on screen, so this can
+  // scroll immediately rather than going through the sessionStorage-flag
+  // dance runSearch uses to survive a remount.
+  const scrollToResultsNow = React.useCallback(() => {
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setResultsPulse(true);
+    setTimeout(() => setResultsPulse(false), 1800);
+  }, []);
+
   // The URL query string is the single source of truth for "what did we
   // last search for" — fires on initial load, on an explicit Search/toggle
   // change (via the router.push calls below), and when the browser Back/
@@ -550,7 +560,14 @@ function ProviderSearchPageInner() {
             size="small"
             color="primary"
             value={source}
-            onChange={(_, value) => value && pushParams(q, value, service)}
+            onChange={(_, value) => {
+              if (!value) return;
+              // Same sessionStorage-flag mechanism runSearch uses -- a
+              // Dataset Scope pill narrows the table below just as much as
+              // a fresh search does, so it deserves the same scroll.
+              sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
+              pushParams(q, value, service);
+            }}
             sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
           >
             <ToggleButton value={ProviderStatsSource.IR21}>As per IR.21 Data</ToggleButton>
@@ -639,7 +656,15 @@ function ProviderSearchPageInner() {
           </Paper>
         )}
 
-        <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} searchQuery={q} onProviderClick={handleProviderChartClick} />
+        <ProviderCoverageCharts
+          rankedProviders={rankedProviders}
+          source={source}
+          searchQuery={q}
+          onProviderClick={handleProviderChartClick}
+          hasActiveFilters={hasActiveFilters}
+          onResetAllFilters={resetAllFilters}
+          onScrollToResults={scrollToResultsNow}
+        />
 
         {/* Contextual Table Header Banner -- names the table's exact scope
            in plain language (previously just a bare result count) and, once

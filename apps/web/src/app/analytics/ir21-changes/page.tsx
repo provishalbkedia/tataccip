@@ -447,6 +447,20 @@ export default function Ir21ChangesPage() {
   const isMobile = useMediaQuery((theme: Theme) => theme.breakpoints.down("md"));
   const [filterDrawerOpen, setFilterDrawerOpen] = React.useState(false);
 
+  // Scroll-to-results: unlike /search/mno and /search/provider, this page's
+  // filters are plain local state, never synced to the URL (see
+  // resetAllFilters' own comment below) -- there's no router.push
+  // navigation that could remount the page mid-flight, so a direct
+  // scrollIntoView works reliably without the sessionStorage-flag relay
+  // those two pages need to survive one.
+  const resultsRef = React.useRef<HTMLDivElement>(null);
+  const [resultsPulse, setResultsPulse] = React.useState(false);
+  const scrollToResultsNow = React.useCallback(() => {
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setResultsPulse(true);
+    setTimeout(() => setResultsPulse(false), 1800);
+  }, []);
+
   const [timeframe, setTimeframe] = React.useState<Timeframe>("3m");
   const [region, setRegion] = React.useState<Region | "">("");
   const [service, setService] = React.useState<ServiceName | "">("");
@@ -910,6 +924,7 @@ export default function Ir21ChangesPage() {
             onChange={(_, v) => {
               if (!v) return;
               setRegion(v === "ALL" ? "" : v);
+              scrollToResultsNow();
             }}
             sx={{
               display: "flex",
@@ -937,6 +952,7 @@ export default function Ir21ChangesPage() {
             onChange={(_, v) => {
               if (!v) return;
               setService(v === "ALL" ? "" : v);
+              scrollToResultsNow();
             }}
             sx={{
               display: "flex",
@@ -1024,6 +1040,7 @@ export default function Ir21ChangesPage() {
           onChange={(_, v) => {
             if (!v) return;
             setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+            scrollToResultsNow();
           }}
           sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
         >
@@ -1051,6 +1068,7 @@ export default function Ir21ChangesPage() {
           onChange={(_, v) => {
             if (!v) return;
             setChangeType(v === DEFAULT_CHURN_PILL ? "" : v);
+            scrollToResultsNow();
           }}
           sx={{ display: "flex", gap: 1, ...scrollablePillGroupSx(isMobile) }}
         >
@@ -1128,6 +1146,8 @@ export default function Ir21ChangesPage() {
           onRegionClick={handleChartRegionClick}
           onClearService={() => setService("")}
           onResetDrilldowns={resetChartDrilldowns}
+          ledgerRowCount={rows.length}
+          onScrollToResults={scrollToResultsNow}
         />
 
         {isMobile ? (
@@ -1260,6 +1280,22 @@ export default function Ir21ChangesPage() {
           </Menu>
         </Box>
 
+        <Box
+          ref={resultsRef}
+          id="ir21-changes-results"
+          sx={{
+            borderRadius: 1,
+            transition: "box-shadow 0.3s ease-out",
+            ...(resultsPulse && {
+              animation: "pulseHighlightIr21 1.8s ease-out",
+              "@keyframes pulseHighlightIr21": {
+                "0%": { boxShadow: "0 0 0 0 rgba(0,212,178,0.55)" },
+                "60%": { boxShadow: "0 0 0 10px rgba(0,212,178,0)" },
+                "100%": { boxShadow: "0 0 0 0 rgba(0,212,178,0)" },
+              },
+            }),
+          }}
+        >
         {!loading && rows.length === 0 ? (
           <Paper variant="outlined" sx={{ p: 5, textAlign: "center" }}>
             <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
@@ -1339,6 +1375,7 @@ export default function Ir21ChangesPage() {
           height={600}
         />
         )}
+        </Box>
       </AppShell>
     </RequireAuth>
   );

@@ -6,6 +6,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import ListAltOutlinedIcon from "@mui/icons-material/ListAltOutlined";
 import {
   Bar,
   BarChart,
@@ -86,6 +87,8 @@ export default function MarketDynamicsCharts({
   onRegionClick,
   onClearService,
   onResetDrilldowns,
+  ledgerRowCount,
+  onScrollToResults,
 }: {
   rows: Ir21RoutingChangeRow[];
   loading: boolean;
@@ -118,6 +121,14 @@ export default function MarketDynamicsCharts({
   // chart-driven narrowing at once (as opposed to onClearService, which
   // only backs out the Service donut's own selection).
   onResetDrilldowns: () => void;
+  // The granular changes ledger's own row count (page.tsx's `rows`, scoped
+  // by every filter including Change type/Provider/Search) -- deliberately
+  // NOT this component's own `rows` prop above, which is scoped only to
+  // Timeframe/Region/Service and would overstate what the ledger actually
+  // shows once a Change/Provider/Search filter narrows it further. Powers
+  // only the footnote link's own count text.
+  ledgerRowCount: number;
+  onScrollToResults: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
 
@@ -370,6 +381,28 @@ export default function MarketDynamicsCharts({
                 </ResponsiveContainer>
               </ChartPanel>
             </Grid>
+          )}
+          {ledgerRowCount > 0 && (
+            <Box
+              onClick={onScrollToResults}
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.75,
+                mt: 1.5,
+                color: "#0284C7",
+                cursor: "pointer",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                "&:hover": { color: "#0369A1", textDecoration: "underline" },
+              }}
+            >
+              <ListAltOutlinedIcon fontSize="small" sx={{ fontSize: 16 }} />
+              <span>
+                Showing {ledgerRowCount} declared change{ledgerRowCount === 1 ? "" : "s"} in the ledger below — click
+                to view details ↓
+              </span>
+            </Box>
           )}
         </Box>
       </Collapse>

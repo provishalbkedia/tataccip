@@ -28,6 +28,7 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import CloseIcon from "@mui/icons-material/Close";
 import StarIcon from "@mui/icons-material/Star";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ListAltOutlinedIcon from "@mui/icons-material/ListAltOutlined";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { aggregateCarrierExclusivity, ExclusivityAggregationMode } from "@/lib/reports/exclusivityReportData";
 import type { MnoSummaryWithExclusivity } from "./page";
@@ -110,6 +111,33 @@ function colorForCarrier(name: string): string {
   return DONUT_PALETTE[Math.abs(hash) % DONUT_PALETTE.length];
 }
 
+/** Compact round reset affordance for an individual chart card's own
+ * header -- a second, more localized escape hatch than the panel-level
+ * "Reset Filters to Global View" text button above both charts, for
+ * whoever's eyes are already on this one card and wants to back out of it
+ * without hunting back up to the panel header. */
+function ChartResetIconButton({ onReset }: { onReset: () => void }) {
+  return (
+    <Tooltip title="Reset filters to Global All MNOs view">
+      <IconButton
+        size="small"
+        onClick={onReset}
+        sx={{
+          width: 28,
+          height: 28,
+          flexShrink: 0,
+          border: "1px solid #E2E8F0",
+          bgcolor: "#F1F5F9",
+          color: "#0A2540",
+          "&:hover": { bgcolor: "#FEE2E2", color: "#DC2626", borderColor: "#CBD5E1" },
+        }}
+      >
+        <RestartAltIcon sx={{ fontSize: 17 }} />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 function CustomTooltip({
   active,
   payload,
@@ -138,6 +166,7 @@ export default function ExclusivityCharts({
   onProviderClick,
   onResetProviderFilter,
   onResetAllFilters,
+  onScrollToResults,
   onVulnerabilityClick,
   collapsedForSearch = false,
 }: {
@@ -178,6 +207,10 @@ export default function ExclusivityCharts({
   onProviderClick: (providerName: string) => void;
   onResetProviderFilter: () => void;
   onResetAllFilters: () => void;
+  // Scrolls the already-rendered results table into view immediately (no
+  // navigation involved, unlike onVulnerabilityClick's own scroll) -- used
+  // by the donut's "click to view in the table below" footnote.
+  onScrollToResults: () => void;
   onVulnerabilityClick: (mode: "full" | "shared") => void;
   // True once a free-text operator search is active -- seeds the initial
   // collapsed state (a specific-operator search means the user wants the
@@ -497,12 +530,17 @@ export default function ExclusivityCharts({
               <Grid container spacing={2} sx={{ mb: 3 }}>
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      {donutTitle}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      {donutSubtitle}
-                    </Typography>
+                    <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
+                          {donutTitle}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                          {donutSubtitle}
+                        </Typography>
+                      </Box>
+                      {hasActiveFilters && <ChartResetIconButton onReset={onResetAllFilters} />}
+                    </Box>
                     {showMultiMatchNote && (
                       <Typography
                         variant="caption"
@@ -628,11 +666,35 @@ export default function ExclusivityCharts({
                       </ResponsiveContainer>
                     )}
                     </Box>
+                    {donutData.length > 0 && (
+                      <Box
+                        onClick={onScrollToResults}
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.75,
+                          mt: 1.5,
+                          color: "#0284C7",
+                          cursor: "pointer",
+                          fontSize: "0.78rem",
+                          fontWeight: 600,
+                          "&:hover": { color: "#0369A1", textDecoration: "underline" },
+                        }}
+                      >
+                        <ListAltOutlinedIcon fontSize="small" sx={{ fontSize: 16 }} />
+                        <span>
+                          Showing {rows.length} declared MNO{rows.length === 1 ? "" : "s"}
+                          {activeFilterSummary ? ` ${activeFilterSummary}` : ""} — click to view details in the table
+                          below ↓
+                        </span>
+                      </Box>
+                    )}
                   </Paper>
                 </Grid>
 
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
+                    <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
                         {[
@@ -652,6 +714,8 @@ export default function ExclusivityCharts({
                       >
                         <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
                       </Tooltip>
+                    </Box>
+                    {hasActiveFilters && <ChartResetIconButton onReset={onResetAllFilters} />}
                     </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
                       {isCarrierScoped

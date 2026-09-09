@@ -890,6 +890,30 @@ function MnoSearchPageInner() {
     !!serviceFilter ||
     !!providerFilter;
 
+  // Human-readable "which slice of the market are these charts scoped to"
+  // qualifier string -- fed into ExclusivityCharts so its own KPI banner and
+  // chart titles can name the active Region/Country/Dataset-Scope/Search
+  // narrowing instead of silently recalculating numbers under a header that
+  // still reads as if nothing were filtered. Deliberately omits
+  // exclusiveMode and providerFilter -- those two already have their own
+  // dedicated display treatment inside ExclusivityCharts (aggregationMode
+  // drives CHART_TITLE itself; activeProviderFilter appends "— <carrier>"
+  // directly), so including them here too would just duplicate what's
+  // already shown.
+  const chartScopeFilterSummary = React.useMemo(() => {
+    const qualifiers: string[] = [];
+    if (region) qualifiers.push(`Region: ${region}`);
+    if (country) qualifiers.push(`Country: ${getCountryName(country)}`);
+    if (datasetScope !== "ir21") qualifiers.push(`Scope: ${DATASET_SCOPE_LABELS[datasetScope]}`);
+    if (serviceFilter) qualifiers.push(SERVICE_FILTER_LABEL[serviceFilter]);
+    // The committed (last-executed) search term, not the live-typed `q` --
+    // mirrors collapsedForSearch below, so the chart title doesn't relabel
+    // itself on every keystroke before Search/Enter is even pressed.
+    const committedQ = searchParams.get("q");
+    if (committedQ) qualifiers.push(`Search: "${committedQ}"`);
+    return qualifiers.length > 0 ? `(${qualifiers.join(" · ")})` : "";
+  }, [region, country, datasetScope, serviceFilter, searchParams]);
+
   const resetAllFilters = React.useCallback(() => {
     setQ("");
     setTadig("");
@@ -1188,6 +1212,25 @@ function MnoSearchPageInner() {
               label={<Typography variant="body2">Only with listed providers</Typography>}
             />
           </Tooltip>
+
+          {hasActiveFilters && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltIcon fontSize="small" />}
+              onClick={resetAllFilters}
+              sx={{
+                fontWeight: 600,
+                textTransform: "none",
+                borderColor: "#F59E0B",
+                color: "#B45309",
+                bgcolor: "#FFFBF2",
+                "&:hover": { bgcolor: "#FFF3DC", borderColor: "#B45309" },
+              }}
+            >
+              Reset All Filters
+            </Button>
+          )}
         </Paper>
 
         <Paper sx={{ p: 2, mb: 1.5 }}>
@@ -1435,6 +1478,9 @@ function MnoSearchPageInner() {
           providerScopedRows={baseFilteredRows}
           aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
+          activeFilterSummary={chartScopeFilterSummary}
+          hasActiveFilters={hasActiveFilters}
+          onResetAllFilters={resetAllFilters}
           // A free-text operator search means the user wants that specific
           // MNO's row, not the market-analytics strip -- collapse the
           // charts by default so the table lands closer to the fold. Reacts

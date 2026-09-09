@@ -132,8 +132,11 @@ export default function ExclusivityCharts({
   providerScopedRows,
   aggregationMode,
   activeProviderFilter,
+  activeFilterSummary,
+  hasActiveFilters,
   onProviderClick,
   onResetProviderFilter,
+  onResetAllFilters,
   onVulnerabilityClick,
   collapsedForSearch = false,
 }: {
@@ -154,8 +157,18 @@ export default function ExclusivityCharts({
   // broad "any service" figures regardless of which pill is active.
   aggregationMode: ExclusivityAggregationMode;
   activeProviderFilter: string;
+  // Human-readable "(Region: MEA · Country: ...)"-style qualifier string --
+  // see page.tsx's chartScopeFilterSummary for what feeds it and why
+  // exclusiveMode/providerFilter are deliberately left out of it.
+  activeFilterSummary: string;
+  // Whether ANY filter on the page (not just the ones activeFilterSummary
+  // names) is currently non-default -- drives the "Reset Filters to Global
+  // View" button in this component's own header, a second, more visible
+  // escape hatch than the page's small top-of-search-bar reset icon.
+  hasActiveFilters: boolean;
   onProviderClick: (providerName: string) => void;
   onResetProviderFilter: () => void;
+  onResetAllFilters: () => void;
   onVulnerabilityClick: (mode: "full" | "shared") => void;
   // True once a free-text operator search is active -- seeds the initial
   // collapsed state (a specific-operator search means the user wants the
@@ -270,7 +283,12 @@ export default function ExclusivityCharts({
   // screenshot of just the card (or a quick glance past the ribbon) lost
   // that context. Appends the carrier name the same way the Vulnerability
   // card's own title already does.
-  const donutTitle = activeProviderFilter ? `${CHART_TITLE[aggregationMode]} — ${activeProviderFilter}` : CHART_TITLE[aggregationMode];
+  const donutTitle = [
+    activeProviderFilter ? `${CHART_TITLE[aggregationMode]} — ${activeProviderFilter}` : CHART_TITLE[aggregationMode],
+    activeFilterSummary,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const donutSubtitle = activeProviderFilter
     ? `Exclusivity breakdown highlighting ${activeProviderFilter} within the current ${AGGREGATION_MODE_LABEL[aggregationMode]} scope`
     : CHART_SUBTITLE[aggregationMode];
@@ -307,9 +325,34 @@ export default function ExclusivityCharts({
             </Typography>
           )}
         </Box>
-        <IconButton size="small" onClick={(e) => e.stopPropagation()} onClickCapture={() => setExpanded((v) => !v)}>
-          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        </IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          {hasActiveFilters && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltIcon fontSize="small" />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onResetAllFilters();
+              }}
+              sx={{
+                height: 28,
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                textTransform: "none",
+                borderColor: "#CBD5E1",
+                color: "#475569",
+                bgcolor: "#FFFFFF",
+                "&:hover": { bgcolor: "#F8FAFC", borderColor: "#94A3B8" },
+              }}
+            >
+              Reset Filters to Global View
+            </Button>
+          )}
+          <IconButton size="small" onClick={(e) => e.stopPropagation()} onClickCapture={() => setExpanded((v) => !v)}>
+            {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          </IconButton>
+        </Box>
       </Box>
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ px: 2, pb: 2 }}>
@@ -378,6 +421,11 @@ export default function ExclusivityCharts({
                   <StarIcon sx={{ color: "#00A98A", fontSize: 18 }} />
                   <Typography variant="body2" fontWeight={700} sx={{ color: "#0A2540" }}>
                     {HOME_CARRIER_BANNER_LABEL[aggregationMode]}
+                    {activeFilterSummary && (
+                      <Box component="span" sx={{ color: "#0284C7", fontSize: "0.85rem", fontWeight: 500, ml: 1 }}>
+                        {activeFilterSummary}
+                      </Box>
+                    )}
                   </Typography>
                   <Tooltip
                     title={
@@ -548,7 +596,12 @@ export default function ExclusivityCharts({
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                        {isCarrierScoped ? `Exclusivity Vulnerability — ${activeProviderFilter}` : "Exclusivity Vulnerability — Overall Market"}
+                        {[
+                          isCarrierScoped ? `Exclusivity Vulnerability — ${activeProviderFilter}` : "Exclusivity Vulnerability — Overall Market",
+                          activeFilterSummary,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                       </Typography>
                       <Tooltip
                         title={

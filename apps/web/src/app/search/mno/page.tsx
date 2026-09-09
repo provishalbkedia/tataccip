@@ -1489,6 +1489,15 @@ function MnoSearchPageInner() {
           aggregationMode={toAggregationMode(exclusiveMode)}
           activeProviderFilter={providerFilter}
           activeFilterSummary={chartScopeFilterSummary}
+          // The committed (last-executed) free-text search term -- used only
+          // to decide whether to show the "multiple operators matched your
+          // search" note on the All MNOs donut (see its own comment in
+          // ExclusivityCharts). A substring search like "Ncell" can
+          // legitimately match more than one real operator (e.g. "Irancell"
+          // also contains "ncell"), and All MNOs mode correctly aggregates
+          // carrier presence across every one of them -- surprising the
+          // first time you see it, even though the underlying math is right.
+          searchQuery={searchParams.get("q") ?? ""}
           hasActiveFilters={hasActiveFilters}
           onResetAllFilters={resetAllFilters}
           // A free-text operator search means the user wants that specific

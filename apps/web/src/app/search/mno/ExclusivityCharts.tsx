@@ -133,6 +133,7 @@ export default function ExclusivityCharts({
   aggregationMode,
   activeProviderFilter,
   activeFilterSummary,
+  searchQuery,
   hasActiveFilters,
   onProviderClick,
   onResetProviderFilter,
@@ -161,6 +162,14 @@ export default function ExclusivityCharts({
   // see page.tsx's chartScopeFilterSummary for what feeds it and why
   // exclusiveMode/providerFilter are deliberately left out of it.
   activeFilterSummary: string;
+  // The committed free-text search term (page.tsx's searchParams "q"), used
+  // ONLY to decide whether to show a clarifying note on the "All MNOs"
+  // donut when the search matched more than one operator (see donutNote
+  // below) -- e.g. searching "Ncell" also substring-matches "Irancell", a
+  // completely different, real carrier, and "All MNOs" mode correctly
+  // aggregates presence across both, which reads as a surprising split the
+  // first time you see it even though the math is right.
+  searchQuery: string;
   // Whether ANY filter on the page (not just the ones activeFilterSummary
   // names) is currently non-default -- drives the "Reset Filters to Global
   // View" button in this component's own header, a second, more visible
@@ -292,6 +301,17 @@ export default function ExclusivityCharts({
   const donutSubtitle = activeProviderFilter
     ? `Exclusivity breakdown highlighting ${activeProviderFilter} within the current ${AGGREGATION_MODE_LABEL[aggregationMode]} scope`
     : CHART_SUBTITLE[aggregationMode];
+
+  // "All MNOs" mode intentionally aggregates carrier PRESENCE across every
+  // row currently in scope -- correct, but a free-text search that
+  // substring-matched more than one real operator (e.g. "Ncell" also
+  // matching "Irancell") can make that aggregate read as a mistake, since
+  // the viewer typically has just the one operator in mind. Only fires for
+  // "all" mode with an active search matching 2+ rows -- a Region/Country
+  // scope legitimately containing many MNOs isn't the same kind of surprise
+  // (nobody expects a whole region to be one operator), so this stays
+  // narrowly scoped to the specific case that actually confuses.
+  const showMultiMatchNote = isAllMode && !!searchQuery && rows.length > 1;
 
   return (
     <Paper sx={{ mb: 1.5 }}>
@@ -483,6 +503,16 @@ export default function ExclusivityCharts({
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                       {donutSubtitle}
                     </Typography>
+                    {showMultiMatchNote && (
+                      <Typography
+                        variant="caption"
+                        sx={{ display: "block", mb: 1, color: "#B45309", bgcolor: "#FFFBF2", border: "1px solid #F0C674", borderRadius: 1, px: 1, py: 0.5 }}
+                      >
+                        Based on {rows.length} operator records matching &quot;{searchQuery}&quot; — showing overall
+                        carrier presence across all of them, not one operator&apos;s own exclusivity. Click{" "}
+                        <strong>★ Fully Exclusive</strong> above to isolate a single account.
+                      </Typography>
+                    )}
                     {/* Fixed minHeight + position:relative so this card never
                        collapses smaller than the chart needs, even for a
                        single render frame -- ResponsiveContainer's own

@@ -53,6 +53,23 @@ function formatTimeSpent(totalSeconds: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+/** Formats the "Last Session" column -- unlike formatTimeSpent above (which
+ * always shows an "Xh Ym" pair, even "0h 5m"), this drops the hours
+ * entirely under an hour ("28m", not "0h 28m") since a single session is
+ * usually short enough that the leading "0h" is just noise. `hasSession` is
+ * a separate flag rather than inferring "no session" from 0 seconds --
+ * lastActiveAt null (never logged in) and "just started a session, 0
+ * seconds accrued yet" both produce 0 seconds, and only the former should
+ * read as "—". */
+function formatLastSession(seconds: number, hasSession: boolean): string {
+  if (!hasSession) return "—";
+  if (seconds < 60) return "< 1m";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 /** A short "how long ago" string for a user who isn't currently online —
  * coarse on purpose (this is a presence indicator, not an activity log). */
 function formatLastSeen(lastActiveAt: string): string {
@@ -134,7 +151,7 @@ function FilterPillGroup<T extends string>({
   );
 }
 
-type SortField = "name" | "role" | "logins" | "lastLogin" | "timeSpent" | "presence" | "status";
+type SortField = "name" | "role" | "logins" | "lastLogin" | "lastSession" | "timeSpent" | "presence" | "status";
 type SortOrder = "asc" | "desc";
 type RoleFilter = "ALL" | Role;
 type ProviderFilter = "ALL" | "MICROSOFT" | "LOCAL";
@@ -246,6 +263,8 @@ export default function UserManagementPage() {
           return dir * (a.loginCount - b.loginCount);
         case "timeSpent":
           return dir * (a.totalTimeSpentSeconds - b.totalTimeSpentSeconds);
+        case "lastSession":
+          return dir * (a.lastSessionDurationSeconds - b.lastSessionDurationSeconds);
         case "presence":
           return dir * (Number(isOnline(a)) - Number(isOnline(b)));
         case "status":
@@ -408,6 +427,7 @@ export default function UserManagementPage() {
                 <SortableHeader field="status" label="Status" />
                 <SortableHeader field="logins" label="Logins" align="right" />
                 <SortableHeader field="lastLogin" label="Last Login" />
+                <SortableHeader field="lastSession" label="Last Session" />
                 <SortableHeader field="timeSpent" label="Time Spent" />
                 <SortableHeader field="presence" label="Presence" />
                 <TableCell>Actions</TableCell>
@@ -461,6 +481,9 @@ export default function UserManagementPage() {
                       {u.loginCount}
                     </TableCell>
                     <TableCell>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <em>Never</em>}</TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      {formatLastSession(u.lastSessionDurationSeconds, !!u.lastActiveAt)}
+                    </TableCell>
                     <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{formatTimeSpent(u.totalTimeSpentSeconds)}</TableCell>
                     <TableCell>
                       <PresenceIndicator lastActiveAt={u.lastActiveAt} />
@@ -491,7 +514,7 @@ export default function UserManagementPage() {
               })}
               {visibleUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <Box sx={{ py: 2, textAlign: "center" }}>
                       <Typography variant="body2" color="text.secondary" component="span">
                         {users.length === 0

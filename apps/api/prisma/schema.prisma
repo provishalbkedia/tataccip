@@ -72,6 +72,17 @@ model User {
   // "active" the whole time in between. loginCount and lastLoginAt aren't
   // stored here since they're already derivable from LoginHistory below.
   totalTimeSpentSeconds Int @default(0)
+  // Accrued seconds for the CURRENT continuous session only (same
+  // within-ONLINE_WINDOW_MS accrual as totalTimeSpentSeconds above, kept in
+  // lockstep by the same JwtStrategy update), reset to 0 the moment a
+  // request arrives after a gap larger than ONLINE_WINDOW_MS -- i.e. the
+  // previous session has ended (whether via explicit logout or simply
+  // going idle) and this request starts a new one. There's no separate
+  // "session" row/id anywhere in this schema (JWT auth is stateless — see
+  // LoginHistory's own doc comment); a session here is purely this
+  // gap-based heuristic, so this field is the only place its duration is
+  // ever recorded.
+  lastSessionDurationSeconds Int @default(0)
 
   loginHistory LoginHistory[]
 }

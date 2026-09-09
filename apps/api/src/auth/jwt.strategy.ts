@@ -42,14 +42,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // totalTimeSpentSeconds when it's within ONLINE_WINDOW_MS — the same
     // window "online" uses — so a request after being away for hours
     // doesn't silently credit them for all that idle time, only for
-    // genuinely continuous activity.
+    // genuinely continuous activity. A gap beyond that window means the
+    // previous session has ended, so this request starts a fresh one:
+    // lastSessionDurationSeconds resets to 0 rather than accruing (there's
+    // nothing to add yet for a session that just began), while a gap
+    // within the window continues accruing it in lockstep with the
+    // cumulative total.
     const now = new Date();
     const gapMs = user.lastActiveAt ? now.getTime() - user.lastActiveAt.getTime() : Infinity;
-    const accruedSeconds = gapMs > 0 && gapMs <= ONLINE_WINDOW_MS ? Math.round(gapMs / 1000) : 0;
+    const isSameSession = gapMs > 0 && gapMs <= ONLINE_WINDOW_MS;
+    const accruedSeconds = isSameSession ? Math.round(gapMs / 1000) : 0;
     this.prisma.user
       .update({
         where: { id: payload.sub },
-        data: { lastActiveAt: now, totalTimeSpentSeconds: { increment: accruedSeconds } },
+        data: {
+          lastActiveAt: now,
+          totalTimeSpentSeconds: { increment: accruedSeconds },
+          lastSessionDurationSeconds: isSameSession ? { increment: accruedSeconds } : 0,
+        },
       })
       .catch(() => {});
 

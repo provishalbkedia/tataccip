@@ -40,6 +40,9 @@ export interface UserRow {
   loginCount: number;
   // Cumulative accrued active time — see User.totalTimeSpentSeconds.
   totalTimeSpentSeconds: number;
+  // Accrued active time for the current/most recent continuous session
+  // only — see User.lastSessionDurationSeconds.
+  lastSessionDurationSeconds: number;
   // Same lastActiveAt JwtStrategy stamps on every authenticated request —
   // "online" is this being within the last 5 minutes (ONLINE_WINDOW_MS),
   // same heuristic ActiveUsersInfo uses, computed client-side here rather

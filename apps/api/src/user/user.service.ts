@@ -41,6 +41,7 @@ export class UserService {
       lastLoginAt: statsByUserId.get(u.id)?._max.loginAt?.toISOString() ?? null,
       loginCount: statsByUserId.get(u.id)?._count._all ?? 0,
       totalTimeSpentSeconds: u.totalTimeSpentSeconds,
+      lastSessionDurationSeconds: u.lastSessionDurationSeconds,
       lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
     }));
   }
@@ -93,6 +94,7 @@ export class UserService {
     authProvider: string;
     createdAt: Date;
     totalTimeSpentSeconds: number;
+    lastSessionDurationSeconds: number;
     lastActiveAt: Date | null;
   }): Promise<UserRow> {
     const [loginCount, lastLogin] = await Promise.all([
@@ -110,6 +112,7 @@ export class UserService {
       lastLoginAt: lastLogin?.loginAt.toISOString() ?? null,
       loginCount,
       totalTimeSpentSeconds: u.totalTimeSpentSeconds,
+      lastSessionDurationSeconds: u.lastSessionDurationSeconds,
       lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
     };
   }

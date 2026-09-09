@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Alert, Box, Button, Card, CardContent, Chip, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardContent, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import CellTowerIcon from "@mui/icons-material/CellTower";
@@ -142,13 +142,34 @@ export default function DashboardPage() {
         <VideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
 
         {metrics && (
-          <Chip
-            icon={<InfoOutlinedIcon fontSize="small" />}
-            label={`Derived from ${metrics.totalMnos.toLocaleString()} IR.21-declared operator records — the platform's authoritative source of truth. ${metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were auto-created from Reach List uploads before MNO normalization was enforced; ${metrics.pendingMnoNormalizationCount.toLocaleString()} newer Reach List rows are queued for admin review instead of being auto-created. Informational use only.`}
-            size="small"
-            variant="outlined"
-            sx={{ mb: 3, color: "text.secondary", borderColor: "divider" }}
-          />
+          // A plain Chip can't wrap its label onto multiple lines -- fine
+          // for a short tag, but this sentence-length note just truncated
+          // hard on anything narrower than a wide desktop window. A
+          // wrapping info ribbon (matching ActiveBaselineBanner's own
+          // pattern) reads in full at any viewport width instead.
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 1,
+              mb: 3,
+              px: 1.5,
+              py: 1,
+              bgcolor: "#F4F6F8",
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1.5,
+            }}
+          >
+            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px", flexShrink: 0 }} />
+            <Typography variant="caption" color="text.secondary">
+              Derived from {metrics.totalMnos.toLocaleString()} IR.21-declared operator records — the platform&apos;s
+              authoritative source of truth. {metrics.reachlistOnlyMnoCount.toLocaleString()} legacy TADIGs were
+              auto-created from Reach List uploads before MNO normalization was enforced;{" "}
+              {metrics.pendingMnoNormalizationCount.toLocaleString()} newer Reach List rows are queued for admin
+              review instead of being auto-created. Informational use only.
+            </Typography>
+          </Box>
         )}
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2}>

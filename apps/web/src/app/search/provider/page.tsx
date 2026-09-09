@@ -463,6 +463,8 @@ function ProviderSearchPageInner() {
         <Box
           sx={{
             display: "inline-flex",
+            flexWrap: "wrap",
+            maxWidth: "100%",
             gap: "5px",
             p: "6px",
             mb: 3,

@@ -169,7 +169,16 @@ export default function MarketDynamicsCharts({
   return (
     <Paper sx={{ mb: 3 }}>
       <Box
-        sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5, cursor: "pointer" }}
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
+          px: 2,
+          py: 1.5,
+          cursor: "pointer",
+        }}
         onClick={() => setExpanded((v) => !v)}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>

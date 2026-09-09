@@ -300,6 +300,15 @@ const DATASET_SCOPE_BADGE: Record<DatasetScope, { label: string; bgcolor: string
 // two pages' primary filter controls read consistently instead of this
 // page's plain border-only pills blending into the background.
 const masterPillGroupSx = {
+  // Without this, ToggleButtonGroup's default single-row flex layout
+  // squeezes every pill to fit the viewport width instead of moving extras
+  // to a new row -- on a narrow phone that shrinks each pill's own text box
+  // until multi-word labels ("As per Reach List") wrap internally, and the
+  // 999px border-radius (built for a single-line pill) turns that wrapped,
+  // taller button into a stretched oval instead of a clean rounded shape.
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 1,
   "& .MuiToggleButton-root": {
     borderRadius: "999px !important",
     textTransform: "none",
@@ -310,6 +319,7 @@ const masterPillGroupSx = {
     bgcolor: "#FFFFFF",
     color: "#0A2540",
     fontWeight: 500,
+    whiteSpace: "nowrap",
     transition: "box-shadow 0.15s, background-color 0.15s",
     "&:hover": { bgcolor: "#F4F6F8" },
     "&.Mui-selected, &.Mui-selected:hover": {
@@ -1179,7 +1189,7 @@ function MnoSearchPageInner() {
                 setRegion(nextRegion);
                 pushParams({ region: nextRegion });
               }}
-              sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...masterPillGroupSx }}
+              sx={masterPillGroupSx}
             >
               <ToggleButton value="ALL">All</ToggleButton>
               {REGION_OPTIONS.map((r) => (

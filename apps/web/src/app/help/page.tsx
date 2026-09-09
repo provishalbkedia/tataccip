@@ -805,25 +805,19 @@ function MarketIntelligenceTab() {
           />
         </TechAccordion>
 
-        <TechAccordion title="Interactive KPI Autocompletes">
+        <TechAccordion title="Unified Master Filter Strip" defaultExpanded>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            The Top Provider Gainer, Top Provider Loser, and Active Switching MNOs / Custs cards each embed a
-            searchable, ranked dropdown — type a carrier or MNO / Customer name (or a rank number) to jump straight
-            to it, not just the single top-ranked entry the card headlines.
+            One Paper at the very top of the page carries every global scoping control — Timeframe (with a Custom
+            Date Range option), Region, Service, a Wholesale Provider search, and an MNO / Cust / TADIG search —
+            plus a &quot;Reset Filters (N active)&quot; button that only shows a count once something is actually
+            non-default. Everything below reacts to this strip.
           </Typography>
-          <Bullets
-            items={[
-              "Selecting a provider from the Gainer or Loser dropdown updates that card's own headline, fills the Wholesale Provider filter below, and re-scopes the table to specifically that provider's gain or loss events.",
-              "Selecting an MNO / Customer from the Active Switching MNOs / Custs dropdown fills the Search MNO / Cust / TADIG box and scopes the table to that MNO / Customer's full change history.",
-              "The four KPI cards always reflect the overall Timeframe/Region/Service scope — clicking or searching within one card narrows the table below without collapsing the other cards' own numbers.",
-            ]}
-          />
         </TechAccordion>
 
         <TechAccordion title="Filtering the feed — the &quot;Change:&quot; pill bar">
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Below Timeframe / Region / Service sits a two-segment row of pills, each carrying a live count badge for
-            however the rest of your filters are currently set:
+            Directly above the granular changes ledger sits a two-segment row of pills, each carrying a live count
+            badge for however the rest of your filters are currently set:
           </Typography>
           <Bullets
             items={[
@@ -895,32 +889,53 @@ function MarketIntelligenceTab() {
           </Tip>
         </TechAccordion>
 
-        <TechAccordion title="Executive Market Dynamics — interactive charts" defaultExpanded>
+        <TechAccordion title="Wholesale Carrier Market Capture &amp; Churn Pivot" defaultExpanded>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            A collapsible strip directly below the KPI cards, wired to the page&apos;s own filter state — clicking
-            a slice or bar sets Service / Provider / Region exactly as if you&apos;d used the manual controls, and
-            the strip re-renders around whatever the rest of your filters already narrowed it to.
-          </Typography>
-          <Bullets
-            items={[
-              <><strong>Routing Changes by Service donut</strong> — change volume by layer (SCCP / DSX / IPX). Click a slice to filter Service.</>,
-              <><strong>Carrier Net Movement bar</strong> — a diverging green (net gain) / red (net loss) bar chart, capped to the 5 strongest gainers and 5 strongest losers so a long tail doesn't turn it into a wall of thin bars. Click a bar to filter by Provider.</>,
-              <><strong>Regional Churn Distribution</strong> — geographic breakdown of carrier switches by region. Click a bar to filter Region.</>,
-            ]}
-          />
-        </TechAccordion>
-
-        <TechAccordion title="Market Share &amp; Churn Pivot Summary">
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            The &quot;⚡ Executive Pivot&quot; button (&quot;Market Share Pivot Summary&quot;) opens a full-screen
-            per-carrier win/loss pivot for the current filter scope — a different shape than the row-level change
-            feed below it, built for a commercial &quot;who&apos;s actually capturing this market&quot; read.
+            Embedded directly on the page, right below the Master Filter Strip — this is the primary analytical
+            driver now, not a modal you have to open: a per-carrier win/loss pivot for the current filter scope,
+            answering &quot;who&apos;s actually capturing this market&quot; before you ever scroll to the row-level
+            feed.
           </Typography>
           <Bullets
             items={[
               "One row per wholesale carrier: Net Movement, Service Gains, Service Losses, Impacted MNOs / Custs, and a Market Share Trend badge (Capturing Market / Defending / Losing Share).",
-              "Expand the [+] on any carrier row to see its full granular migration list — Date, MNO / Customer Name, TADIG, Country, Service, Action, and the specific Displaced / Competing Carrier for each event.",
-              'One-click "Export Pivot to Excel (.xlsx)" for the whole pivot, scoped to whatever the Master Filter Bar currently shows.',
+              <>
+                A tactile, boxed <strong>[+]</strong> / <strong>[−]</strong> button on each row expands its full
+                granular migration list — Date, MNO / Customer Name, TADIG, Country, Service, Action, and the
+                specific Displaced / Competing Carrier for each event — without also selecting that carrier;
+                selecting happens by clicking the row itself.
+              </>,
+              <>
+                Clicking a carrier row cross-filters the Executive Market Dynamics charts below to just that
+                carrier&apos;s own gain/loss rows, highlighted with a &quot;Selected&quot; badge and a
+                &quot;Clear Selection&quot; link — the same provider selection the charts&apos; own bars set.
+              </>,
+              "The pivot's own scope line shows the active Service as a removable chip (e.g. \"DSX ✕\") rather than plain text, so clearing it doesn't require hunting elsewhere on the page.",
+              'One-click "Export Pivot to Excel (.xlsx)" for the whole pivot, scoped to whatever the Master Filter Strip currently shows.',
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Executive Market Dynamics — interactive charts" defaultExpanded>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            A collapsible strip directly below the Pivot, wired to the same filter state — clicking a slice or bar
+            sets Service / Provider / Region exactly as if you&apos;d used the manual controls, and the strip
+            re-renders around whatever the rest of your filters already narrowed it to.
+          </Typography>
+          <Bullets
+            items={[
+              <><strong>Routing Changes by Service donut</strong> — change volume by layer (SCCP / DSX / IPX). Click a slice to filter Service; a &quot;Clear &lt;Service&gt;&quot; chip appears right on the card while it's active.</>,
+              <><strong>Carrier Net Movement bar</strong> — a diverging green (net gain) / red (net loss) bar chart, capped to the 5 strongest gainers and 5 strongest losers so a long tail doesn't turn it into a wall of thin bars. Click a bar to filter by Provider.</>,
+              <><strong>Regional Churn Distribution</strong> — geographic breakdown of carrier switches by region. Click a bar to filter Region.</>,
+              <>
+                Clicking an already-active slice or bar <strong>toggles it back off</strong> — the same click that
+                drilled in undoes it, so a 100%-filtered donut is never a dead end.
+              </>,
+              <>
+                A <strong>&quot;Reset Drill-Down (…)&quot;</strong> button appears in the strip&apos;s own header
+                whenever Service, Provider, or Region is active, naming every one of them at once and clearing all
+                three together in a single click.
+              </>,
             ]}
           />
         </TechAccordion>
@@ -1139,9 +1154,16 @@ function OperatorTab() {
               <strong>Exclusivity Vulnerability bar</strong> — the ratio of fully-locked-in accounts vs.
               multi-provider (contestable) accounts. With a carrier drill-down active, it reflects that carrier&apos;s
               own accounts specifically: how many are safely exclusive to them vs. shared with a competitor who
-              could win them.
+              could win them. Clicking either bar narrows the table below to exactly those MNOs <em>and</em>{" "}
+              smooth-scrolls straight to it, so a click always lands you somewhere, not just re-renders a chart off
+              the visible screen.
             </>,
             "Clicking a drill-down (a donut slice, or the Wholesale Provider filter) narrows the donut, KPI, and vulnerability chart together — an amber \"Filtering by Carrier\" ribbon and a one-click \"Reset Chart Filter\" always show above the charts while one is active.",
+            <>
+              Every chart title names whatever else is currently narrowing it — Region, Country, Dataset Scope,
+              Declared-Service, or a Search term appears right in the heading (e.g. <em>&quot;Carrier Share — All
+              MNOs (Region: MEA)&quot;</em>), so a screenshot of just the chart card never loses that context.
+            </>,
             "Download Exclusivity MIS Report — a PDF (KPI banner + carrier exclusivity chart + full MNO roster) or Excel workbook (market-share sheet with data-bar conditional formatting + MNO exclusivity roster), scoped to exactly whatever's currently filtered.",
           ]}
         />
@@ -1151,6 +1173,12 @@ function OperatorTab() {
           carrier&apos;s share, so the market picture stays statistically honest even while you&apos;re drilled
           into one carrier&apos;s own accounts.
         </ProTip>
+        <Tip>
+          Filters can be reset from three places, whichever is closest to hand: the amber-bordered
+          &quot;Reset All Filters&quot; button in the Master Scope Bar, a &quot;Reset Filters to Global View&quot;
+          button right inside the chart panel&apos;s own header once anything is narrowing it, or any individual
+          × chip in the Active Output Scope Banner above the table.
+        </Tip>
         <Warn>
           <strong>Key distinction:</strong> a single-service pill (e.g. SCCP Solo) plus a Wholesale Provider
           filter shows only rows where that carrier is <em>specifically</em> the exclusive provider for that
@@ -1265,6 +1293,31 @@ function ProviderSearchTab() {
           down to the platform&apos;s true wholesale provider list, so &quot;BICS&quot;, &quot;Belgacom&quot;, and
           &quot;Belgacom International Carrier Services&quot; all resolve to one row instead of three.
         </Typography>
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Two dedicated tabs, one search
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A tactile, embossed tab dock (raised card for the active tab, a recessed tray behind it) splits two
+          different jobs that used to compete for the same page:
+        </Typography>
+        <Bullets
+          items={[
+            <>
+              <strong>Provider Directory &amp; Footprint Analytics</strong> — the clean, scannable lookup: search,
+              charts, and the full carrier table, with no row-selection checkboxes cluttering it.
+            </>,
+            <>
+              <strong>Side-by-Side Carrier Benchmark</strong> — a dedicated multi-select workspace for comparing 2
+              to 5 providers at once, carrying its own &quot;Compare 2–5&quot; badge that turns into a live
+              &quot;N Selected&quot; count once you&apos;ve picked at least two.
+            </>,
+            "Your search term, Dataset Scope, and any providers you've already selected for comparison all persist across switching tabs — moving between them never resets your place.",
+          ]}
+        />
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+          Provider Directory &amp; Footprint Analytics
+        </Typography>
         <Bullets
           items={[
             "Aggregated metrics per provider — total MNOs served, total countries covered, and a protocol breakdown (SCCP / DSX / IPX counts).",
@@ -1311,11 +1364,11 @@ function ProviderSearchTab() {
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-          Side-by-Side Carrier Benchmark (Select 2–5 Providers)
+          Side-by-Side Carrier Benchmark tab
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          A dedicated banner, directly above the table, makes the multi-carrier compare feature impossible to
-          miss:
+          Switching to this tab swaps in a table with row selection turned on and a dedicated banner above it, so
+          the compare workflow is never squeezed above a directory doing a different job:
         </Typography>
         <Bullets
           items={[
@@ -1643,14 +1696,19 @@ function AdminTab() {
               and their most recent sign-in timestamp, at a glance.
             </>,
             <>
-              <strong>Time Spent</strong> — cumulative session duration per user, shown as <code>Xh Ym</code>, so
-              admins can distinguish active daily users from dormant accounts.
+              <strong>Last Session</strong> — how long that user&apos;s most recent visit lasted on its own (e.g.{" "}
+              <code>28m</code>), distinct from Total Time Spent below — resets to a fresh count the next time they
+              return after being away for more than a few minutes.
+            </>,
+            <>
+              <strong>Time Spent</strong> — cumulative session duration per user across their entire history, shown
+              as <code>Xh Ym</code>, so admins can distinguish active daily users from dormant accounts.
             </>,
             <>
               <strong>Live Presence</strong> — an Online/Offline indicator per user, with a last-seen time for
               anyone currently offline.
             </>,
-            "Every column — role, sign-in type, status, login count, time spent, last login — is sortable by clicking its header.",
+            "Every column — role, sign-in type, status, login count, last login, last session, time spent — is sortable by clicking its header.",
             <>
               <strong>Filter pills</strong> for Role, Sign-In Type (Local vs Microsoft SSO), Status
               (Active/Inactive), and an Online-Only toggle narrow the table instantly; a single{" "}

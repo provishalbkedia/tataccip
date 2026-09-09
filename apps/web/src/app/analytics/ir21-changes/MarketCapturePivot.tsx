@@ -19,8 +19,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import DownloadIcon from "@mui/icons-material/Download";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import CloseIcon from "@mui/icons-material/Close";
@@ -149,12 +148,36 @@ function ProviderPivotRow({
           <IconButton
             size="small"
             onClick={(e) => {
+              // Expanding/collapsing the migration detail tree is a
+              // separate gesture from selecting the provider row for
+              // chart cross-filtering -- stopPropagation keeps this click
+              // from also bubbling into the TableRow's onSelect below.
               e.stopPropagation();
               setExpanded((v) => !v);
             }}
-            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? `Collapse ${entry.providerName}` : `Expand ${entry.providerName}`}
+            sx={{
+              width: 22,
+              height: 22,
+              minWidth: 22,
+              p: 0,
+              borderRadius: "4px",
+              border: "1px solid #CBD5E1",
+              bgcolor: expanded ? "#0A2540" : "#FFFFFF",
+              color: expanded ? "#FFFFFF" : "#0A2540",
+              fontWeight: 700,
+              fontSize: "0.82rem",
+              lineHeight: 1,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+              transition: "all 0.15s ease",
+              "&:hover": {
+                bgcolor: expanded ? "#0F375E" : "#F1F5F9",
+                borderColor: "#94A3B8",
+                transform: "scale(1.06)",
+              },
+            }}
           >
-            {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            {expanded ? "−" : "+"}
           </IconButton>
         </TableCell>
         <TableCell sx={{ fontWeight: 700 }}>
@@ -329,6 +352,28 @@ export default function MarketCapturePivot({
           </Typography>
         </Box>
       ) : (
+        <>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              mx: 2,
+              mt: 1.5,
+              mb: 0.5,
+              px: 1.5,
+              py: 0.6,
+              bgcolor: "#F8FAFC",
+              border: "1px dashed #CBD5E1",
+              borderRadius: "6px",
+            }}
+          >
+            <InfoOutlinedIcon sx={{ fontSize: 16, color: "#0284C7" }} />
+            <Typography sx={{ color: "#475569", fontSize: "0.78rem", fontWeight: 500 }}>
+              <strong>Interactive Matrix:</strong> Click any carrier row to cross-filter the <strong>Executive Market Dynamics</strong>{" "}
+              charts below. Use <strong>[+]</strong> to expand and <strong>[−]</strong> to collapse account migration details.
+            </Typography>
+          </Box>
         <TableContainer sx={{ maxHeight: "55vh" }}>
           <Table stickyHeader size="small">
             <TableHead>
@@ -362,6 +407,7 @@ export default function MarketCapturePivot({
             </TableBody>
           </Table>
         </TableContainer>
+        </>
       )}
     </Paper>
   );

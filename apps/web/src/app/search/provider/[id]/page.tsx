@@ -17,7 +17,6 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import FindInPageIcon from "@mui/icons-material/FindInPage";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import SearchIcon from "@mui/icons-material/Search";
@@ -25,6 +24,7 @@ import ClearIcon from "@mui/icons-material/Clear";
 import StarIcon from "@mui/icons-material/Star";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import BackNavBar from "@/components/BackNavBar";
 import DataGrid from "@/components/DataGrid";
 import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
 import { api } from "@/lib/api";
@@ -224,13 +224,7 @@ function ProviderDetailPageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => router.back()}
-          sx={{ mb: 2, width: { xs: "100%", sm: "auto" } }}
-        >
-          Back to search
-        </Button>
+        <BackNavBar label="BACK TO SEARCH" />
         {provider && (
           <>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>

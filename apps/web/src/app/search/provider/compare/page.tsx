@@ -4,10 +4,10 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ColDef, ColGroupDef } from "ag-grid-community";
 import { Alert, Box, Button, Chip, MenuItem, Paper, TextField, Tooltip, Typography } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import BackNavBar from "@/components/BackNavBar";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
 import { getCountryName } from "@/lib/countries";
@@ -214,9 +214,7 @@ function ProviderComparePageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ mb: 2 }}>
-          Back to search
-        </Button>
+        <BackNavBar label="BACK TO SEARCH" />
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           Multi-Provider Comparison Matrix
         </Typography>

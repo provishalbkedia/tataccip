@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { ColDef, ColGroupDef } from "ag-grid-community";
 import {
   Alert,
@@ -15,10 +15,10 @@ import {
   Tabs,
   Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import BackNavBar from "@/components/BackNavBar";
 import DataGrid from "@/components/DataGrid";
 import { api, ApiError } from "@/lib/api";
 import { openMnoPdf } from "@/lib/openPdf";
@@ -44,7 +44,6 @@ export default function OperatorComparePage() {
 }
 
 function OperatorComparePageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const ids = React.useMemo(
     () =>
@@ -142,9 +141,7 @@ function OperatorComparePageInner() {
   return (
     <RequireAuth>
       <AppShell>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ mb: 2 }}>
-          Back to search
-        </Button>
+        <BackNavBar label="BACK TO SEARCH" />
         <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
           MNO / Cust Connectivity Comparison Matrix
         </Typography>

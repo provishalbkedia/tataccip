@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   Box,
   Button,
@@ -19,11 +19,11 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import BackNavBar from "@/components/BackNavBar";
 import ProviderInspectorDrawer, { ProviderInspectorData } from "@/components/ProviderInspectorDrawer";
 import { api, ApiError } from "@/lib/api";
 import { MnoDetail } from "@ccip/shared-types";
@@ -60,7 +60,6 @@ function ChipListField({ label, values }: { label: string; values: string[] }) {
 
 export default function MnoDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const [mno, setMno] = React.useState<MnoDetail | null>(null);
   const [inspector, setInspector] = React.useState<ProviderInspectorData | null>(null);
   const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
@@ -105,32 +104,23 @@ export default function MnoDetailPage() {
   return (
     <RequireAuth>
       <AppShell>
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: { xs: "column", sm: "row" },
-            justifyContent: "space-between",
-            alignItems: { xs: "stretch", sm: "center" },
-            gap: 1,
-            mb: 2,
-          }}
-        >
-          <Button startIcon={<ArrowBackIcon />} onClick={() => router.back()} sx={{ width: { xs: "100%", sm: "auto" } }}>
-            Back to search
-          </Button>
-          {mno?.hasPdfDocument && (
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<PictureAsPdfIcon />}
-              onClick={togglePdf}
-              disabled={pdfLoading}
-              sx={{ width: { xs: "100%", sm: "auto" } }}
-            >
-              {pdfLoading ? "Loading…" : pdfOpen ? "Hide Original IR.21 PDF" : "View Original IR.21 PDF"}
-            </Button>
-          )}
-        </Box>
+        <BackNavBar
+          label="BACK TO SEARCH"
+          right={
+            mno?.hasPdfDocument && (
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<PictureAsPdfIcon />}
+                onClick={togglePdf}
+                disabled={pdfLoading}
+                sx={{ width: { xs: "100%", sm: "auto" } }}
+              >
+                {pdfLoading ? "Loading…" : pdfOpen ? "Hide Original IR.21 PDF" : "View Original IR.21 PDF"}
+              </Button>
+            )
+          }
+        />
         {mno && (
           <>
             {pdfOpen && pdfUrl && (

@@ -637,7 +637,7 @@ function ProviderSearchPageInner() {
           </Paper>
         )}
 
-        <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} onProviderClick={handleProviderChartClick} />
+        <ProviderCoverageCharts rankedProviders={rankedProviders} source={source} searchQuery={q} onProviderClick={handleProviderChartClick} />
 
         {/* Contextual Table Header Banner -- names the table's exact scope
            in plain language (previously just a bare result count) and, once

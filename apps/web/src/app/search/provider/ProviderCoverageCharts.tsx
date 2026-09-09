@@ -63,6 +63,7 @@ const TOP_N = 10;
 export default function ProviderCoverageCharts({
   rankedProviders,
   source,
+  searchQuery,
   onProviderClick,
 }: {
   // Already deduped (one entry per provider id, even in "Both (Combined)"
@@ -71,6 +72,15 @@ export default function ProviderCoverageCharts({
   // banner too, rather than each place re-deriving its own copy.
   rankedProviders: ProviderSummary[];
   source: ProviderStatsSource;
+  // The page's own free-text search box (page.tsx's `q`) -- both charts
+  // below already aggregate over `rankedProviders`, which the page itself
+  // has already narrowed to whatever this term matches, so naming it in
+  // each chart's own title/subtitle just makes explicit what's already
+  // true of the data: a search for "China Mobile" isn't showing "all
+  // providers" scoped down, it's effectively that one provider's own
+  // profile, and the chart chrome should say so rather than leave the
+  // reader to infer it from a single bar/row.
+  searchQuery?: string;
   onProviderClick: (providerName: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
@@ -105,6 +115,13 @@ export default function ProviderCoverageCharts({
 
   const homeCarrierRank = rankedByMnos.findIndex((p) => p.providerName === HOME_CARRIER);
   const homeCarrierEntry = homeCarrierRank >= 0 ? rankedByMnos[homeCarrierRank] : null;
+
+  const activeSearchTerm = searchQuery?.trim() || null;
+  const barChartTitle = activeSearchTerm ? `Provider Footprint — ${activeSearchTerm}` : "Top Providers by MNO Coverage";
+  const serviceMixTitle = activeSearchTerm ? `Service Coverage Mix — ${activeSearchTerm}` : "Service Coverage Mix — All Providers";
+  const serviceMixSubtitle = activeSearchTerm
+    ? `SCCP vs DSX vs IPX relationship breakdown for ${activeSearchTerm}`
+    : "SCCP vs DSX vs IPX relationships across all listed providers";
 
   return (
     <Paper sx={{ mb: 3 }}>
@@ -171,7 +188,7 @@ export default function ProviderCoverageCharts({
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                      Top Providers by MNO Coverage
+                      {barChartTitle}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                       {topProvidersData.length < rankedByMnos.length
@@ -182,7 +199,32 @@ export default function ProviderCoverageCharts({
                       <ResponsiveContainer width="100%" height={320}>
                         <BarChart data={topProvidersData} layout="vertical" margin={{ left: 8, right: 24 }}>
                           <XAxis type="number" hide />
-                          <YAxis type="category" dataKey="providerName" width={130} tick={{ fontSize: 11 }} />
+                          <YAxis
+                            type="category"
+                            dataKey="providerName"
+                            width={130}
+                            // Bold + navy for the actively-searched provider's
+                            // own row label -- everything else stays the
+                            // plain default so only the one row the search
+                            // narrowed to stands out, not the whole axis.
+                            tick={(props: { x?: string | number; y?: string | number; payload?: { value: string } }) => {
+                              const label = props.payload?.value ?? "";
+                              const isActive = !!activeSearchTerm && label.toLowerCase() === activeSearchTerm.toLowerCase();
+                              return (
+                                <text
+                                  x={props.x}
+                                  y={props.y}
+                                  dy={4}
+                                  textAnchor="end"
+                                  fontSize={isActive ? 12 : 11}
+                                  fontWeight={isActive ? 800 : 400}
+                                  fill={isActive ? "#0A2540" : "#5A6B7B"}
+                                >
+                                  {label}
+                                </text>
+                              );
+                            }}
+                          />
                           <RechartsTooltip
                             content={
                               <CustomTooltip
@@ -197,12 +239,17 @@ export default function ProviderCoverageCharts({
                             onClick={(d) => onProviderClick((d as unknown as { providerName: string }).providerName)}
                             radius={3}
                           >
-                            {topProvidersData.map((d) => (
-                              <Cell
-                                key={d.providerName}
-                                fill={d.providerName === HOME_CARRIER ? "#F59E0B" : colorForProvider(d.providerName)}
-                              />
-                            ))}
+                            {topProvidersData.map((d) => {
+                              const isActive = !!activeSearchTerm && d.providerName.toLowerCase() === activeSearchTerm.toLowerCase();
+                              return (
+                                <Cell
+                                  key={d.providerName}
+                                  fill={d.providerName === HOME_CARRIER ? "#F59E0B" : colorForProvider(d.providerName)}
+                                  stroke={isActive ? "#0A2540" : undefined}
+                                  strokeWidth={isActive ? 2 : undefined}
+                                />
+                              );
+                            })}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -214,14 +261,14 @@ export default function ProviderCoverageCharts({
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                        Service Coverage Mix
+                        {serviceMixTitle}
                       </Typography>
                       <Tooltip title="Total provider-to-MNO relationships declared for each service, summed across every provider in the current search scope -- shows which service has the broadest wholesale coverage overall, not any single provider's own split.">
                         <InfoOutlinedIcon fontSize="small" sx={{ color: "text.disabled", fontSize: 16, cursor: "help" }} />
                       </Tooltip>
                     </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-                      SCCP vs DSX vs IPX relationships across all listed providers
+                      {serviceMixSubtitle}
                     </Typography>
                     <Box sx={{ position: "relative", minHeight: 320 }}>
                       <ResponsiveContainer width="100%" height={320}>

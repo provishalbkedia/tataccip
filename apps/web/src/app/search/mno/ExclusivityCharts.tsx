@@ -458,21 +458,55 @@ export default function ExclusivityCharts({
                               if (entry.providerName === "Others") setShowOthers(true);
                               else onProviderClick(entry.providerName);
                             }}
-                            label={({ name, percent }: { name?: string; percent?: number }) =>
-                              `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                            }
+                            // Custom label renderer (rather than the plain
+                            // string-returning formatter this used to be) so
+                            // the actively-filtered carrier's own slice label
+                            // can render larger/bolder/navy -- everything
+                            // else stays the same plain-gray text it always
+                            // was, so only the one slice a drill-down
+                            // actually selected commands extra attention.
+                            label={(props: { cx?: number; cy?: number; midAngle?: number; outerRadius?: number; percent?: number; name?: string }) => {
+                              const { cx = 0, cy = 0, midAngle = 0, outerRadius = 0, percent, name } = props;
+                              const isActive = !!activeProviderFilter && name === activeProviderFilter;
+                              const RADIAN = Math.PI / 180;
+                              const radius = outerRadius + (isActive ? 20 : 14);
+                              const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                              const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                              return (
+                                <text
+                                  x={x}
+                                  y={y}
+                                  textAnchor={x > cx ? "start" : "end"}
+                                  dominantBaseline="central"
+                                  fontSize={isActive ? 13 : 11}
+                                  fontWeight={isActive ? 800 : 500}
+                                  fill={isActive ? "#0A2540" : "#5A6B7B"}
+                                >
+                                  {`${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                </text>
+                              );
+                            }}
                             labelLine={false}
                           >
                             {donutData.map((d) => {
                               const isActive = d.providerName === activeProviderFilter;
+                              // Muting every OTHER slice (not just leaving
+                              // them at full color) is what makes the
+                              // stroke+label emphasis above actually read as
+                              // "this one slice" rather than "one slice has
+                              // a slightly thicker outline" -- only kicks in
+                              // once a carrier is actually selected, so the
+                              // unfiltered donut stays fully vibrant.
+                              const dimmed = !!activeProviderFilter && !isActive;
                               return (
                                 <Cell
                                   key={d.providerName}
                                   // Fill strictly reflects the carrier's own
                                   // stable identity color at all times --
                                   // selection is communicated purely via the
-                                  // stroke, never by swapping the fill.
+                                  // stroke/opacity, never by swapping the fill.
                                   fill={d.providerName === "Others" ? OTHERS_COLOR : colorForCarrier(d.providerName)}
+                                  fillOpacity={dimmed ? 0.45 : 1}
                                   stroke={isActive ? "#0A2540" : "#FFFFFF"}
                                   strokeWidth={isActive ? 3 : 1}
                                 />
@@ -502,7 +536,7 @@ export default function ExclusivityCharts({
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#0A2540" }}>
-                        Exclusivity Vulnerability
+                        {isCarrierScoped ? `Exclusivity Vulnerability — ${activeProviderFilter}` : "Exclusivity Vulnerability — Overall Market"}
                       </Typography>
                       <Tooltip
                         title={

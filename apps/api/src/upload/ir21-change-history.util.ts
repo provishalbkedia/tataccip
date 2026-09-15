@@ -137,6 +137,29 @@ export function interpretChangeHistoryDescription(descriptionRaw: string): Inter
     if (newName) return { oldName: null, newName };
   }
 
+  // "Removed/Deleted NAME as [a/an/the] <free-text descriptor> provider" --
+  // covers real phrasing pattern 6 above doesn't (it only matches a bare
+  // "carrier" noun or "as X carrier" with a single-token X): confirmed
+  // against a real USAPC/Pine Cellular RAEX IR.21 export, "Removed
+  // Syniverse as an IPX provider" (Section 17) and "Removed Syniverse as
+  // MMS internetworking hub provider" (Section 18) -- both previously fell
+  // through every pattern above and were silently dropped instead of
+  // recording the real IPX/MMS-hub provider departure.
+  m = s.match(new RegExp(`^${REMOVE_VERB}\\s+(?:new\\s+)?([A-Za-z][\\w .&-]*?)\\s+as\\s+.+?\\bprovider\\b\\s*$`, "i"));
+  if (m) {
+    const oldName = clean(m[1]);
+    if (oldName) return { oldName, newName: null };
+  }
+
+  // "Add(ed) NAME as [a/an/the] <free-text descriptor> provider" --
+  // addition counterpart of the pattern above (e.g. "Added TNS as MMS hub
+  // provider", also confirmed against the same real USAPC file).
+  m = s.match(/^add(?:ed)?\s+(?:new\s+)?([A-Za-z][\w .&-]*?)\s+as\s+.+?\bprovider\b\s*$/i);
+  if (m) {
+    const newName = clean(m[1]);
+    if (newName) return { oldName: null, newName };
+  }
+
   return null;
 }
 

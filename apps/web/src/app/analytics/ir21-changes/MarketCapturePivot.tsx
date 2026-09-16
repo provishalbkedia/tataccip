@@ -274,6 +274,7 @@ export default function MarketCapturePivot({
   scopeLabel,
   serviceFilter,
   onClearServiceFilter,
+  searchTerm,
   selectedProviderId,
   onSelectProvider,
   onClearSelection,
@@ -287,6 +288,16 @@ export default function MarketCapturePivot({
   scopeLabel: string;
   serviceFilter: string;
   onClearServiceFilter: () => void;
+  // The Master Filter Bar's MNO/Cust/TADIG search box -- deliberately NOT
+  // one of this pivot's own scope dimensions (`rows` comes from
+  // overviewQueryString, which never includes `search`; see
+  // Ir21ChangesPage's dynamicsRows comment for why: this table is meant to
+  // stay a market-wide view even while a reviewer is searching for one
+  // account). Passed through only so the header can flag that the active
+  // search term isn't reflected in the numbers below it -- surfacing that
+  // distinction rather than letting a search-scoped reviewer assume this
+  // pivot narrowed with it.
+  searchTerm: string;
   selectedProviderId: number | null;
   onSelectProvider: (providerId: number, providerName: string) => void;
   onClearSelection: () => void;
@@ -355,6 +366,16 @@ export default function MarketCapturePivot({
               <Typography variant="body2" color="text.secondary">
                 All Services
               </Typography>
+            )}
+            {searchTerm && (
+              <Tooltip title={`This market-wide pivot is not narrowed to "${searchTerm}" -- only the changes ledger below is. Clear the search to compare against the full portfolio, or read the ledger for ${searchTerm}-specific rows.`}>
+                <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4, color: "#94A3B8", cursor: "help" }}>
+                  <InfoOutlinedIcon sx={{ fontSize: 14 }} />
+                  <Typography variant="caption" sx={{ fontStyle: "italic" }}>
+                    Not narrowed by &quot;{searchTerm}&quot; search
+                  </Typography>
+                </Box>
+              </Tooltip>
             )}
           </Box>
         </Box>

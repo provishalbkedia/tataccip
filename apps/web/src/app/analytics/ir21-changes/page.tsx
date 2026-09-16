@@ -1129,6 +1129,7 @@ export default function Ir21ChangesPage() {
           scopeLabel={`${dateScopeLabel} | ${region || "All Regions"}`}
           serviceFilter={service}
           onClearServiceFilter={() => setService("")}
+          searchTerm={search}
           selectedProviderId={provider?.id ?? null}
           onSelectProvider={handleChartCarrierClick}
           onClearSelection={clearProviderSelection}

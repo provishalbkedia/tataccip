@@ -890,6 +890,31 @@ function ProviderSearchPageInner() {
            the Benchmark tab below (which shares this same `results` data
            and `columnDefs`, just with selection turned on). */}
         <DataGrid<ProviderSummary> rowData={results} columnDefs={columnDefs} getRowId={(row) => row.id} showTopPagination />
+
+        {/* Bottom-of-page reset affordance -- mirrors MNO Search's own: on a
+           long result grid, the pagination bar the user is actually looking
+           at (having scrolled down to browse further pages) sits well below
+           the Master Filters strip's own reset button. */}
+        {hasActiveFilters && (
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltIcon fontSize="small" />}
+              onClick={resetAllFilters}
+              sx={{
+                fontWeight: 600,
+                textTransform: "none",
+                borderColor: "#FECACA",
+                color: "#DC2626",
+                bgcolor: "#FEF2F2",
+                "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
+              }}
+            >
+              Reset All Filters
+            </Button>
+          </Box>
+        )}
         </>
         ) : (
         <>

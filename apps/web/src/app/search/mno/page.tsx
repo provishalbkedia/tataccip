@@ -1002,9 +1002,19 @@ function MnoSearchPageInner() {
   // already shown.
   const chartScopeFilterSummary = React.useMemo(() => {
     const qualifiers: string[] = [];
+    // Dataset Scope is always named explicitly, even at its "IR.21 Verified"
+    // default -- unlike Region/Service/Country below (shown only when
+    // non-default), which dataset a KPI/donut number was drawn from is
+    // consequential enough (IR.21-only vs. Reach-List-claimed vs. combined
+    // can each tell a very different story for the same carrier) that
+    // leaving it implicit at the default value reads as an omission, not a
+    // clean baseline -- previously this qualifier only appeared once a
+    // non-default Scope pill was picked, so the exact same "Tata Comm
+    // Footprint Standing" banner looked inconsistently labeled depending on
+    // which Scope happened to be active.
+    qualifiers.push(`Scope: ${DATASET_SCOPE_LABELS[datasetScope]}`);
     if (region) qualifiers.push(`Region: ${region}`);
     if (country) qualifiers.push(`Country: ${getCountryName(country)}`);
-    if (datasetScope !== "ir21") qualifiers.push(`Scope: ${DATASET_SCOPE_LABELS[datasetScope]}`);
     if (serviceFilter) qualifiers.push(SERVICE_FILTER_LABEL[serviceFilter]);
     // The committed (last-executed) search term, not the live-typed `q` --
     // mirrors collapsedForSearch below, so the chart title doesn't relabel
@@ -2047,6 +2057,33 @@ function MnoSearchPageInner() {
           showTopPagination
           exportFileName="operator-search-results"
         />
+
+        {/* Bottom-of-page reset affordance -- on a long result grid, the
+           pagination bar the user is actually looking at (having scrolled
+           down to browse further pages) sits well below the Master Filters
+           strip's own reset button, forcing a scroll all the way back up
+           just to clear filters. Mirrors resetAllFilters exactly; only
+           shown once there's something to reset. */}
+        {hasActiveFilters && (
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltIcon fontSize="small" />}
+              onClick={resetAllFilters}
+              sx={{
+                fontWeight: 600,
+                textTransform: "none",
+                borderColor: "#FECACA",
+                color: "#DC2626",
+                bgcolor: "#FEF2F2",
+                "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
+              }}
+            >
+              Reset All Filters
+            </Button>
+          </Box>
+        )}
 
         {selected.length >= 2 && (
           <Paper

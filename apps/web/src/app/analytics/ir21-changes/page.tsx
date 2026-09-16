@@ -1338,6 +1338,7 @@ export default function Ir21ChangesPage() {
             )}
           </Paper>
         ) : (
+        <>
         <DataGrid<Ir21RoutingChangeRow>
           rowData={rows}
           renderRowCount={(rowCount) => `${rowCount} change(s) across ${uniqueOperatorCount} MNO/Cust${uniqueOperatorCount === 1 ? "" : "s"}`}
@@ -1399,6 +1400,32 @@ export default function Ir21ChangesPage() {
           showTopPagination
           height={600}
         />
+
+        {/* Bottom-of-page reset affordance -- mirrors MNO/Provider Search's
+           own: on a long ledger, the pagination bar the user is actually
+           looking at (having scrolled down to browse further pages) sits
+           well below the Master Filters strip's own reset button. */}
+        {activeFilterCount > 0 && (
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<FilterAltOffIcon fontSize="small" />}
+              onClick={resetAllFilters}
+              sx={{
+                fontWeight: 600,
+                textTransform: "none",
+                borderColor: "#FECACA",
+                color: "#DC2626",
+                bgcolor: "#FEF2F2",
+                "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
+              }}
+            >
+              Reset All Filters
+            </Button>
+          </Box>
+        )}
+        </>
         )}
         </Box>
       </AppShell>

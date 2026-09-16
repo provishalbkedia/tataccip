@@ -1266,6 +1266,34 @@ function MnoSearchPageInner() {
             </ToggleButtonGroup>
           </Box>
 
+          <Divider orientation="vertical" flexItem sx={{ display: { xs: "none", md: "block" } }} />
+
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Service
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={serviceFilter || "ALL"}
+              onChange={(_, value) => {
+                if (!value) return;
+                const nextService: ServiceFilter | "" = value === "ALL" ? "" : value;
+                setServiceFilter(nextService);
+                pushParams({ service: nextService });
+              }}
+              sx={masterPillGroupSx}
+            >
+              <ToggleButton value="ALL">All</ToggleButton>
+              {SERVICE_FILTERS.map((s) => (
+                <ToggleButton key={s} value={s}>
+                  {s}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
+
           <Tooltip
             title={
               onlyWithProviders

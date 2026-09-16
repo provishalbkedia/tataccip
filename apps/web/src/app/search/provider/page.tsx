@@ -38,7 +38,7 @@ import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ProviderCoverageCharts from "./ProviderCoverageCharts";
 import { api } from "@/lib/api";
 import { ProviderReportInput } from "@/lib/reports/providerReportData";
-import { ProviderStatsSource, ProviderSuggestion, ProviderSummary } from "@ccip/shared-types";
+import { ProviderStatsSource, ProviderSuggestion, ProviderSummary, Region } from "@ccip/shared-types";
 
 const SOURCE_LABEL: Record<ProviderStatsSource, string> = {
   [ProviderStatsSource.IR21]: "IR.21",
@@ -91,6 +91,8 @@ const highContrastPillGroupSx = {
 const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
 const VALID_SERVICES = ["SCCP", "DSX", "IPX"] as const;
 type ServiceFilter = (typeof VALID_SERVICES)[number];
+const REGION_OPTIONS: Region[] = [Region.AMERICAS, Region.MEA, Region.EUROPE, Region.APAC, Region.NON_TERRESTRIAL];
+const VALID_REGIONS: string[] = REGION_OPTIONS;
 
 // sessionStorage key for the "scroll to results on next fetch" flag -- see
 // its own comment where it's read/written inside ProviderSearchPageInner.
@@ -121,6 +123,7 @@ function ProviderSearchPageInner() {
   // Back navigation, or a shared link).
   const [source, setSource] = React.useState<ProviderStatsSource>(ProviderStatsSource.IR21);
   const [service, setService] = React.useState<ServiceFilter | null>(null);
+  const [region, setRegion] = React.useState<Region | null>(null);
   const [results, setResults] = React.useState<ProviderSummary[]>([]);
   const [selected, setSelected] = React.useState<ProviderSummary[]>([]);
   const [clearSignal, setClearSignal] = React.useState(0);
@@ -159,9 +162,12 @@ function ProviderSearchPageInner() {
     const urlService = searchParams.get("service");
     const effectiveService =
       urlService && (VALID_SERVICES as readonly string[]).includes(urlService) ? (urlService as ServiceFilter) : null;
+    const urlRegion = searchParams.get("region");
+    const effectiveRegion = urlRegion && VALID_REGIONS.includes(urlRegion) ? (urlRegion as Region) : null;
     setQ(searchParams.get("q") ?? "");
     setSource(effectiveSource);
     setService(effectiveService);
+    setRegion(effectiveRegion);
 
     const params = new URLSearchParams(searchParams);
     params.set("source", effectiveSource);
@@ -194,11 +200,12 @@ function ProviderSearchPageInner() {
   }, [searchParams]);
 
   const pushParams = React.useCallback(
-    (nextQ: string, nextSource: ProviderStatsSource, nextService?: ServiceFilter | null) => {
+    (nextQ: string, nextSource: ProviderStatsSource, nextService?: ServiceFilter | null, nextRegion?: Region | null) => {
       const params = new URLSearchParams();
       if (nextQ) params.set("q", nextQ);
       params.set("source", nextSource);
       if (nextService) params.set("service", nextService);
+      if (nextRegion) params.set("region", nextRegion);
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router],
@@ -206,8 +213,8 @@ function ProviderSearchPageInner() {
 
   const runSearch = React.useCallback(() => {
     sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
-    pushParams(q, source, service);
-  }, [pushParams, q, source, service]);
+    pushParams(q, source, service, region);
+  }, [pushParams, q, source, service, region]);
 
   // Which top-level tab is active -- synced to the URL (not separate React
   // state) so a direct/shared link to ?tab=benchmark lands on the compare
@@ -240,10 +247,11 @@ function ProviderSearchPageInner() {
     setQ("");
     setSource(ProviderStatsSource.IR21);
     setService(null);
+    setRegion(null);
     router.push(pathname, { scroll: false });
   }, [pathname, router]);
 
-  const hasActiveFilters = !!q || source !== ProviderStatsSource.IR21 || !!service;
+  const hasActiveFilters = !!q || source !== ProviderStatsSource.IR21 || !!service || !!region;
 
   // Drives the Active Filters ribbon -- one entry per narrowing dimension
   // currently applied, each individually dismissible, so a user combining
@@ -253,15 +261,16 @@ function ProviderSearchPageInner() {
   const activeFilterDimensions = React.useMemo(
     () =>
       [
-        !!q && { key: "q", label: `Search: "${q}"`, onClear: () => pushParams("", source, service) },
+        !!q && { key: "q", label: `Search: "${q}"`, onClear: () => pushParams("", source, service, region) },
         source !== ProviderStatsSource.IR21 && {
           key: "source",
           label: `Dataset: ${SOURCE_PILL_LABEL[source]}`,
-          onClear: () => pushParams(q, ProviderStatsSource.IR21, service),
+          onClear: () => pushParams(q, ProviderStatsSource.IR21, service, region),
         },
-        !!service && { key: "service", label: `Declared: ${service} Only`, onClear: () => pushParams(q, source, null) },
+        !!service && { key: "service", label: `Declared: ${service} Only`, onClear: () => pushParams(q, source, null, region) },
+        !!region && { key: "region", label: `Region: ${region}`, onClear: () => pushParams(q, source, service, null) },
       ].filter((d): d is { key: string; label: string; onClear: () => void } => !!d),
-    [q, source, service, pushParams],
+    [q, source, service, region, pushParams],
   );
 
   const uniqueProviderCount = React.useMemo(() => new Set(results.map((r) => r.id)).size, [results]);
@@ -334,8 +343,8 @@ function ProviderSearchPageInner() {
   // provider name -- Provider Search has no separate provider-filter
   // dimension the way MNO Search's Wholesale Provider Autocomplete does.
   const handleProviderChartClick = React.useCallback(
-    (providerName: string) => pushParams(providerName, source, service),
-    [pushParams, source, service],
+    (providerName: string) => pushParams(providerName, source, service, region),
+    [pushParams, source, service, region],
   );
 
   // BOTH mode returns two rows per provider (IR21-only + REACH_LIST-only) —
@@ -566,7 +575,7 @@ function ProviderSearchPageInner() {
               // Dataset Scope pill narrows the table below just as much as
               // a fresh search does, so it deserves the same scroll.
               sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
-              pushParams(q, value, service);
+              pushParams(q, value, service, region);
             }}
             sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
           >
@@ -574,6 +583,68 @@ function ProviderSearchPageInner() {
             <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
             <ToggleButton value={ProviderStatsSource.BOTH}>Both (Combined)</ToggleButton>
           </ToggleButtonGroup>
+        </Paper>
+
+        {/* Region & Service Master Filter Strip -- mirrors MNO Search's own
+           Master Scope Bar so both search pages scope consistently. Region
+           narrows which MNOs' declarations count toward each provider's
+           stats (server-side, via getRegionByCountry); Service narrows to
+           providers with a declared footprint on that protocol layer --
+           both already existed as URL-synced state (region/service query
+           params), just with no on-page control to set them directly
+           before now. */}
+        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Region
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={region ?? "ALL"}
+              onChange={(_, value) => {
+                if (!value) return;
+                const nextRegion: Region | null = value === "ALL" ? null : value;
+                sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
+                pushParams(q, source, service, nextRegion);
+              }}
+              sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
+            >
+              <ToggleButton value="ALL">All</ToggleButton>
+              {REGION_OPTIONS.map((r) => (
+                <ToggleButton key={r} value={r}>
+                  {r}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
+
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Service
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={service ?? "ALL"}
+              onChange={(_, value) => {
+                if (!value) return;
+                const nextService: ServiceFilter | null = value === "ALL" ? null : value;
+                sessionStorage.setItem(SCROLL_PENDING_KEY, "1");
+                pushParams(q, source, nextService, region);
+              }}
+              sx={{ display: "flex", flexWrap: "wrap", gap: 1, ...highContrastPillGroupSx }}
+            >
+              <ToggleButton value="ALL">All</ToggleButton>
+              {VALID_SERVICES.map((s) => (
+                <ToggleButton key={s} value={s}>
+                  {s}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
         </Paper>
 
         <Paper sx={{ p: 2, mb: 3 }}>
@@ -705,12 +776,13 @@ function ProviderSearchPageInner() {
                   ? `Showing ${uniqueProviderCount} of ${baselineCount ?? "…"} providers matching "${q}" (${SOURCE_PILL_LABEL[source]})`
                   : `Showing all ${uniqueProviderCount} providers (${SOURCE_PILL_LABEL[source]})`}
                 {service && ` — filtered to declared ${service} providers`}
+                {region && ` — ${region} only`}
               </Typography>
               {q && (
                 <MuiLink
                   component="button"
                   variant="body2"
-                  onClick={() => pushParams("", source, service)}
+                  onClick={() => pushParams("", source, service, region)}
                   sx={{ mt: 0.5, display: "inline-block", fontWeight: 600 }}
                 >
                   View All {baselineCount ?? uniqueProviderCount} Providers &rarr;
@@ -719,12 +791,21 @@ function ProviderSearchPageInner() {
             </Box>
 
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+              {region && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`Region: ${region}`}
+                  onDelete={() => pushParams(q, source, service, null)}
+                  deleteIcon={<CloseIcon fontSize="small" />}
+                />
+              )}
               {service && (
                 <Chip
                   size="small"
                   color="primary"
                   label={`Filtered to ${service} providers`}
-                  onDelete={() => pushParams(q, source, null)}
+                  onDelete={() => pushParams(q, source, null, region)}
                   deleteIcon={<CloseIcon fontSize="small" />}
                 />
               )}

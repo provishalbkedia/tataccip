@@ -3,6 +3,7 @@ import { ServiceName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { isConfidentSubstringMatch, normalizeCarrierName } from "../upload/provider-normalize";
 import { ProviderResolverService } from "../upload/provider-resolver.service";
+import { getRegionByCountry } from "../common/utils/region-mapper";
 import {
   OnNetMnoRow,
   ProviderCompareMatrixItem,
@@ -12,6 +13,7 @@ import {
   ProviderStatsSource,
   ProviderSuggestion,
   ProviderSummary,
+  Region,
   ServicePresence,
 } from "@ccip/shared-types";
 
@@ -43,6 +45,7 @@ export class ProviderService {
     source: ProviderStatsSource = ProviderStatsSource.BOTH,
     includeEmpty = false,
     service?: ServiceName,
+    region?: Region,
   ): Promise<ProviderSummary[]> {
     let aliasMatchIds: number[] = [];
     if (q) {
@@ -90,8 +93,8 @@ export class ProviderService {
 
     if (source === ProviderStatsSource.BOTH) {
       const [ir21Stats, reachStats] = await Promise.all([
-        this.computeFootprints(providerIds, ProviderStatsSource.IR21),
-        this.computeFootprints(providerIds, ProviderStatsSource.REACH_LIST),
+        this.computeFootprints(providerIds, ProviderStatsSource.IR21, region),
+        this.computeFootprints(providerIds, ProviderStatsSource.REACH_LIST, region),
       ]);
       const rows: ProviderSummary[] = [];
       for (const r of providers) {
@@ -103,7 +106,7 @@ export class ProviderService {
       return rows;
     }
 
-    const statsById = await this.computeFootprints(providerIds, source);
+    const statsById = await this.computeFootprints(providerIds, source, region);
     return providers
       .map((r) => toRow(r, statsById.get(r.id) ?? EMPTY_STATS))
       .filter((row) => (includeEmpty || row.stats.totalMnos > 0) && passesServiceFilter(row.stats));
@@ -565,6 +568,7 @@ export class ProviderService {
   private async computeFootprints(
     providerIds: number[],
     source: ProviderStatsSource,
+    region?: Region,
   ): Promise<Map<number, ProviderCoverageStats>> {
     if (providerIds.length === 0) return new Map();
 
@@ -592,6 +596,11 @@ export class ProviderService {
     type Acc = { mnos: Set<number>; countries: Set<string>; sccp: Set<number>; dsx: Set<number>; ipx: Set<number> };
     const acc = new Map<number, Acc>();
     const touch = (providerId: number, mnoId: number, country: string, service: ServiceName) => {
+      // Region is a stats-scoping filter, not a provider-list filter -- a
+      // provider with zero MNOs in the selected region just ends up with
+      // totalMnos 0 here and gets dropped by search()'s own zero-footprint
+      // filter, the same way a service filter with no matches already does.
+      if (region && getRegionByCountry(country) !== region) return;
       let a = acc.get(providerId);
       if (!a) {
         a = { mnos: new Set(), countries: new Set(), sccp: new Set(), dsx: new Set(), ipx: new Set() };

@@ -1,12 +1,14 @@
 import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { ServiceName } from "@prisma/client";
-import { ProviderStatsSource } from "@ccip/shared-types";
+import { ProviderStatsSource, Region } from "@ccip/shared-types";
+import { ALL_REGIONS } from "../common/utils/region-mapper";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ProviderService } from "./provider.service";
 
 const VALID_SOURCES: string[] = Object.values(ProviderStatsSource);
 const VALID_SERVICES: string[] = ["SCCP", "DSX", "IPX"];
+const VALID_REGIONS: string[] = ALL_REGIONS;
 
 @ApiTags("provider")
 @ApiBearerAuth()
@@ -21,10 +23,12 @@ export class ProviderController {
     @Query("source") source?: string,
     @Query("includeEmpty") includeEmpty?: string,
     @Query("service") service?: string,
+    @Query("region") region?: string,
   ) {
     const parsedSource = source && VALID_SOURCES.includes(source) ? (source as ProviderStatsSource) : ProviderStatsSource.BOTH;
     const parsedService = service && VALID_SERVICES.includes(service) ? (service as ServiceName) : undefined;
-    return this.providerService.search(q, parsedSource, includeEmpty === "true", parsedService);
+    const parsedRegion = region && VALID_REGIONS.includes(region) ? (region as Region) : undefined;
+    return this.providerService.search(q, parsedSource, includeEmpty === "true", parsedService, parsedRegion);
   }
 
   // Must come before ":id" — otherwise Nest would route /provider/suggestions

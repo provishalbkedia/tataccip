@@ -159,6 +159,7 @@ export default function ExclusivityCharts({
   rows,
   providerScopedRows,
   aggregationMode,
+  activeServiceFilter,
   activeProviderFilter,
   activeFilterSummary,
   searchQuery,
@@ -186,6 +187,13 @@ export default function ExclusivityCharts({
   // shows Tata Comm's *fully exclusive* count/share/rank here too, not the
   // broad "any service" figures regardless of which pill is active.
   aggregationMode: ExclusivityAggregationMode;
+  // The page's SERVICE master filter ("" when "All" is active) -- a
+  // different dimension from aggregationMode (which mirrors the Exclusivity
+  // Scope pill instead). Needed so the "all"/"any" aggregation modes below
+  // don't count a carrier's presence across all 3 services when `rows` has
+  // already been narrowed to e.g. "declares IPX to someone" -- see
+  // aggregateCarrierExclusivity's own serviceScope param.
+  activeServiceFilter: "SCCP" | "DSX" | "IPX" | "";
   activeProviderFilter: string;
   // Human-readable "(Region: MEA · Country: ...)"-style qualifier string --
   // see page.tsx's chartScopeFilterSummary for what feeds it and why
@@ -241,7 +249,10 @@ export default function ExclusivityCharts({
   // per service) rather than only full-portfolio exclusivity; see
   // aggregateCarrierExclusivity's own doc comment for why "any" exists and
   // how each single-dimension mode differs from it.
-  const carrierShare = React.useMemo(() => aggregateCarrierExclusivity(rows, aggregationMode), [rows, aggregationMode]);
+  const carrierShare = React.useMemo(
+    () => aggregateCarrierExclusivity(rows, aggregationMode, activeServiceFilter || undefined),
+    [rows, aggregationMode, activeServiceFilter],
+  );
 
   const { donutData, othersBreakdown } = React.useMemo(() => {
     // Top 7 named slices + an "Others" bucket for the long tail -- a donut

@@ -1206,6 +1206,7 @@ function MnoSearchPageInner() {
     },
     aggregationMode: toAggregationMode(exclusiveMode),
     rows: visibleRows,
+    serviceScope: serviceFilter || undefined,
   });
   const handleDownloadExclusivityPdf = async () => {
     setExclusivityReportMenuAnchor(null);
@@ -1640,6 +1641,7 @@ function MnoSearchPageInner() {
           rows={chartRows}
           providerScopedRows={baseFilteredRows}
           aggregationMode={toAggregationMode(exclusiveMode)}
+          activeServiceFilter={serviceFilter}
           activeProviderFilter={providerFilter}
           activeFilterSummary={chartScopeFilterSummary}
           // The committed (last-executed) free-text search term -- used only

@@ -18,6 +18,11 @@ export interface ExclusivityReportInput {
   // donut chart currently show.
   aggregationMode: ExclusivityAggregationMode;
   rows: MnoSummaryWithExclusivity[];
+  // Raw SERVICE master-filter value ("SCCP"/"DSX"/"IPX"), as opposed to
+  // scope.serviceFilter's human label -- see aggregateCarrierExclusivity's
+  // own serviceScope param for why "all"/"any" mode need this separately
+  // from the already-narrowed `rows`.
+  serviceScope?: "SCCP" | "DSX" | "IPX";
 }
 
 export interface CarrierExclusivityEntry {
@@ -72,10 +77,23 @@ export type ExclusivityAggregationMode = "all" | "full" | "sccp" | "dsx" | "ipx"
  * double-counts one MNO across services); `totalExclusiveAssignments`
  * equals that same count for the single-dimension modes (including "all"),
  * and only exceeds it under "any" (where one MNO can contribute an
- * assignment on more than one service to the same carrier). */
+ * assignment on more than one service to the same carrier).
+ *
+ * `serviceScope` narrows "all"/"any" to a single service's own array/field
+ * -- without it, both modes tally a carrier's presence across ALL THREE
+ * services on every row in `rows`, even when the caller's SERVICE master
+ * filter (a *different* dimension from this function's own `mode`) already
+ * narrowed `rows` to "has a declared IPX provider to *someone*". A carrier
+ * that's e.g. only that row's SCCP provider (not its IPX one) would still
+ * count toward the "IPX-scoped" market share/rank without this -- exactly
+ * the same "any-service leak" providerMatchesRow's own comment describes,
+ * just inside this separate aggregation instead. "sccp"/"dsx"/"ipx"/"full"
+ * modes are already single-dimension by their own definition and need no
+ * such narrowing. */
 export function aggregateCarrierExclusivity(
   rows: MnoSummaryWithExclusivity[],
   mode: ExclusivityAggregationMode = "any",
+  serviceScope?: "SCCP" | "DSX" | "IPX",
 ): CarrierExclusivityEntry[] {
   interface Acc {
     sccp: number;
@@ -95,17 +113,17 @@ export function aggregateCarrierExclusivity(
 
   if (mode === "any") {
     for (const r of rows) {
-      if (r.isExclusiveSccp && r.soleSccpProvider) {
+      if ((!serviceScope || serviceScope === "SCCP") && r.isExclusiveSccp && r.soleSccpProvider) {
         const acc = getAcc(r.soleSccpProvider);
         acc.sccp++;
         acc.mnoIds.add(r.id);
       }
-      if (r.isExclusiveDsx && r.soleDsxProvider) {
+      if ((!serviceScope || serviceScope === "DSX") && r.isExclusiveDsx && r.soleDsxProvider) {
         const acc = getAcc(r.soleDsxProvider);
         acc.dsx++;
         acc.mnoIds.add(r.id);
       }
-      if (r.isExclusiveIpx && r.soleIpxProvider) {
+      if ((!serviceScope || serviceScope === "IPX") && r.isExclusiveIpx && r.soleIpxProvider) {
         const acc = getAcc(r.soleIpxProvider);
         acc.ipx++;
         acc.mnoIds.add(r.id);
@@ -125,20 +143,26 @@ export function aggregateCarrierExclusivity(
     // undercount a carrier's true footprint against Provider Search's own
     // (correctly broader) coverage stats.
     for (const r of rows) {
-      for (const p of r.allSccpProviders) {
-        const acc = getAcc(p);
-        acc.sccp++;
-        acc.mnoIds.add(r.id);
+      if (!serviceScope || serviceScope === "SCCP") {
+        for (const p of r.allSccpProviders) {
+          const acc = getAcc(p);
+          acc.sccp++;
+          acc.mnoIds.add(r.id);
+        }
       }
-      for (const p of r.allDsxProviders) {
-        const acc = getAcc(p);
-        acc.dsx++;
-        acc.mnoIds.add(r.id);
+      if (!serviceScope || serviceScope === "DSX") {
+        for (const p of r.allDsxProviders) {
+          const acc = getAcc(p);
+          acc.dsx++;
+          acc.mnoIds.add(r.id);
+        }
       }
-      for (const p of r.allIpxProviders) {
-        const acc = getAcc(p);
-        acc.ipx++;
-        acc.mnoIds.add(r.id);
+      if (!serviceScope || serviceScope === "IPX") {
+        for (const p of r.allIpxProviders) {
+          const acc = getAcc(p);
+          acc.ipx++;
+          acc.mnoIds.add(r.id);
+        }
       }
     }
   } else {
@@ -186,17 +210,21 @@ export interface ExclusivityKpis {
   topDominantCarrierCount: number;
 }
 
-export function computeExclusivityKpis(rows: MnoSummaryWithExclusivity[], mode: ExclusivityAggregationMode = "any"): ExclusivityKpis {
+export function computeExclusivityKpis(
+  rows: MnoSummaryWithExclusivity[],
+  mode: ExclusivityAggregationMode = "any",
+  serviceScope?: "SCCP" | "DSX" | "IPX",
+): ExclusivityKpis {
   const totalMnos = rows.length;
   // "Fully Exclusive" stays the narrower full-portfolio definition, matching
   // the on-screen "Fully Exclusive" pill/badge exactly, regardless of `mode`
   // -- this headline figure is always "how locked-in is this MNO overall".
   const exclusive = rows.filter((r) => r.isFullyExclusive);
   // Top Dominant Carrier reflects whichever scope the caller is actually
-  // looking at (the page's active Exclusivity Scope pill), so the exported
-  // report's own headline never disagrees with the on-screen donut it was
-  // generated from.
-  const ranked = aggregateCarrierExclusivity(rows, mode);
+  // looking at (the page's active Exclusivity Scope pill AND SERVICE master
+  // filter), so the exported report's own headline never disagrees with the
+  // on-screen donut it was generated from.
+  const ranked = aggregateCarrierExclusivity(rows, mode, serviceScope);
   return {
     totalMnos,
     totalExclusiveMnos: exclusive.length,

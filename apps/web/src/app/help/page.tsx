@@ -56,6 +56,7 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import GroupsIcon from "@mui/icons-material/Groups";
 import RouteIcon from "@mui/icons-material/Route";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
+import HandshakeIcon from "@mui/icons-material/Handshake";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import VideoModal from "@/components/VideoModal";
@@ -807,10 +808,18 @@ function MarketIntelligenceTab() {
 
         <TechAccordion title="Unified Master Filter Strip" defaultExpanded>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            One Paper at the very top of the page carries every global scoping control — Timeframe (with a Custom
-            Date Range option), Region, Service, a Wholesale Provider search, and an MNO / Cust / TADIG search —
-            plus a &quot;Reset Filters (N active)&quot; button that only shows a count once something is actually
-            non-default. Everything below reacts to this strip.
+            Timeframe (with a Custom Date Range option), Region, and Service sit together inside a dedicated
+            bordered <strong>MASTER FILTERS</strong> panel at the very top of the page — the same treatment MNO
+            Search and Provider Search use. A neutral outline at defaults (Last 3 Months / All Regions / All
+            Services) tints blue with an &quot;Active Master Scope: …&quot; summary and its own narrower
+            &quot;Reset Master Filters&quot; the moment any one of them isn&apos;t — deliberately separate from
+            the Wholesale Provider search, MNO / Cust / TADIG search, and the full &quot;Reset Filters (N
+            active)&quot; button below it, which clear everything at once. Everything on the page reacts to this
+            strip.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            The same full-reset button is repeated next to both the top and bottom pagination bars on the
+            changes ledger, so it&apos;s always close to hand while browsing a long history.
           </Typography>
         </TechAccordion>
 
@@ -936,6 +945,12 @@ function MarketIntelligenceTab() {
                 whenever Service, Provider, or Region is active, naming every one of them at once and clearing all
                 three together in a single click.
               </>,
+              <>
+                A click-to-scroll footnote below the three charts (&quot;Showing N declared changes in the ledger
+                below — click to view details ↓&quot;) always names the ledger&apos;s own filtered row count —
+                not the charts&apos; own narrower Timeframe/Region/Service-only scope — so the number you click
+                through to always matches what actually lands on screen.
+              </>,
             ]}
           />
         </TechAccordion>
@@ -980,11 +995,22 @@ function OperatorTab() {
         </Typography>
 
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-          Dataset scope filtering
+          Master Filters — Scope, Region &amp; Service
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Each scope combines two things: which operators are included, and which source&apos;s provider names
-          are shown for them. The header badge beside the page title always reflects whichever scope is active.
+          The page&apos;s three coarsest, global scoping controls sit together inside a dedicated bordered
+          <strong> MASTER FILTERS</strong> panel above everything else — Scope, Region, and Service. The panel
+          stays a plain neutral outline while every dimension is at its default; the moment any one of them
+          isn&apos;t, it tints blue with a teal status dot on the badge and an <strong>&quot;Active Master
+          Scope: …&quot;</strong> summary line naming every non-default dimension, plus its own{" "}
+          <strong>&quot;Reset Master Filters&quot;</strong> action — deliberately narrower than the page&apos;s
+          full Reset (below), so clearing Scope/Region/Service back to defaults never also throws away a search
+          term or Wholesale Provider filter you&apos;re still mid-way through.
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Each Scope option combines two things: which operators are included, and which source&apos;s provider
+          names are shown for them. The header badge beside the page title always reflects whichever scope is
+          active.
         </Typography>
         <Bullets
           items={[
@@ -1015,10 +1041,25 @@ function OperatorTab() {
           ]}
         />
         <ProTip>
-          The Dataset Scope, Exclusivity Scope, Region, and Wholesale Provider filters all combine — e.g. &quot;As
-          per Reach List&quot; + &quot;SCCP Solo&quot; + a specific carrier shows exactly that carrier&apos;s
-          Reach-List-sourced SCCP monopolies, nothing broader.
+          The Dataset Scope, Region, Service, Exclusivity Scope, and Wholesale Provider filters all combine —
+          e.g. &quot;As per Reach List&quot; + &quot;SCCP Solo&quot; + a specific carrier shows exactly that
+          carrier&apos;s Reach-List-sourced SCCP monopolies, nothing broader.
         </ProTip>
+        <ProTip>
+          <strong>Zero results under &quot;IR.21 Verified&quot; doesn&apos;t always mean &quot;not on this
+          platform.&quot;</strong> A real operator can be declared only commercially — never having filed an
+          official GSMA IR.21 XML at all. If a search comes back empty in the default Scope but the same term
+          matches something once Reach List records are included, CCIP shows a dialog naming exactly how many
+          matches exist under <strong>All MNOs (IR.21 + Reach List)</strong>, plus a persistent inline banner with
+          the same one-click &quot;Switch to All MNOs&quot; action if you dismiss the dialog — it preserves your
+          search term, re-runs it, and scrolls straight to the results.
+        </ProTip>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          The <strong>Service</strong> pill (All / SCCP / DSX / IPX), inside the same Master Filters panel,
+          narrows to operators declaring at least one provider on that specific protocol layer — combine it with
+          Region for a question like &quot;every APAC operator with a declared IPX provider&quot; before you ever
+          touch the Exclusivity or Wholesale Provider filters below it.
+        </Typography>
 
         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, mb: 2, mt: 2 }}>
           <Table size="small">
@@ -1174,11 +1215,21 @@ function OperatorTab() {
           into one carrier&apos;s own accounts.
         </ProTip>
         <Tip>
-          Filters can be reset from three places, whichever is closest to hand: the amber-bordered
-          &quot;Reset All Filters&quot; button in the Master Scope Bar, a &quot;Reset Filters to Global View&quot;
-          button right inside the chart panel&apos;s own header once anything is narrowing it, or any individual
-          × chip in the Active Output Scope Banner above the table.
+          Filters can be reset from wherever you actually are on the page: &quot;Reset Master Filters&quot; inside
+          the Master Filters panel (Scope/Region/Service only), the amber &quot;Reset All Filters&quot; button
+          just below it (everything, including search and Wholesale Provider), a &quot;Reset Filters to Global
+          View&quot; button inside the chart panel&apos;s own header, any individual × chip in the Active Output
+          Scope Banner above the table, or — on a long result list — the same &quot;Reset All Filters&quot;
+          button repeated next to both the top and bottom pagination bars, so browsing page 6 of a large roster
+          never means scrolling all the way back to the top just to clear a filter.
         </Tip>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Every donut and bar chart&apos;s own round <strong>↺</strong> reset icon (top-right of its card, shown
+          only once a filter is actually narrowing it) clears every filter the same &quot;Reset All Filters&quot;
+          button does — and a click-to-scroll footnote under the donut (&quot;Showing N declared MNOs — click to
+          view details in the table below ↓&quot;) always lands you on the exact rows behind whatever the chart is
+          currently showing.
+        </Typography>
         <Warn>
           <strong>Key distinction:</strong> a single-service pill (e.g. SCCP Solo) plus a Wholesale Provider
           filter shows only rows where that carrier is <em>specifically</em> the exclusive provider for that
@@ -1318,15 +1369,34 @@ function ProviderSearchTab() {
         <Typography variant="subtitle2" fontWeight={700} gutterBottom>
           Provider Directory &amp; Footprint Analytics
         </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Dataset Scope, Region, and Service sit together inside the same bordered <strong>MASTER
+          FILTERS</strong> panel MNO Search uses — neutral outline at defaults, tinting blue with an
+          &quot;Active Master Scope: …&quot; summary and its own narrower &quot;Reset Master Filters&quot; the
+          moment any one of them isn&apos;t.
+        </Typography>
         <Bullets
           items={[
             "Aggregated metrics per provider — total MNOs served, total countries covered, and a protocol breakdown (SCCP / DSX / IPX counts).",
             'Three high-contrast Dataset Scope pills — "As per IR.21 Data" (declared footprint), "As per Reach List" (commercial claimed footprint), or "Both (Combined)" (union view, one row per source per provider).',
-            'A Reset button beside Search clears the search term and returns Dataset Scope to its own default — greyed out whenever nothing is actually filtered.',
+            <>
+              <strong>Region</strong> (All / Americas / MEA / Europe / APAC / Non-Terrestrial) narrows every
+              provider&apos;s own stats to just the MNOs it serves in that region — a provider with global reach
+              can rank very differently once you scope to one region.
+            </>,
+            <>
+              <strong>Service</strong> (All / SCCP / DSX / IPX) narrows to providers with a declared footprint on
+              that protocol layer, and re-ranks the coverage chart below by that service specifically — see
+              &quot;Provider Coverage Overview&quot; below for why this matters.
+            </>,
+            'A Reset button beside Search clears the search term and returns Dataset Scope, Region, and Service all back to their own defaults — greyed out whenever nothing is actually filtered.',
             <>
               An <strong>Active Filters ribbon</strong> appears whenever a search term or non-default Dataset
-              Scope is applied — a removable chip per dimension plus a &quot;Reset All Filters&quot; button, so
-              narrowing to one carrier never traps you without a visible way back to the full list.
+              Scope/Region/Service is applied — a removable chip per dimension plus a &quot;Reset All
+              Filters&quot; button, so narrowing to one carrier never traps you without a visible way back to the
+              full list. The same &quot;Reset All Filters&quot; button is repeated next to both the top and
+              bottom pagination bars on the directory table below, so it&apos;s never far from wherever you&apos;re
+              actually scrolled to.
             </>,
           ]}
         />
@@ -1343,12 +1413,20 @@ function ProviderSearchTab() {
           items={[
             <>
               <strong>Tata Comm Coverage Standing</strong> — a teal KPI banner showing Tata Comm&apos;s own MNO
-              count, country count, and rank among every provider in the current search scope.
+              count, country count, and rank among every provider in the current search scope. The MNO count and
+              rank switch to the active Service&apos;s own figure once one is selected (e.g. &quot;5 IPX
+              MNOs&quot; instead of the unrelated overall total), so the banner always agrees with the chart next
+              to it.
             </>,
             <>
-              <strong>Top Providers by MNO Coverage</strong> — a ranked bar chart (top 10) of every provider by
-              total MNOs served; Tata Comm&apos;s own bar is always highlighted in gold regardless of rank. Click
-              any bar to filter the search straight to that provider.
+              <strong>Top Providers by MNO Coverage</strong> — a ranked bar chart (top 10) of every provider,
+              retitling itself and re-ranking the moment a Service filter is active: with &quot;All&quot;
+              selected it&apos;s ranked by total MNOs served, but under e.g. Service: IPX it becomes
+              &quot;Top Providers by IPX Coverage&quot;, ranked strictly by each provider&apos;s own declared IPX
+              MNO count — a provider dominant overall but marginal on that one service correctly drops down the
+              list instead of still showing at the top by an unrelated total. Tata Comm&apos;s own bar is always
+              highlighted in gold regardless of rank. Click any bar to filter the search straight to that
+              provider, or the footnote below the chart to scroll straight to the table.
             </>,
             <>
               <strong>Service Coverage Mix</strong> — total SCCP / DSX / IPX provider-to-MNO relationships summed
@@ -1788,10 +1866,243 @@ function GovernanceTab() {
   );
 }
 
+// ---------- Sales Playbook ----------
+
+const SALES_GLOSSARY: [string, string, string][] = [
+  [
+    "TADIG",
+    "An operator's unique 5-letter GSMA network ID (e.g. USAAT for AT&T).",
+    "Their account number. Every filter, chart, and export on this platform keys off it — when you quote a number to a prospect, quote the TADIG alongside it so it's traceable.",
+  ],
+  [
+    "GSMA IR.21",
+    "The official, GSMA-registered roaming interconnect declaration every operator files.",
+    "It's the operator's own signed statement of who its wholesale carriers are — the strongest evidence you can bring into a call, because it isn't a claim, it's their own filing.",
+  ],
+  [
+    "Reach List",
+    "A wholesale carrier's own commercial claim of which operators it can reach.",
+    "Marketing/BD reachability, not a binding network filing — it can show operators IR.21 never sees (a real account with no official IR.21 on file) and can also disagree with IR.21 on who actually holds a service today.",
+  ],
+  [
+    "SCCP",
+    "Roaming signaling (SS7) — the layer that makes voice calls and SMS work while roaming.",
+    "\"Can their phone call/SMS roam here\" — the oldest, most conservative service, and often the last one still shared with a legacy incumbent.",
+  ],
+  [
+    "DSX",
+    "LTE/Diameter data-roaming signaling.",
+    "\"Can their 4G/VoLTE roam here\" — the layer carriers most often win or lose first as an operator modernizes.",
+  ],
+  [
+    "IPX",
+    "GRX/IPX data transport — the physical/network pipe data roaming actually travels over.",
+    "The layer with the most switching activity platform-wide — start here when hunting for recent displacement momentum.",
+  ],
+  [
+    "Single-Provider Lock-in",
+    "One carrier is the sole declared provider for a service (or all three at once, under \"Fully Exclusive\").",
+    "Either a single point of failure you can pitch dual-homed resiliency against on a competitor's account, or an account you need to defend if it's currently ours.",
+  ],
+  [
+    "Bilateral Displacement (REPLACED event)",
+    "A documented event where one carrier is recorded OUT and a named carrier is recorded IN, on the same service, for the same operator.",
+    "Not a guess or a rumor — it's on record. It's proof a switch away from an incumbent is commercially possible for that exact operator, which is the strongest kind of lead you can act on.",
+  ],
+];
+
+const MASTER_FILTER_BEST_PRACTICES = [
+  <>
+    <strong>Check Service before you quote a number.</strong> &quot;Tata Comm covers 61 MNOs&quot; and
+    &quot;Tata Comm covers 21 IPX MNOs&quot; are both true, correctly-computed answers to two <em>different</em>{" "}
+    questions — the first is overall footprint across all three services, the second is IPX specifically. Reading
+    one figure while a different Service pill is active than the one you meant to quote is the single most common
+    way to accidentally misstate a coverage number in front of a client. Always glance at the Master Filters
+    panel&apos;s own &quot;Active Master Scope: …&quot; line before you screenshot or read out a KPI.
+  </>,
+  <>
+    <strong>Region narrows the population, not just the display.</strong> Every count, chart, and rank recomputes
+    for just that region&apos;s operators — a provider dominant globally can rank quite differently once you
+    scope to, say, APAC alone. Use it to build a territory-accurate pitch rather than leading with a global
+    number a regional prospect can&apos;t verify against their own market.
+  </>,
+  <>
+    <strong>Dataset Scope changes which data source is telling the story.</strong> &quot;IR.21 Verified&quot;
+    is the operator&apos;s own binding filing — the strongest evidence in a contract negotiation or an RFP
+    response. &quot;As per Reach List&quot; is a carrier&apos;s own commercial claim — useful for finding accounts
+    IR.21 never saw, but weaker evidence if a prospect pushes back on where a number came from. Know which one
+    you&apos;re standing on before you cite a figure as fact.
+  </>,
+  <>
+    <strong>Reset from the right place, not just any &quot;reset.&quot;</strong> &quot;Reset Master Filters&quot;
+    (inside the panel) clears only Scope/Region/Service — it deliberately leaves a search term or Wholesale
+    Provider filter you&apos;re still using in place. The full &quot;Reset All Filters&quot; button clears
+    everything, including that search. Before opening a shared screen with a prospect, use the full reset if you
+    want a clean, unfiltered baseline — a half-reset scope with an old search term still applied is an easy way to
+    show a client a misleadingly narrow number.
+  </>,
+  <>
+    <strong>Combine, don&apos;t stack blindly.</strong> Region + Service + a specific Wholesale Provider is a
+    precise, defensible question (&quot;every APAC operator declaring a competitor for DSX&quot;). Five filters
+    stacked at once with an Exclusivity pill and a free-text search on top usually means the result set is now so
+    narrow it&apos;s just one or two rows — good for verifying a specific account, but a poor number to generalize
+    from in a market-sizing conversation.
+  </>,
+];
+
+function SalesPlaybookTab() {
+  return (
+    <Box role="tabpanel" className="guide-tabpanel">
+      <Section title="Sales Enablement Playbook">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          This tab is written for account reps and BD, not engineers — a five-minute reference to consult before
+          every prospect call, competitive review, or account-planning session. Every control below is tied to a
+          conversation you can actually have with a customer, not just what it technically does.
+        </Typography>
+        <StrategicTakeaway>
+          The platform&apos;s core commercial edge over a quarterly spreadsheet: it turns &quot;we think we&apos;re
+          losing ground in APAC&quot; into &quot;Operator X replaced us with Carrier Y on DSX on this exact date,
+          here&apos;s the filing that proves it.&quot; Lead every pitch with evidence, not a hunch.
+        </StrategicTakeaway>
+
+        <TechAccordion title="Quick-Start Glossary for Sales Reps" defaultExpanded>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            The eight terms you&apos;ll hear in every internal conversation about this platform — plain English
+            first, why it matters commercially second.
+          </Typography>
+          <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>Term</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Plain-English definition</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Why it matters in a sales conversation</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {SALES_GLOSSARY.map(([term, def, why]) => (
+                  <TableRow key={term}>
+                    <TableCell sx={{ fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{term}</TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{def}</TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{why}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </TechAccordion>
+
+        <TechAccordion title="Master Filters &amp; Scoping Best Practices" defaultExpanded>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Every search page (MNO / Cust Search, Provider Search, Market Intelligence) frames its coarsest
+            controls — Dataset Scope, Region, Service — inside the same bordered &quot;MASTER FILTERS&quot; panel.
+            Used well, this is how you build a defensible number in thirty seconds. Used carelessly, it&apos;s how
+            a correct-but-misread number ends up in a client deck.
+          </Typography>
+          <Bullets items={MASTER_FILTER_BEST_PRACTICES} />
+          <Warn>
+            <strong>The most common mistake:</strong> quoting an &quot;Overall&quot; coverage figure while
+            believing you&apos;re looking at a service-specific one, or vice versa. The banner and chart titles
+            always name the active scope in plain words (e.g. &quot;Tata Comm Footprint Standing (Scope: IR.21
+            Verified · Declared IPX Only)&quot;) — read the parenthetical before you read the number.
+          </Warn>
+        </TechAccordion>
+
+        <TechAccordion title="Common Commercial Questions &amp; Troubleshooting FAQs" defaultExpanded>
+          <Bullets
+            items={[
+              <>
+                <strong>&quot;Why does an MNO show in Reach List but not in IR.21?&quot;</strong> Because Reach
+                List is a wholesale carrier&apos;s own commercial claim, and a real operator can be declared only
+                commercially — it may never have filed an official GSMA IR.21 XML at all. This isn&apos;t a data
+                gap to apologize for; it&apos;s exactly the kind of account IR.21-only competitors can&apos;t see.
+                Switch Dataset Scope to &quot;As per Reach List&quot; or &quot;All MNOs (IR.21 + Reach List)&quot;
+                to see it. If a search comes back empty under the default IR.21-only scope, the platform itself
+                offers a one-click &quot;Switch to All MNOs&quot; recovery banner the moment this happens.
+              </>,
+              <>
+                <strong>&quot;Why did an MNO disappear when I filtered by DSX?&quot;</strong> The Service filter
+                only keeps operators that have declared <em>a</em> DSX provider at all — if that specific operator
+                has never declared one (common for an operator still on 2G/3G-only roaming agreements), filtering
+                to DSX correctly removes it. Switch back to &quot;All&quot; Service to confirm the operator itself
+                is still there, then check its own Detail page for which services it actually declares.
+              </>,
+              <>
+                <strong>&quot;How do I export exclusivity matrices to Excel for an RFP or client pitch?&quot;</strong>{" "}
+                &quot;Download Exclusivity MIS Report&quot; on MNO Search (or &quot;Download Provider Report&quot;
+                on Provider Search) gives you a formatted .xlsx workbook — KPI summary tab plus the full roster
+                with data-bar conditional formatting — scoped to exactly whatever Master Filters and search are
+                currently active. Set your scope first, export second, so the workbook matches the story you&apos;re
+                about to tell.
+              </>,
+              <>
+                <strong>&quot;A competitor claims market dominance in a region — how do I check that fast?&quot;</strong>{" "}
+                Provider Search, Region set to theirs, Service set to whichever layer they&apos;re claiming. The
+                &quot;Top Providers by [Service] Coverage&quot; chart and the Tata Comm Coverage Standing banner
+                give you a declared-data answer in under a minute — see Scenario B in the live demo script for the
+                full click path.
+              </>,
+              <>
+                <strong>&quot;The numbers on two pages don&apos;t match — which one is right?&quot;</strong>{" "}
+                They&apos;re very likely answering different questions, not disagreeing. The Wholesale Carrier
+                Market Capture &amp; Churn Pivot (Market Intelligence) is a market-wide view scoped only to
+                Timeframe/Region/Service — it deliberately does <em>not</em> narrow to a Wholesale Provider search
+                or MNO search term the way the ledger table right below it does; a note next to the pivot names
+                this explicitly whenever a search is active but not reflected in the pivot&apos;s own numbers.
+              </>,
+            ]}
+          />
+        </TechAccordion>
+
+        <TechAccordion title="Step-by-Step Playbooks for Common Sales Tasks" defaultExpanded>
+          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+            Playbook 1 — Account Pre-Meeting Prep (5-Minute Audit)
+          </Typography>
+          <Bullets
+            items={[
+              "Open MNO / Cust Search, search the operator by name or TADIG.",
+              "Check the Interconnect Comparison Grid on its Detail page — note any Matched vs. IR.21-Only vs. Reach-List-Only discrepancy; a mismatch is itself a talking point (\"your declared filing and your commercial reach lists disagree here — worth a conversation\").",
+              "Note which services (SCCP/DSX/IPX) are Single-Provider Lock-in vs. shared — this is your resiliency/dual-homing pitch if a competitor holds the exclusive slot, or your renewal-defense flag if we do.",
+              "Check Market Intelligence, search that same operator/TADIG, All Time — any REPLACED event in their history tells you they've switched carriers before, so a switch conversation isn't hypothetical for them.",
+              "Walk in with one specific, evidenced observation, not a generic pitch deck.",
+            ]}
+          />
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+            Playbook 2 — Territory Coverage Review
+          </Typography>
+          <Bullets
+            items={[
+              "Provider Search, Region set to your territory, Service set to All first for the overall picture, then each of SCCP/DSX/IPX in turn.",
+              "Read the Tata Comm Coverage Standing banner for each — rank and share by service tells you exactly where you're strong (defend) vs. weak (target) in that territory.",
+              "Cross-check the weak services against MNO / Cust Search filtered to the same Region + Service, Exclusivity Scope = \"Any Service Exclusive\" — this is your literal target account list for that gap.",
+              "Export the Provider Report (PDF) for the territory to bring into a regional QBR or leadership review.",
+            ]}
+          />
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+            Playbook 3 — Competitive Displacement Hunting
+          </Typography>
+          <Bullets
+            items={[
+              "Market Intelligence, Timeframe = Last 3 or Last 12 Months, Region = your focus territory.",
+              "Read the Wholesale Carrier Market Capture & Churn Pivot's \"Losing Share\" rows first — every named carrier there just lost real accounts, on record.",
+              "Expand [+] on a losing carrier to see its own migration list — Date, MNO/Cust, Service, and exactly who displaced it.",
+              "Prioritize accounts displaced onto a carrier other than us — that's proof the account is switchable and currently in-play, not evidence it's locked to a competitor.",
+              "Move fast: a recent REPLACED event means the account just went through a vendor transition and is more receptive to a follow-up conversation than one that's been stable for years.",
+            ]}
+          />
+        </TechAccordion>
+      </Section>
+    </Box>
+  );
+}
+
 // ---------- Page ----------
 
 const TABS = [
   { label: "Overview & Architecture", icon: <DashboardIcon fontSize="small" />, Panel: OverviewTab },
+  { label: "Sales Playbook", icon: <HandshakeIcon fontSize="small" />, Panel: SalesPlaybookTab },
   { label: "Market Intelligence", icon: <TimelineIcon fontSize="small" />, Panel: MarketIntelligenceTab },
   { label: "MNO / Cust Search & Detail", icon: <CellTowerIcon fontSize="small" />, Panel: OperatorTab },
   { label: "Provider Search", icon: <BusinessIcon fontSize="small" />, Panel: ProviderSearchTab },

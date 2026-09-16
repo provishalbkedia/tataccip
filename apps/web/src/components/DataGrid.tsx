@@ -112,6 +112,7 @@ export default function DataGrid<T>({
   getRowId,
   deselectSignal,
   renderRowCount,
+  topBarExtra,
 }: {
   rowData: T[];
   // Column groups (ColGroupDef, with nested `children`) are accepted too —
@@ -159,6 +160,12 @@ export default function DataGrid<T>({
   // Market Intelligence page. Omit for the default plain number (every
   // other page using this grid is unaffected).
   renderRowCount?: (rowCount: number) => React.ReactNode;
+  // Extra action rendered in the TOP bar, alongside the top pagination
+  // controls and Export CSV button -- e.g. a page's own "Reset All
+  // Filters", so it's reachable without scrolling back up past a long
+  // grid. Only shows once showTopPagination or exportFileName is already
+  // rendering that bar at all; every other DataGrid caller is unaffected.
+  topBarExtra?: React.ReactNode;
 }) {
   const gridRef = React.useRef<AgGridReact<T>>(null);
   const [pageInfo, setPageInfo] = React.useState<PageInfo>({ page: 0, totalPages: 1, pageSize: 20, rowCount: 0 });
@@ -311,7 +318,7 @@ export default function DataGrid<T>({
 
   return (
     <Box>
-      {(exportFileName || showTopPagination) && (
+      {(exportFileName || showTopPagination || topBarExtra) && (
         <Box
           sx={{
             display: "flex",
@@ -324,6 +331,7 @@ export default function DataGrid<T>({
           }}
         >
           {showTopPagination ? <PaginationBar {...paginationBarProps} /> : <Box />}
+          {topBarExtra}
           {exportFileName && (
             <Button
               size="small"

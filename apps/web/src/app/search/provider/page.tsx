@@ -254,6 +254,30 @@ function ProviderSearchPageInner() {
 
   const hasActiveFilters = !!q || source !== ProviderStatsSource.IR21 || !!service || !!region;
 
+  // Shared with both the top and bottom pagination bars (via DataGrid's
+  // topBarExtra prop and the sibling Box below it) -- a long result grid
+  // otherwise leaves whichever pagination bar the user actually scrolled to
+  // without its own reset affordance, forcing a trip back to the Master
+  // Filters strip at the very top of the page.
+  const resetAllFiltersButton = hasActiveFilters ? (
+    <Button
+      size="small"
+      variant="outlined"
+      startIcon={<RestartAltIcon fontSize="small" />}
+      onClick={resetAllFilters}
+      sx={{
+        fontWeight: 600,
+        textTransform: "none",
+        borderColor: "#FECACA",
+        color: "#DC2626",
+        bgcolor: "#FEF2F2",
+        "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
+      }}
+    >
+      Reset All Filters
+    </Button>
+  ) : null;
+
   // Master Filter Container's own narrower scope -- Dataset Scope, Region,
   // and Service only, deliberately excluding the free-text search term
   // resetAllFilters above also clears. Resetting just these three shouldn't
@@ -889,32 +913,21 @@ function ProviderSearchPageInner() {
            scannable lookup now; multi-provider selection lives entirely on
            the Benchmark tab below (which shares this same `results` data
            and `columnDefs`, just with selection turned on). */}
-        <DataGrid<ProviderSummary> rowData={results} columnDefs={columnDefs} getRowId={(row) => row.id} showTopPagination />
+        <DataGrid<ProviderSummary>
+          rowData={results}
+          columnDefs={columnDefs}
+          getRowId={(row) => row.id}
+          showTopPagination
+          topBarExtra={resetAllFiltersButton}
+        />
 
-        {/* Bottom-of-page reset affordance -- mirrors MNO Search's own: on a
-           long result grid, the pagination bar the user is actually looking
-           at (having scrolled down to browse further pages) sits well below
-           the Master Filters strip's own reset button. */}
-        {hasActiveFilters && (
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<RestartAltIcon fontSize="small" />}
-              onClick={resetAllFilters}
-              sx={{
-                fontWeight: 600,
-                textTransform: "none",
-                borderColor: "#FECACA",
-                color: "#DC2626",
-                bgcolor: "#FEF2F2",
-                "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
-              }}
-            >
-              Reset All Filters
-            </Button>
-          </Box>
-        )}
+        {/* Bottom-of-page reset affordance -- the same resetAllFiltersButton
+           DataGrid's topBarExtra already renders above the grid, repeated
+           below it too: on a long result grid, the pagination bar the user
+           is actually looking at (having scrolled down to browse further
+           pages) sits well below the Master Filters strip's own reset
+           button. */}
+        {resetAllFiltersButton && <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>{resetAllFiltersButton}</Box>}
         </>
         ) : (
         <>

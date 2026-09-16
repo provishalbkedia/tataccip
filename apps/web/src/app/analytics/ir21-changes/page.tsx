@@ -740,6 +740,31 @@ export default function Ir21ChangesPage() {
     setProviderInput("");
   };
 
+  // Shared with both the top and bottom pagination bars (via DataGrid's
+  // topBarExtra prop and the sibling Box below it) -- a long ledger
+  // otherwise leaves whichever pagination bar the user actually scrolled to
+  // without its own reset affordance, forcing a trip back to the Master
+  // Filters strip at the very top of the page.
+  const resetAllFiltersButton =
+    activeFilterCount > 0 ? (
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<FilterAltOffIcon fontSize="small" />}
+        onClick={resetAllFilters}
+        sx={{
+          fontWeight: 600,
+          textTransform: "none",
+          borderColor: "#FECACA",
+          color: "#DC2626",
+          bgcolor: "#FEF2F2",
+          "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
+        }}
+      >
+        Reset All Filters
+      </Button>
+    ) : null;
+
   const resetMasterFilters = () => {
     setTimeframe("3m");
     setCustomRange(null);
@@ -1399,32 +1424,16 @@ export default function Ir21ChangesPage() {
           onRowClicked={(row) => router.push(`/search/mno/${row.mnoId}`)}
           showTopPagination
           height={600}
+          topBarExtra={resetAllFiltersButton}
         />
 
-        {/* Bottom-of-page reset affordance -- mirrors MNO/Provider Search's
-           own: on a long ledger, the pagination bar the user is actually
-           looking at (having scrolled down to browse further pages) sits
-           well below the Master Filters strip's own reset button. */}
-        {activeFilterCount > 0 && (
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<FilterAltOffIcon fontSize="small" />}
-              onClick={resetAllFilters}
-              sx={{
-                fontWeight: 600,
-                textTransform: "none",
-                borderColor: "#FECACA",
-                color: "#DC2626",
-                bgcolor: "#FEF2F2",
-                "&:hover": { bgcolor: "#FEE2E2", borderColor: "#FCA5A5" },
-              }}
-            >
-              Reset All Filters
-            </Button>
-          </Box>
-        )}
+        {/* Bottom-of-page reset affordance -- the same resetAllFiltersButton
+           DataGrid's topBarExtra already renders above the grid, repeated
+           below it too: on a long ledger, the pagination bar the user is
+           actually looking at (having scrolled down to browse further
+           pages) sits well below the Master Filters strip's own reset
+           button. */}
+        {resetAllFiltersButton && <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>{resetAllFiltersButton}</Box>}
         </>
         )}
         </Box>

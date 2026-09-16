@@ -38,6 +38,7 @@ import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import DateRangeIcon from "@mui/icons-material/DateRange";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import MasterFilterContainer from "@/components/MasterFilterContainer";
 import DataGrid from "@/components/DataGrid";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
 import InfoTooltip from "@/components/InfoTooltip";
@@ -739,6 +740,13 @@ export default function Ir21ChangesPage() {
     setProviderInput("");
   };
 
+  const resetMasterFilters = () => {
+    setTimeframe("3m");
+    setCustomRange(null);
+    setRegion("");
+    setService("");
+  };
+
   // ---- MIS report downloads ----
   // pdfReport/excelReport/csvReport (and the heavy libraries they wrap --
   // jspdf, jspdf-autotable, exceljs) are dynamically imported only once a
@@ -753,6 +761,14 @@ export default function Ir21ChangesPage() {
   // dataset behind the table -- every matching row, not just the current
   // grid page) for the ledger and every chart/aggregate derived from it.
   const dateScopeLabel = customRange ? `${formatDateShort(customRange.from)} → ${formatDateShort(customRange.to)}` : TIMEFRAME_LABELS[timeframe];
+
+  // Master Filter Container's own narrower scope -- Timeframe/Custom Range,
+  // Region, and Service only, deliberately excluding the Wholesale
+  // Provider/MNO search box and Change-type refinement resetAllFilters
+  // above also clears. Resetting just these three shouldn't throw away a
+  // search someone's mid-typing.
+  const masterScopeIsFiltered = timeframe !== "3m" || !!customRange || !!region || !!service;
+  const masterScopeSummary = [dateScopeLabel, region || "All Regions", service ? `${service} Only` : "All Services"].join(" · ");
 
   const buildReportInput = (): MisReportInput => ({
     generatedAt: new Date(),
@@ -816,7 +832,13 @@ export default function Ir21ChangesPage() {
   // Drawer was built to avoid.
   const masterFilterBody = (
     <>
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3, mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+      <MasterFilterContainer
+        isFiltered={masterScopeIsFiltered}
+        activeScopeSummary={masterScopeSummary}
+        onResetMasterFilters={resetMasterFilters}
+      >
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", rowGap: 1.5, columnGap: 3 }}>
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             <Typography variant="body2" color="text.secondary">
@@ -968,6 +990,8 @@ export default function Ir21ChangesPage() {
             ))}
           </ToggleButtonGroup>
         </Box>
+      </Box>
+      </MasterFilterContainer>
       </Box>
 
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2 }}>

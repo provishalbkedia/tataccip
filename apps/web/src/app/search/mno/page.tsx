@@ -41,6 +41,7 @@ import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import SearchOffIcon from "@mui/icons-material/SearchOff";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import MasterFilterContainer from "@/components/MasterFilterContainer";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ColumnHeaderWithSubtotal from "@/components/ColumnHeaderWithSubtotal";
@@ -1033,6 +1034,24 @@ function MnoSearchPageInner() {
     router.push(pathname, { scroll: false });
   }, [pathname, router]);
 
+  // Master Filter Container's own narrower scope -- Dataset Scope, Region,
+  // and Service only, deliberately excluding every secondary/ad-hoc filter
+  // (search box, TADIG, Country, Wholesale Provider, exclusivity mode)
+  // resetAllFilters above also clears. Resetting just these three shouldn't
+  // throw away a search someone's mid-typing.
+  const masterScopeIsFiltered = datasetScope !== "ir21" || !!region || !!serviceFilter;
+  const masterScopeSummary = [
+    DATASET_SCOPE_LABELS[datasetScope],
+    region || "All Regions",
+    serviceFilter ? `${serviceFilter} Service Only` : "All Services",
+  ].join(" · ");
+  const resetMasterFilters = React.useCallback(() => {
+    setDatasetScope("ir21");
+    setRegion("");
+    setServiceFilter("");
+    pushParams({ datasetScope: "ir21", region: "", service: "" });
+  }, [pushParams]);
+
   const clearServiceFilter = React.useCallback(() => {
     setServiceFilter("");
     pushParams({ service: "" });
@@ -1228,12 +1247,18 @@ function MnoSearchPageInner() {
           />
         </Box>
 
-        {/* Master Scope Bar -- Dataset Scope and Region combined into one
-           compact row above the search strip (previously two separate
-           stacked rows below it), so the page's two coarsest "which slice
-           of the market" controls read together, above the fine-grained
-           search fields rather than sandwiched beneath them. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+        {/* Master Scope Bar -- Dataset Scope, Region, and Service, framed
+           together in their own MasterFilterContainer so this page's
+           coarsest "which slice of the market" controls read as one
+           distinct block, visually separate from the secondary/ad-hoc
+           filters (search box, TADIG, Country, Wholesale Provider) below. */}
+        <Box sx={{ mb: 1.5 }}>
+        <MasterFilterContainer
+          isFiltered={masterScopeIsFiltered}
+          activeScopeSummary={masterScopeSummary}
+          onResetMasterFilters={resetMasterFilters}
+        >
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
               Scope
@@ -1316,7 +1341,10 @@ function MnoSearchPageInner() {
               ))}
             </ToggleButtonGroup>
           </Box>
+        </Box>
+        </MasterFilterContainer>
 
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mt: 1 }}>
           <Tooltip
             title={
               onlyWithProviders
@@ -1325,7 +1353,6 @@ function MnoSearchPageInner() {
             }
           >
             <FormControlLabel
-              sx={{ ml: { xs: 0, md: "auto" } }}
               control={
                 <Switch
                   checked={onlyWithProviders}
@@ -1347,6 +1374,7 @@ function MnoSearchPageInner() {
               startIcon={<RestartAltIcon fontSize="small" />}
               onClick={resetAllFilters}
               sx={{
+                ml: { xs: 0, md: "auto" },
                 fontWeight: 600,
                 textTransform: "none",
                 borderColor: "#F59E0B",
@@ -1358,7 +1386,8 @@ function MnoSearchPageInner() {
               Reset All Filters
             </Button>
           )}
-        </Paper>
+        </Box>
+        </Box>
 
         <Paper sx={{ p: 2, mb: 1.5 }}>
           <Grid container spacing={2} alignItems="center">

@@ -33,6 +33,7 @@ import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import MasterFilterContainer from "@/components/MasterFilterContainer";
 import DataGrid from "@/components/DataGrid";
 import SuggestionAutocomplete from "@/components/SuggestionAutocomplete";
 import ProviderCoverageCharts from "./ProviderCoverageCharts";
@@ -252,6 +253,20 @@ function ProviderSearchPageInner() {
   }, [pathname, router]);
 
   const hasActiveFilters = !!q || source !== ProviderStatsSource.IR21 || !!service || !!region;
+
+  // Master Filter Container's own narrower scope -- Dataset Scope, Region,
+  // and Service only, deliberately excluding the free-text search term
+  // resetAllFilters above also clears. Resetting just these three shouldn't
+  // throw away a search someone's mid-typing.
+  const masterScopeIsFiltered = source !== ProviderStatsSource.IR21 || !!service || !!region;
+  const masterScopeSummary = [
+    SOURCE_PILL_LABEL[source],
+    region ?? "All Regions",
+    service ? `${service} Providers Only` : "All Services",
+  ].join(" · ");
+  const resetMasterFilters = React.useCallback(() => {
+    pushParams(q, ProviderStatsSource.IR21, null, null);
+  }, [pushParams, q]);
 
   // Drives the Active Filters ribbon -- one entry per narrowing dimension
   // currently applied, each individually dismissible, so a user combining
@@ -569,12 +584,18 @@ function ProviderSearchPageInner() {
 
         {activeTab === "directory" ? (
         <>
-        {/* Dataset Scope sits above the search bar now, matching MNO
-           Search's own Master Scope Bar -> search strip order -- the
-           coarsest "which slice of the market" control reads first, above
-           the fine-grained free-text field rather than sandwiched beneath
-           it. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+        {/* Dataset Scope, Region, and Service, framed together in their own
+           MasterFilterContainer -- matching MNO Search's identical Master
+           Scope Bar, so both search pages scope consistently and this
+           page's coarsest "which slice of the market" controls read as one
+           distinct block above the free-text search bar. */}
+        <Box sx={{ mb: 1.5 }}>
+        <MasterFilterContainer
+          isFiltered={masterScopeIsFiltered}
+          activeScopeSummary={masterScopeSummary}
+          onResetMasterFilters={resetMasterFilters}
+        >
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Dataset Scope
           </Typography>
@@ -597,17 +618,9 @@ function ProviderSearchPageInner() {
             <ToggleButton value={ProviderStatsSource.REACH_LIST}>As per Reach List</ToggleButton>
             <ToggleButton value={ProviderStatsSource.BOTH}>Both (Combined)</ToggleButton>
           </ToggleButtonGroup>
-        </Paper>
+        </Box>
 
-        {/* Region & Service Master Filter Strip -- mirrors MNO Search's own
-           Master Scope Bar so both search pages scope consistently. Region
-           narrows which MNOs' declarations count toward each provider's
-           stats (server-side, via getRegionByCountry); Service narrows to
-           providers with a declared footprint on that protocol layer --
-           both already existed as URL-synced state (region/service query
-           params), just with no on-page control to set them directly
-           before now. */}
-        <Paper variant="outlined" sx={{ mb: 1.5, p: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
               Region
@@ -659,7 +672,9 @@ function ProviderSearchPageInner() {
               ))}
             </ToggleButtonGroup>
           </Box>
-        </Paper>
+        </Box>
+        </MasterFilterContainer>
+        </Box>
 
         <Paper sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">

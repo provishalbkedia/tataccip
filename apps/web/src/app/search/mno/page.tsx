@@ -198,7 +198,25 @@ const EXCLUSIVE_MODE_PREDICATE: Record<ExclusiveMode, (r: MnoSummaryWithExclusiv
 // active: every visible row should then have `provider` as *that
 // service's* sole/exclusive provider, matching what the donut itself
 // counted for that slice.
-function providerMatchesRow(r: MnoSummaryWithExclusivity, mode: ExclusiveMode, provider: string): boolean {
+//
+// `serviceFilter` closes the same gap for the separate SERVICE master pill
+// (which -- unlike the Exclusivity pills above -- carries no per-service
+// `mode`, so "full"/"any"/"all" all land in the `default` branch below).
+// Without it, "SERVICE: DSX" + "Tata Comm" leaked any MNO where Tata Comm
+// held SCCP or IPX while a *different* carrier held DSX: the SERVICE pill
+// only checks "this MNO declares DSX to someone" and the flat provider
+// check only checks "Tata Comm appears somewhere on the row" -- neither
+// alone (nor their AND) confirms Tata Comm is *that MNO's own* DSX
+// provider. Only applied to the default branch: mode "sccp"/"dsx"/"ipx"
+// already enforce their own service, and "any" already unions across all
+// three deliberately (a plain provider search with no service scope should
+// still match a carrier appearing on any single service).
+function providerMatchesRow(
+  r: MnoSummaryWithExclusivity,
+  mode: ExclusiveMode,
+  provider: string,
+  serviceFilter?: ServiceFilter | "",
+): boolean {
   switch (mode) {
     case "full":
       return r.isFullyExclusive && r.soleMasterProvider === provider;
@@ -219,9 +237,14 @@ function providerMatchesRow(r: MnoSummaryWithExclusivity, mode: ExclusiveMode, p
       );
     default:
       // "all" (no exclusivity pill active) and "shared" aren't tied to a
-      // single service dimension, so keep the broad "carrier touches this
-      // row somewhere, exclusive or not" reading -- the general-purpose
-      // Wholesale Provider search.
+      // single service dimension on their own -- but the SERVICE master
+      // pill is, so when it's active the provider must specifically hold
+      // *that* service, not just appear somewhere on the row.
+      if (serviceFilter === "SCCP") return r.sccpProviders.includes(provider);
+      if (serviceFilter === "DSX") return r.dsxProviders.includes(provider);
+      if (serviceFilter === "IPX") return r.ipxProviders.includes(provider);
+      // No service scope at all -- the general-purpose Wholesale Provider
+      // search: does this carrier touch the row anywhere, exclusive or not.
       return [...r.sccpProviders, ...r.dsxProviders, ...r.ipxProviders].includes(provider);
   }
 }
@@ -724,8 +747,8 @@ function MnoSearchPageInner() {
   // that row's SCCP-exclusive provider, not merely present on its DSX/IPX
   // columns.
   const baseFilteredRows = React.useMemo(
-    () => scopedRows.filter((r) => !providerFilter || providerMatchesRow(r, exclusiveMode, providerFilter)),
-    [scopedRows, providerFilter, exclusiveMode],
+    () => scopedRows.filter((r) => !providerFilter || providerMatchesRow(r, exclusiveMode, providerFilter, serviceFilter)),
+    [scopedRows, providerFilter, exclusiveMode, serviceFilter],
   );
 
   // Feeds the Exclusivity & Market Share chart strip specifically -- see

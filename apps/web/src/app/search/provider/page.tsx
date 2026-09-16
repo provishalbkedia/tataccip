@@ -284,14 +284,28 @@ function ProviderSearchPageInner() {
   // same provider under two bars and overstating its reach by summing two
   // counts that plausibly overlap (the same MNO can appear in both source's
   // figures for that provider).
+  //
+  // Ranked by the active SERVICE pill's own count (sccpCount/dsxCount/
+  // ipxCount), not always totalMnos -- `results` is already narrowed to
+  // providers with a real footprint on that service (see provider.service.ts
+  // search()'s passesServiceFilter), but a provider can have a huge overall
+  // totalMnos from SCCP/DSX while barely registering on IPX; ranking those
+  // survivors by their unrelated totalMnos put exactly the wrong providers
+  // at the top of an "IPX" scope. Falls back to totalMnos when no service
+  // pill is active, matching the page's general "top by overall reach" view.
+  const rankMetric = React.useCallback(
+    (p: ProviderSummary) =>
+      service === "SCCP" ? p.stats.sccpCount : service === "DSX" ? p.stats.dsxCount : service === "IPX" ? p.stats.ipxCount : p.stats.totalMnos,
+    [service],
+  );
   const rankedProviders = React.useMemo(() => {
     const byId = new Map<number, ProviderSummary>();
     for (const r of results) {
       const existing = byId.get(r.id);
       if (!existing || r.stats.totalMnos > existing.stats.totalMnos) byId.set(r.id, r);
     }
-    return Array.from(byId.values()).sort((a, b) => b.stats.totalMnos - a.stats.totalMnos);
-  }, [results]);
+    return Array.from(byId.values()).sort((a, b) => rankMetric(b) - rankMetric(a));
+  }, [results, rankMetric]);
 
   // ---- Provider MIS report downloads ----
   // providerPdfReport/providerExcelReport (and jspdf/jspdf-autotable/
@@ -730,6 +744,7 @@ function ProviderSearchPageInner() {
         <ProviderCoverageCharts
           rankedProviders={rankedProviders}
           source={source}
+          activeService={service}
           searchQuery={q}
           onProviderClick={handleProviderChartClick}
           hasActiveFilters={hasActiveFilters}

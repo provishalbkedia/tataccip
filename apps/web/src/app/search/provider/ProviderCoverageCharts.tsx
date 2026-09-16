@@ -92,6 +92,7 @@ const TOP_N = 10;
 export default function ProviderCoverageCharts({
   rankedProviders,
   source,
+  activeService,
   searchQuery,
   onProviderClick,
   hasActiveFilters,
@@ -99,11 +100,18 @@ export default function ProviderCoverageCharts({
   onScrollToResults,
 }: {
   // Already deduped (one entry per provider id, even in "Both (Combined)"
-  // source mode) and sorted descending by stats.totalMnos -- the page
-  // computes this once and shares it with the "Quick Benchmark Shortcuts"
-  // banner too, rather than each place re-deriving its own copy.
+  // source mode) and sorted descending by whichever metric is currently
+  // relevant -- stats.totalMnos with no SERVICE pill active, or that
+  // service's own sccpCount/dsxCount/ipxCount when one is (see page.tsx's
+  // rankMetric) -- the page computes this once and shares it with the
+  // "Quick Benchmark Shortcuts" banner too, rather than each place
+  // re-deriving its own copy.
   rankedProviders: ProviderSummary[];
   source: ProviderStatsSource;
+  // The Master Filter Bar's SERVICE pill -- null when "All" is active.
+  // Retitles/re-metrics the bar chart below to that service's own MNO count
+  // instead of the provider's unrelated overall totalMnos.
+  activeService: "SCCP" | "DSX" | "IPX" | null;
   // The page's own free-text search box (page.tsx's `q`) -- both charts
   // below already aggregate over `rankedProviders`, which the page itself
   // has already narrowed to whatever this term matches, so naming it in
@@ -126,14 +134,27 @@ export default function ProviderCoverageCharts({
   const rankedByMnos = rankedProviders;
   const dedupedRows = rankedProviders;
 
+  // `metricCount` is what the bar actually plots -- the active service's own
+  // sccpCount/dsxCount/ipxCount, or totalMnos with no SERVICE pill active.
+  // `rankedByMnos` (from page.tsx's rankMetric) is already sorted by this
+  // same metric, so the top TOP_N slice is the right set of providers, not
+  // just relabeled bars over the wrong ones.
   const topProvidersData = React.useMemo(
     () =>
       rankedByMnos.slice(0, TOP_N).map((p) => ({
         providerName: p.providerName,
+        metricCount:
+          activeService === "SCCP"
+            ? p.stats.sccpCount
+            : activeService === "DSX"
+              ? p.stats.dsxCount
+              : activeService === "IPX"
+                ? p.stats.ipxCount
+                : p.stats.totalMnos,
         totalMnos: p.stats.totalMnos,
         totalCountries: p.stats.totalCountries,
       })),
-    [rankedByMnos],
+    [rankedByMnos, activeService],
   );
 
   const serviceMixData = React.useMemo(() => {
@@ -154,6 +175,20 @@ export default function ProviderCoverageCharts({
 
   const homeCarrierRank = rankedByMnos.findIndex((p) => p.providerName === HOME_CARRIER);
   const homeCarrierEntry = homeCarrierRank >= 0 ? rankedByMnos[homeCarrierRank] : null;
+  // Same metric switch as topProvidersData -- Tata Comm's overall totalMnos
+  // doesn't belong next to a rank computed from the active service's own
+  // count (a provider ranked above Tata Comm here can have fewer total MNOs
+  // but more IPX-declared ones, which "61 MNOs Covered, Rank #7" would make
+  // no visible sense of without this).
+  const homeCarrierMetric = homeCarrierEntry
+    ? activeService === "SCCP"
+      ? homeCarrierEntry.stats.sccpCount
+      : activeService === "DSX"
+        ? homeCarrierEntry.stats.dsxCount
+        : activeService === "IPX"
+          ? homeCarrierEntry.stats.ipxCount
+          : homeCarrierEntry.stats.totalMnos
+    : 0;
 
   const activeSearchTerm = searchQuery?.trim() || null;
   // A free-text search is a SUBSTRING match against provider names, so it
@@ -169,16 +204,24 @@ export default function ProviderCoverageCharts({
   const matchCount = dedupedRows.length;
   const isSingleMatch = !!activeSearchTerm && matchCount === 1;
   const isMultiMatch = !!activeSearchTerm && matchCount > 1;
+  // What the bar chart's ranking is actually based on -- used by both its
+  // title and its "ranked by ..." subtitle below, so the two can't drift out
+  // of sync with each other or with topProvidersData's own metricCount.
+  const rankingBasisLabel = activeService ? `declared ${activeService} MNO connections` : "total MNOs served";
   const barChartTitle = isSingleMatch
     ? `Provider Footprint — ${activeSearchTerm}`
     : isMultiMatch
-      ? `Top Providers Matching "${activeSearchTerm}" (${matchCount})`
-      : "Top Providers by MNO Coverage";
+      ? `Top ${activeService ? `${activeService} ` : ""}Providers Matching "${activeSearchTerm}" (${matchCount})`
+      : activeService
+        ? `Top Providers by ${activeService} Coverage`
+        : "Top Providers by MNO Coverage";
   const serviceMixTitle = isSingleMatch
     ? `Service Coverage Mix — ${activeSearchTerm}`
     : isMultiMatch
       ? `Service Coverage Mix — ${matchCount} Providers Matching "${activeSearchTerm}"`
-      : "Service Coverage Mix — All Providers";
+      : activeService
+        ? `Service Coverage Mix — ${activeService} Focus`
+        : "Service Coverage Mix — All Providers";
   const serviceMixSubtitle = isSingleMatch
     ? `SCCP vs DSX vs IPX relationship breakdown for ${activeSearchTerm}`
     : isMultiMatch
@@ -235,7 +278,11 @@ export default function ProviderCoverageCharts({
                 </Box>
                 {homeCarrierEntry ? (
                   <>
-                    <Chip size="small" label={`${homeCarrierEntry.stats.totalMnos} MNOs Covered`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
+                    <Chip
+                      size="small"
+                      label={activeService ? `${homeCarrierMetric} ${activeService} MNOs` : `${homeCarrierMetric} MNOs Covered`}
+                      sx={{ fontWeight: 700, bgcolor: "#fff" }}
+                    />
                     <Chip size="small" label={`${homeCarrierEntry.stats.totalCountries} Countries`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
                     <Chip size="small" label={`Rank #${homeCarrierRank + 1} of ${rankedByMnos.length}`} sx={{ fontWeight: 700, bgcolor: "#fff" }} />
                   </>
@@ -256,8 +303,8 @@ export default function ProviderCoverageCharts({
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                           {topProvidersData.length < rankedByMnos.length
-                            ? `Top ${topProvidersData.length} of ${rankedByMnos.length} providers, ranked by total MNOs served`
-                            : "Ranked by total MNOs served"}
+                            ? `Top ${topProvidersData.length} of ${rankedByMnos.length} providers, ranked by ${rankingBasisLabel}`
+                            : `Ranked by ${rankingBasisLabel}`}
                         </Typography>
                       </Box>
                       {hasActiveFilters && <ChartResetIconButton onReset={onResetAllFilters} />}
@@ -295,13 +342,17 @@ export default function ProviderCoverageCharts({
                           <RechartsTooltip
                             content={
                               <CustomTooltip
-                                formatter={(p) => `${p.providerName}: ${p.totalMnos} MNOs across ${p.totalCountries} countries`}
+                                formatter={(p) =>
+                                  activeService
+                                    ? `${p.providerName}: ${p.metricCount} ${activeService} MNOs (${p.totalMnos} total MNOs across ${p.totalCountries} countries)`
+                                    : `${p.providerName}: ${p.totalMnos} MNOs across ${p.totalCountries} countries`
+                                }
                               />
                             }
                           />
                           <Bar
                             isAnimationActive={false}
-                            dataKey="totalMnos"
+                            dataKey="metricCount"
                             cursor="pointer"
                             onClick={(d) => onProviderClick((d as unknown as { providerName: string }).providerName)}
                             radius={3}
@@ -372,7 +423,11 @@ export default function ProviderCoverageCharts({
                           <RechartsTooltip content={<CustomTooltip formatter={(p) => `${p.label}: ${p.count}`} />} />
                           <Bar isAnimationActive={false} dataKey="count" radius={3}>
                             {serviceMixData.map((d, i) => (
-                              <Cell key={d.service} fill={["#0B6FBF", "#00A98A", "#EF6C00"][i]} />
+                              <Cell
+                                key={d.service}
+                                fill={["#0B6FBF", "#00A98A", "#EF6C00"][i]}
+                                opacity={activeService && d.service !== activeService ? 0.35 : 1}
+                              />
                             ))}
                           </Bar>
                         </BarChart>

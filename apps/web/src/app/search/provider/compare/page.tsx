@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ColDef, ColGroupDef } from "ag-grid-community";
-import { Alert, Box, Button, Chip, MenuItem, Paper, TextField, Tooltip, Typography } from "@mui/material";
+import type { ColDef, ColGroupDef, ICellRendererParams } from "ag-grid-community";
+import { Alert, Box, Button, Chip, IconButton, MenuItem, Paper, Popover, TextField, Tooltip, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import BackNavBar from "@/components/BackNavBar";
@@ -52,6 +53,92 @@ function ProviderGroupHeader(props: { displayName: string; asns: string[] }) {
           />
         </Tooltip>
       )}
+    </Box>
+  );
+}
+
+/** AG Grid `cellRenderer` for the pinned "ASN" column -- an MNO can declare
+ * more than one Autonomous System Number (primary plus secondary/peering
+ * ASNs per GSMA IR.21 Section 17), and silently truncating to the first one
+ * hides real routing intelligence from a peering engineer. Shows the
+ * primary ASN plus a "+N" chip when there are more; clicking it opens a
+ * popover listing every declared ASN with a one-click copy. */
+function MnoAsnCell(params: ICellRendererParams<ProviderCompareMatrixItem, string[]>) {
+  const asns = params.value ?? [];
+  const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
+
+  if (asns.length === 0) {
+    return <span style={{ color: "#94A3B8" }}>—</span>;
+  }
+  if (asns.length === 1) {
+    return <span>{asns[0]}</span>;
+  }
+
+  const extraCount = asns.length - 1;
+
+  const handleCopyAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(asns.join(", "));
+  };
+
+  return (
+    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+      <span>{asns[0]}</span>
+      <Chip
+        label={`+${extraCount}`}
+        size="small"
+        // AG Grid's row click (open detail page) only stops if propagation
+        // is cut during the CAPTURE phase -- React funnels every
+        // onClickCapture through one listener at its root, so calling
+        // stopPropagation() there halts the real event before it ever
+        // reaches this node, meaning a separate bubble-phase onClick here
+        // would never fire afterward. Doing the popover's own state update
+        // inside this same capture handler avoids relying on that second,
+        // now-unreachable bubble dispatch.
+        onClickCapture={(e) => {
+          e.stopPropagation();
+          setAnchorEl(e.currentTarget);
+        }}
+        sx={{ height: 18, fontSize: "0.68rem", fontWeight: 700, cursor: "pointer", bgcolor: "#0A2540", color: "#E2E8F0" }}
+      />
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+      >
+        <Box sx={{ p: 1.5, minWidth: 200, maxWidth: 260 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+            <Typography sx={{ fontSize: "0.78rem", fontWeight: 700, color: "#0A2540" }}>Declared ASNs ({asns.length})</Typography>
+            <Tooltip title="Copy all ASNs">
+              <IconButton size="small" onClick={handleCopyAll}>
+                <ContentCopyIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            {asns.map((asn, idx) => (
+              <Box
+                key={asn}
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  bgcolor: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "4px",
+                  px: 1,
+                  py: 0.4,
+                  fontFamily: "monospace",
+                  fontSize: "0.78rem",
+                }}
+              >
+                <span>{asn}</span>
+                <span style={{ color: "#94A3B8" }}>{idx === 0 ? "Primary" : `Sec #${idx}`}</span>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Popover>
     </Box>
   );
 }
@@ -166,14 +253,19 @@ function ProviderComparePageInner() {
         field: "mnoAsNumbers",
         headerName: "ASN",
         pinned: "left",
-        maxWidth: 110,
+        minWidth: 110,
+        maxWidth: 150,
         cellStyle: { fontFamily: "monospace", fontSize: "0.8rem" },
-        // Primary (first-declared) ASN on the cell itself; the full list
-        // (when an MNO declares more than one) only shows on hover, so a
-        // dense grid doesn't grow ragged row heights for the rare
-        // multi-ASN operator.
-        valueFormatter: (p) => (p.value?.length ? p.value[0] : "—"),
-        tooltipValueGetter: (p) => (p.value?.length > 1 ? `All declared ASNs: ${p.value.join(", ")}` : ""),
+        // Primary (first-declared) ASN plus a "+N" chip when the MNO has
+        // declared more than one (e.g. a secondary/peering ASN per GSMA
+        // IR.21 Section 17) -- clicking it lists every ASN with a copy
+        // action, so multi-ASN operators no longer get silently truncated.
+        cellRenderer: MnoAsnCell,
+        // valueFormatter drives CSV/clipboard export, which has no click
+        // interaction to reveal the rest -- export every declared ASN, not
+        // just the primary one shown on screen.
+        valueFormatter: (p) => (p.value?.length ? p.value.join("; ") : "—"),
+        tooltipValueGetter: (p) => (p.value?.length > 1 ? `Click +${p.value.length - 1} to view all declared ASNs` : ""),
       },
     ];
 
